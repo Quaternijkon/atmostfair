@@ -59,6 +59,11 @@ export const TRANSLATIONS = {
     connectInfo: "Create team lobbies for hackathons or gaming squads.",
     selectInfo: "Create fair roulette wheels with verifiable random results.",
     privateInfo: "Set a password to make the project private.",
+    // Project Module
+    project: "Project",
+    projects: "Projects",
+    projectsDesc: "Manage and organize your generic projects.",
+    projectCreateTitle: "Create New Project",
     // Cards
     finished: "Finished",
     paused: "Paused",
@@ -215,6 +220,11 @@ export const TRANSLATIONS = {
     connectInfo: "创建组队大厅，让成员自由创建或加入小队，适合黑客松或游戏组队。",
     selectInfo: "创建绝对公平的随机轮盘，算法透明，结果不可人为干预。",
     privateInfo: "设置访问密码可将项目设为私有，只有知晓密码的用户才能进入。",
+    // Project Module
+    project: "项目",
+    projects: "项目管理",
+    projectsDesc: "管理和组织通用项目（WIP）。",
+    projectCreateTitle: "创建新项目",
     // Cards
     finished: "已结束",
     paused: "已暂停",

@@ -2,8 +2,10 @@ import React from 'react';
 import { Shield, Database, Trash2 } from './Icons';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { useUI } from './UIComponents';
 
 export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, onClose, t }) {
+  const { confirm, showToast } = useUI();
   // Logic to find orphans
   const projectIds = new Set(projects.map(p => p.id));
   const orphans = {
@@ -15,22 +17,36 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   const hasOrphans = orphans.items.length > 0 || orphans.rooms.length > 0 || orphans.participants.length > 0;
 
   const cleanOrphans = async () => {
-    if (!window.confirm(t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length }))) return;
-
-    try {
-      for (const item of orphans.items) await deleteDoc(doc(db, 'voting_items', item.id));
-      for (const room of orphans.rooms) await deleteDoc(doc(db, 'rooms', room.id));
-      for (const p of orphans.participants) await deleteDoc(doc(db, 'roulette_participants', p.id));
-      alert(t('orphanSuccess'));
-    } catch (e) {
-      alert(t('orphanError') + e.message);
-    }
+    confirm({
+      title: t('cleanOrphans') || 'Clean Orphans', 
+      message: t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length }),
+      confirmText: t('delete'),
+      cancelText: t('cancel'),
+      type: 'destructive',
+      onConfirm: async () => {
+        try {
+          for (const item of orphans.items) await deleteDoc(doc(db, 'voting_items', item.id));
+          for (const room of orphans.rooms) await deleteDoc(doc(db, 'rooms', room.id));
+          for (const p of orphans.participants) await deleteDoc(doc(db, 'roulette_participants', p.id));
+          showToast(t('orphanSuccess'), 'success');
+        } catch (e) {
+          showToast(t('orphanError') + e.message, 'error');
+        }
+      }
+    });
   };
 
   const deleteProject = async (project) => {
-    if (window.confirm(t('projectDeleteConfirm', { title: project.title, id: project.id }))) {
-      await deleteDoc(doc(db, 'projects', project.id));
-    }
+    confirm({
+      title: t('deleteProject'),
+      message: t('projectDeleteConfirm', { title: project.title, id: project.id }),
+      confirmText: t('delete'),
+      cancelText: t('cancel'),
+      type: 'destructive',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'projects', project.id));
+      }
+    });
   }
 
   return (

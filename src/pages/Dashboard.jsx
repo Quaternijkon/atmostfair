@@ -4,7 +4,7 @@ import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus } from '../compon
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
-  // Navigation State: 'collect' | 'connect' | 'select'
+  // Navigation State: 'collect' | 'connect' | 'select' | 'project'
   const [activeTab, setActiveTab] = useState('collect');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -23,6 +23,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   // Configuration Mapping
   const CATEGORIES = {
     collect: { 
+      id: 'collect',
       label: t('collect'), 
       color: 'text-google-blue', 
       bg: 'bg-google-blue',
@@ -33,6 +34,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       ]
     },
     connect: { 
+      id: 'connect',
       label: t('connect'), 
       color: 'text-google-red', 
       bg: 'bg-google-red',
@@ -43,6 +45,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       ]
     },
     select: { 
+      id: 'select',
       label: t('select'), 
       color: 'text-google-yellow', 
       bg: 'bg-google-yellow',
@@ -50,6 +53,16 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       types: ['roulette'], 
       modules: [
         { id: 'roulette', label: t('roulette'), icon: Dices, desc: t('rouletteDesc') }
+      ]
+    },
+    project: {
+      id: 'project',
+      label: t('project'),
+      color: 'text-google-green',
+      bg: 'bg-google-green',
+      types: ['project'], // New generic type
+      modules: [
+        { id: 'project', label: t('project'), icon: FolderPlus, desc: t('projectsDesc') } // Using FolderPlus as generic icon
       ]
     }
   };
@@ -79,6 +92,18 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
        let routePrefix = 'collect';
        if (type === 'team') routePrefix = 'connect';
        if (type === 'roulette') routePrefix = 'select';
+       if (type === 'project') routePrefix = 'project'; // Future route
+       // For now, project type also goes to detail or stays here? 
+       // User said "temporarily no application" so maybe just navigate to detail page which will show generic info?
+       // Currently ProjectDetail handles voting/team/roulette. We might need a generic handling in ProjectDetail or just alert.
+       if(type === 'project') {
+         // Placeholder alert or generic view.
+         // Let's assume generic view is implemented or just go to /collect/ID for now as fallback if Detail supports it?
+         // Actually ProjectDetail checks type.
+         // Let's route to /project/:id and let Router catch it (we need to add that route in App.jsx)
+         navigate(`/projects/${project.id}`); 
+         return;
+       }
        navigate(`/${routePrefix}/${project.id}`);
   }
 
@@ -102,6 +127,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       let routePrefix = 'collect';
       if (type === 'team') routePrefix = 'connect';
       if (type === 'roulette') routePrefix = 'select';
+      if (type === 'project') routePrefix = 'projects';
       navigate(`/${routePrefix}/${project.id}`, { state: { unlocked: true } });
       setPasswordPromptProject(null);
     } else { setPasswordError(true); }
@@ -109,18 +135,29 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
 
   // Styles Helper for Grid
   const styles = {
-    vote: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/20' },
-    team: { color: 'text-google-red', bgParams: 'bg-google-red/10', activeColor: 'text-google-red', activeBg: 'bg-google-red/20' },
-    roulette: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/20' },
+    vote: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
+    team: { color: 'text-google-red', bgParams: 'bg-google-red/10', activeColor: 'text-google-red', activeBg: 'bg-google-red/5' },
+    roulette: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
+    project: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
   };
 
-  const TabButton = ({ id, label, icon: Icon }) => (
-    <button onClick={() => { setActiveTab(id); setShowCreate(false); setSelectedModule(null); }} className={`flex-1 min-w-[100px] py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-all rounded-full ${activeTab === id ? 'bg-m3-secondary-container text-m3-on-secondary-container shadow-sm' : 'text-m3-on-surface-variant hover:bg-m3-on-surface/5'}`}>
-      {activeTab === id && <Icon className="w-4 h-4" />}
-      <span>{label}</span>
-      {activeTab !== id && <Icon className="w-4 h-4 opacity-50" />}
-    </button>
-  );
+  const TabButton = ({ id, label, icon: Icon, category }) => {
+      const isActive = activeTab === id;
+      // Dynamic button color when active
+      const activeClass = isActive 
+        ? `${category.bg} text-white shadow-md` 
+        : 'text-m3-on-surface-variant hover:bg-m3-on-surface/5';
+
+      return (
+        <button 
+            onClick={() => { setActiveTab(id); setShowCreate(false); setSelectedModule(null); }} 
+            className={`flex-1 min-w-[90px] py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-all rounded-full ${activeClass}`}
+        >
+          {isActive ? <Icon className="w-4 h-4" /> : <Icon className="w-4 h-4 opacity-50" />}
+          <span>{label}</span>
+        </button>
+      );
+  };
 
   return (
     <div className="animate-fade-in space-y-6 max-w-7xl mx-auto p-4 md:p-8">
@@ -151,12 +188,13 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
         </div>
       )}
 
-      {/* Navigation Rail / Tabs (Renamed) */}
+      {/* Navigation Rail / Tabs (Renamed & Styled) */}
       <div className="flex justify-center mb-8">
-        <div className="bg-m3-surface-container-high p-1 rounded-full inline-flex w-full max-w-md border border-m3-outline-variant/30">
-          <TabButton id="collect" label={t('collect')} icon={Vote} />
-          <TabButton id="connect" label={t('connect')} icon={Users} />
-          <TabButton id="select" label={t('select')} icon={Dices} />
+        <div className="bg-m3-surface-container-high p-1 rounded-full inline-flex w-full max-w-2xl border border-m3-outline-variant/30 gap-1">
+          <TabButton id="collect" label={t('collect')} icon={Vote} category={CATEGORIES.collect} />
+          <TabButton id="connect" label={t('connect')} icon={Users} category={CATEGORIES.connect} />
+          <TabButton id="select" label={t('select')} icon={Dices} category={CATEGORIES.select} />
+          <TabButton id="project" label={t('project')} icon={FolderPlus} category={CATEGORIES.project} />
         </div>
       </div>
 
@@ -252,14 +290,16 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
       const isActive = project.status !== 'stopped' && project.status !== 'finished';
       const statusColor = isActive ? activeStyle.activeColor : 'text-m3-on-surface-variant'; 
       const statusBg = isActive ? activeStyle.activeBg : 'bg-m3-on-surface/5';
-
+      const statusIconBg = isActive ? activeStyle.bgParams : 'bg-m3-on-surface/10'; // Circle Bg
+      
       return (
-      <div key={project.id} onClick={() => handleProjectClick(project)} className="group cursor-pointer bg-m3-surface-container-high p-0 rounded-[24px] border border-transparent hover:border-m3-outline-variant hover:shadow-elevation-1 transition-all overflow-hidden relative active:scale-[0.99] active:shadow-none">
+      <div key={project.id} onClick={() => handleProjectClick(project)} className={`group cursor-pointer p-0 rounded-[24px] border border-transparent hover:border-m3-outline-variant hover:shadow-elevation-1 transition-all overflow-hidden relative active:scale-[0.99] active:shadow-none ${statusBg}`}>
         <div className="p-5 h-full flex flex-col">
           <div className="flex justify-between items-start mb-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusBg}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusIconBg}`}>
               {project.type === 'vote' ? <Vote className={`w-5 h-5 ${statusColor}`} /> :
                 project.type === 'team' ? <Users className={`w-5 h-5 ${statusColor}`} /> :
+                project.type === 'project' ? <FolderPlus className={`w-5 h-5 ${statusColor}`} /> :
                   <Dices className={`w-5 h-5 ${statusColor}`} />}
             </div>
             {project.status === 'finished' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('finished')}</span>}

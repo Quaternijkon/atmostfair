@@ -6,6 +6,7 @@ import { auth, db } from './lib/firebase';
 import { TRANSLATIONS } from './constants/translations';
 import { LogOut, Shield } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
+import { UIProvider } from './components/UIComponents';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -128,48 +129,51 @@ export default function App() {
 
   return (
     <Router>
-      {!user ? (
-        <Login lang={lang} setLang={setLang} t={t} />
-      ) : (
-        <div className="min-h-screen bg-m3-surface text-m3-on-surface font-sans">
-          <nav className="bg-m3-surface-container px-6 py-3 flex justify-between items-center sticky top-0 z-20 shadow-none border-b border-white/50">
-             <Link to="/" className="flex items-center gap-2 cursor-pointer transition-opacity hover:opacity-80">
-              <AtmostfairLogo className="text-2xl" />
-             </Link>
-             <div className="flex items-center gap-4">
-              <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
-              {isAdmin && (
-                <button onClick={() => setShowAdmin(!showAdmin)} className={`p-2 rounded-full transition-colors ${showAdmin ? 'bg-google-blue text-white' : 'text-m3-on-surface-variant hover:bg-google-blue/10'}`} title={t('adminConsole')}>
-                  <Shield className="w-5 h-5" />
-                </button>
-              )}
-              <div className="text-sm text-m3-on-surface-variant hidden sm:block">{t('hello')}, {user.displayName || user.email || 'Guest'}</div>
-              <button onClick={() => signOut(auth)} className="text-m3-on-surface-variant hover:text-google-red p-2 rounded-full hover:bg-google-red/10 transition-colors" title={t('logout')}><LogOut className="w-5 h-5" /></button>
-             </div>
-          </nav>
+      <UIProvider>
+        {!user ? (
+          <Login lang={lang} setLang={setLang} t={t} />
+        ) : (
+          <div className="min-h-screen bg-m3-surface text-m3-on-surface font-sans">
+            <nav className="bg-m3-surface-container px-6 py-3 flex justify-between items-center sticky top-0 z-20 shadow-none border-b border-white/50">
+              <Link to="/" className="flex items-center gap-2 cursor-pointer transition-opacity hover:opacity-80">
+                <AtmostfairLogo className="text-2xl" />
+              </Link>
+              <div className="flex items-center gap-4">
+                <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
+                {isAdmin && (
+                  <button onClick={() => setShowAdmin(!showAdmin)} className={`p-2 rounded-full transition-colors ${showAdmin ? 'bg-google-blue text-white' : 'text-m3-on-surface-variant hover:bg-google-blue/10'}`} title={t('adminConsole')}>
+                    <Shield className="w-5 h-5" />
+                  </button>
+                )}
+                <div className="text-sm text-m3-on-surface-variant hidden sm:block">{t('hello')}, {user.displayName || user.email || 'Guest'}</div>
+                <button onClick={() => signOut(auth)} className="text-m3-on-surface-variant hover:text-google-red p-2 rounded-full hover:bg-google-red/10 transition-colors" title={t('logout')}><LogOut className="w-5 h-5" /></button>
+              </div>
+            </nav>
 
-          <main className="max-w-[1200px] mx-auto p-4 md:p-6 lg:p-8">
-             {showAdmin && isAdmin ? (
-               <AdminDashboard
-                  projects={projects}
-                  items={items}
-                  rooms={rooms}
-                  rouletteParticipants={rouletteParticipants}
-                  onClose={() => setShowAdmin(false)}
-                  t={t}
-               />
-             ) : (
-               <Routes>
-                  <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                  <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
-                  <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
-                  <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
-                  <Route path="*" element={<Navigate to="/" />} />
-               </Routes>
-             )}
-          </main>
-        </div>
-      )}
+            <main className="max-w-[1200px] mx-auto p-4 md:p-6 lg:p-8">
+              {showAdmin && isAdmin ? (
+                <AdminDashboard
+                    projects={projects}
+                    items={items}
+                    rooms={rooms}
+                    rouletteParticipants={rouletteParticipants}
+                    onClose={() => setShowAdmin(false)}
+                    t={t}
+                />
+              ) : (
+                <Routes>
+                    <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
+                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
+                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
+                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
+                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} actions={actions} t={t} />} />
+                    <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              )}
+            </main>
+          </div>
+        )}
+      </UIProvider>
     </Router>
   );
 }

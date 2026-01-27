@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Copy, Key, Lock, Flag, Trash2, Info } from '../components/Icons';
+import { useUI } from '../components/UIComponents';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
@@ -9,6 +10,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { confirm } = useUI();
   
   const [unlocked, setUnlocked] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
@@ -100,17 +102,50 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
         {hasAdminRights && !isFinished && (
           <div className="flex gap-2">
             <button onClick={() => actions.handleToggleProjectStatus(project)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all ${isStopped ? 'bg-m3-primary-container text-m3-on-primary-container hover:shadow-elevation-1' : 'bg-m3-surface-container-high text-m3-on-surface hover:bg-m3-surface-container-high/80 border border-m3-outline-variant'}`}>{isStopped ? t('resume') : t('pause')}</button>
-            <button onClick={() => { if (window.confirm(t('deleteConfirm'))) { actions.handleDeleteProject(project.id); navigate('/'); } }} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-google-red hover:bg-google-red/10"><Trash2 className="w-4 h-4" /> {t('delete')}</button>
+            <button 
+              onClick={() => confirm({
+                title: t('deleteProject'),
+                message: t('deleteConfirm'),
+                confirmText: t('delete'),
+                cancelText: t('cancel'),
+                type: 'destructive',
+                onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
+              })} 
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-google-red hover:bg-google-red/10"
+            >
+              <Trash2 className="w-4 h-4" /> {t('delete')}
+            </button>
           </div>
         )}
         {hasAdminRights && isFinished && (
-          <button onClick={() => { if (window.confirm(t('deleteConfirm'))) { actions.handleDeleteProject(project.id); navigate('/'); } }} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm bg-google-red text-white hover:shadow-elevation-1"><Trash2 className="w-4 h-4" /> {t('deleteProject')}</button>
+          <button 
+            onClick={() => confirm({
+                title: t('deleteProject'),
+                message: t('deleteConfirm'),
+                confirmText: t('delete'),
+                cancelText: t('cancel'),
+                type: 'destructive',
+                onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
+            })}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm bg-google-red text-white hover:shadow-elevation-1"
+          >
+            <Trash2 className="w-4 h-4" /> {t('deleteProject')}
+          </button>
         )}
       </div>
 
       {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={actions.handleVote} isProjectOwner={isOwner} projectId={project.id} t={t} />}
       {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
       {project.type === 'roulette' && <RouletteView user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'project' && (
+        <div className="flex flex-col items-center justify-center p-12 bg-m3-surface-container-low rounded-[24px]">
+            <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
+                <Info className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl text-m3-on-surface mb-2">{t('project')}</h3>
+            <p className="text-m3-on-surface-variant">Project View</p>
+        </div>
+      )}
     </div>
   );
 }
