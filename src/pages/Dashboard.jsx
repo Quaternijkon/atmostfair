@@ -154,10 +154,10 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       return (
         <button 
             onClick={() => { setActiveTab(id); setShowCreate(false); setSelectedModule(null); }} 
-            className={`flex-1 min-w-[90px] py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-all rounded-full ${activeClass}`}
+            className={`flex-auto py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-all rounded-full ${activeClass}`}
         >
           {isActive ? <Icon className="w-4 h-4" /> : <Icon className="w-4 h-4 opacity-50" />}
-          <span>{label}</span>
+          <span className={isActive ? 'inline' : 'hidden md:inline'}>{label}</span>
         </button>
       );
   };
