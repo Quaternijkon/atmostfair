@@ -124,7 +124,7 @@ export default function App() {
       },
       handleCreateGatherField: async (projectId, label) => {
         if (!user || !label.trim()) return;
-        await addDoc(collection(db, 'gather_fields'), { projectId, label, type: 'text', createdAt: Date.now() });
+        await addDoc(collection(db, 'gather_fields'), { projectId, label, type: 'text', creatorId: user.uid, createdAt: Date.now() });
       },
       handleDeleteGatherField: async (fieldId) => {
         if (!user) return;
@@ -138,7 +138,7 @@ export default function App() {
       },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          if (!user || !title.trim()) return;
-         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], createdAt: Date.now() });
+         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: user.displayName || 'Anonymous', createdAt: Date.now() });
       },
       handleDeleteClaimItem: async (itemId) => {
          await deleteDoc(doc(db, 'claim_items', itemId));
