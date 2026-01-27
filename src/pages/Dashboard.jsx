@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus } from '../components/Icons';
+import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -28,9 +28,10 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       color: 'text-google-blue', 
       bg: 'bg-google-blue',
       // Legacy 'type' mapping: 'vote' projects belong to 'collect'
-      types: ['vote'], 
+      types: ['vote', 'gather'], 
       modules: [
-        { id: 'vote', label: t('voting'), icon: Vote, desc: t('votingDesc') }
+        { id: 'vote', label: t('voting'), icon: Vote, desc: t('votingDesc') },
+        { id: 'gather', label: t('gather'), icon: ClipboardList, desc: t('gatherDesc') }
       ]
     },
     connect: { 

@@ -4,30 +4,45 @@ import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useUI } from './UIComponents';
 
-export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, onClose, t }) {
+export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, gatherFields, gatherSubmissions, onClose, t }) {
   const { confirm, showToast } = useUI();
   // Logic to find orphans
   const projectIds = new Set(projects.map(p => p.id));
   const orphans = {
     items: items.filter(i => !projectIds.has(i.projectId)),
     rooms: rooms.filter(r => !projectIds.has(r.projectId)),
-    participants: rouletteParticipants.filter(p => !projectIds.has(p.projectId))
+    participants: rouletteParticipants.filter(p => !projectIds.has(p.projectId)),
+    fields: (gatherFields || []).filter(f => !projectIds.has(f.projectId)),
+    submissions: (gatherSubmissions || []).filter(s => !projectIds.has(s.projectId))
   };
 
-  const hasOrphans = orphans.items.length > 0 || orphans.rooms.length > 0 || orphans.participants.length > 0;
+  const hasOrphans = Object.values(orphans).some(arr => arr.length > 0);
 
   const cleanOrphans = async () => {
+    const counts = `
+      ${orphans.items.length} Votes
+      ${orphans.rooms.length} Rooms
+      ${orphans.participants.length} Roulette
+      ${orphans.fields.length} Forms
+      ${orphans.submissions.length} Submissions
+    `;
+    
     confirm({
       title: t('cleanOrphans') || 'Clean Orphans', 
-      message: t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length }),
+      message: t('orphanConfirm').replace('{items}', orphans.items.length).replace('{rooms}', orphans.rooms.length).replace('{participants}', orphans.participants.length) + ` (+ ${orphans.fields.length} fields, ${orphans.submissions.length} subs)`,
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
       onConfirm: async () => {
         try {
-          for (const item of orphans.items) await deleteDoc(doc(db, 'voting_items', item.id));
-          for (const room of orphans.rooms) await deleteDoc(doc(db, 'rooms', room.id));
-          for (const p of orphans.participants) await deleteDoc(doc(db, 'roulette_participants', p.id));
+          const promises = [
+              ...orphans.items.map(item => deleteDoc(doc(db, 'voting_items', item.id))),
+              ...orphans.rooms.map(room => deleteDoc(doc(db, 'rooms', room.id))),
+              ...orphans.participants.map(p => deleteDoc(doc(db, 'roulette_participants', p.id))),
+              ...orphans.fields.map(f => deleteDoc(doc(db, 'gather_fields', f.id))),
+              ...orphans.submissions.map(s => deleteDoc(doc(db, 'gather_submissions', s.id)))
+          ];
+          await Promise.all(promises);
           showToast(t('orphanSuccess'), 'success');
         } catch (e) {
           showToast(t('orphanError') + e.message, 'error');

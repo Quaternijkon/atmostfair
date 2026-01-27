@@ -158,7 +158,20 @@ export const TRANSLATIONS = {
     sortedByDate: "Sorted by creation date",
     creators: "Creators",
     orphanNote: "These data IDs no longer exist in the projects database.",
-    dbEmpty: "Database is empty"
+    dbEmpty: "Database is empty",
+    gather: "Gather",
+    gatherDesc: "Create forms to collect text information.",
+    addField: "Add Field",
+    fieldLabel: "Field Name",
+    submitSuccess: "Submission Successful",
+    submitError: "Submission Failed",
+    alreadySubmitted: "You have already submitted.",
+    exportCSV: "Export CSV",
+    confirmSubmit: "Confirm submission? Cannot be edited later.",
+    noFields: "No fields defined yet.",
+    responses: "Responses",
+    submit: "Submit",
+    fillForm: "Fill Form"
   },
   zh: {
     // Language Switcher
@@ -205,6 +218,7 @@ export const TRANSLATIONS = {
     collect: "Collect",
     connect: "Connect",
     select: "Select",
+    project: "Project",
     // Create
     createTitle: "创建新的 {type} 项目",
     selectTool: "选择工具类型",
@@ -221,7 +235,6 @@ export const TRANSLATIONS = {
     selectInfo: "创建绝对公平的随机轮盘，算法透明，结果不可人为干预。",
     privateInfo: "设置访问密码可将项目设为私有，只有知晓密码的用户才能进入。",
     // Project Module
-    project: "项目",
     projects: "项目管理",
     projectsDesc: "管理和组织通用项目（WIP）。",
     projectCreateTitle: "创建新项目",
@@ -319,6 +332,19 @@ export const TRANSLATIONS = {
     sortedByDate: "按创建时间排序",
     creators: "创建者",
     orphanNote: "这些数据的关联项目ID已不存在于数据库中。",
-    dbEmpty: "数据库为空"
+    dbEmpty: "数据库为空",
+    gather: "收集",
+    gatherDesc: "创建表单以收集文本信息。",
+    addField: "添加项目",
+    fieldLabel: "项目名称",
+    submitSuccess: "提交成功",
+    submitError: "提交失败",
+    alreadySubmitted: "您已提交过，无法重复提交。",
+    exportCSV: "导出 CSV",
+    confirmSubmit: "确认提交吗？提交后无法修改。",
+    noFields: "暂无收集项，请等待创建者添加。",
+    responses: "收集结果",
+    submit: "提交",
+    fillForm: "填写表单"
   }
 };
