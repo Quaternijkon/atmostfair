@@ -4,7 +4,6 @@ import { ArrowLeft, Copy, Key, Lock, Flag, Trash2, Info } from '../components/Ic
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
-import InfoCard from '../components/InfoCard';
 
 export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, actions, t }) {
   const { id } = useParams();
