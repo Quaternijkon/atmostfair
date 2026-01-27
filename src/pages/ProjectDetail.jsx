@@ -8,9 +8,10 @@ import RouletteView from '../components/RouletteView';
 import QueueView from '../components/QueueView';
 import GatherView from '../components/GatherView';
 import ScheduleView from '../components/ScheduleView';
+import BookingView from '../components/BookingView';
 import ClaimView from '../components/ClaimView';
 
-export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, claimItems, actions, t }) {
+export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,6 +89,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const projectGatherFields = (gatherFields || []).filter(f => f.projectId === project.id);
   const projectGatherSubmissions = (gatherSubmissions || []).filter(s => s.projectId === project.id);
   const projectScheduleSubmissions = (scheduleSubmissions || []).filter(s => s.projectId === project.id);
+  const projectBookingSlots = (bookingSlots || []).filter(s => s.projectId === project.id);
   const projectClaimItems = (claimItems || []).filter(c => c.projectId === project.id);
 
   return (
@@ -149,6 +151,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
       {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'project' && (
         <div className="flex flex-col items-center justify-center p-12 bg-m3-surface-container-low rounded-[24px]">

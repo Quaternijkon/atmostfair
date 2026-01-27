@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link } from 'react-router-dom';
 import { onAuthStateChanged, isSignInWithEmailLink, signInWithEmailLink, signOut } from 'firebase/auth';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { TRANSLATIONS } from './constants/translations';
-import { LogOut, Shield } from './components/Icons';
+import { LogOut, Shield, Bell } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
 import { UIProvider } from './components/UIComponents';
 
@@ -46,7 +46,10 @@ export default function App() {
   const [gatherFields, setGatherFields] = useState([]);
   const [gatherSubmissions, setGatherSubmissions] = useState([]);
   const [scheduleSubmissions, setScheduleSubmissions] = useState([]);
+  const [bookingSlots, setBookingSlots] = useState([]);
   const [claimItems, setClaimItems] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Auth & Magik Link Effect
   useEffect(() => {
@@ -83,8 +86,10 @@ export default function App() {
     const unsubGatherFields = onSnapshot(collection(db, 'gather_fields'), (s) => setGatherFields(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherSubmissions = onSnapshot(collection(db, 'gather_submissions'), (s) => setGatherSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubScheduleSubmissions = onSnapshot(collection(db, 'schedule_submissions'), (s) => setScheduleSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubBookingSlots = onSnapshot(collection(db, 'booking_slots'), (s) => setBookingSlots(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubClaimItems(); };
+    const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt)));
+    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubNotifications(); };
   }, [user]);
 
   // Actions
@@ -185,6 +190,29 @@ export default function App() {
              await addDoc(collection(db, 'schedule_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', availability, submittedAt: Date.now() });
          }
       },
+      handleUpdateBookingConfig: async (projectId, config) => {
+         if (!user) return;
+         await updateDoc(doc(db, 'projects', projectId), { bookingConfig: config });
+      },
+      handleCreateBookingSlot: async (projectId, start, end, label) => {
+         // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
+         // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
+         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, createdAt: Date.now() });
+      },
+      handleDeleteBookingSlot: async (slotId) => deleteDoc(doc(db, 'booking_slots', slotId)),
+      handleBookSlot: async (slotId, bookingData) => {
+         // Transactional safety would be better, but optimistic update ok for MVP
+         if (!user) return;
+         await updateDoc(doc(db, 'booking_slots', slotId), { bookedBy: user.uid, bookerName: user.displayName || 'Anonymous', bookingData, bookedAt: Date.now() });
+      },
+      handleKickUser: async (slotId, recipientId, projectId, reason) => {
+         if (!user) return;
+         // Clear slot
+         await updateDoc(doc(db, 'booking_slots', slotId), { bookedBy: null, bookerName: null, bookingData: null, bookedAt: null });
+         // Notify
+         await addDoc(collection(db, 'notifications'), { recipientId, type: 'kicked', title: t('bookingCancelled'), message: reason, projectId, read: false, createdAt: Date.now() });
+      },
+      handleReadNotification: async (nId) => updateDoc(doc(db, 'notifications', nId), { read: true }),
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          if (!user || !title.trim()) return;
          await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: user.displayName || 'Anonymous', createdAt: Date.now() });
@@ -230,6 +258,36 @@ export default function App() {
               </Link>
               <div className="flex items-center gap-4">
                 <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
+                
+                {/* Notifications & Mailbox */}
+                <div className="relative">
+                     <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 relative">
+                        <Bell className="w-5 h-5" />
+                        {notifications.some(n => !n.read) && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-google-red"></span>}
+                     </button>
+                     {showNotifications && (
+                         <div className="absolute right-0 mt-2 w-80 bg-m3-surface-container-high rounded-xl shadow-elevation-3 border border-m3-outline-variant/20 overflow-hidden z-50">
+                             <div className="p-3 border-b border-m3-outline-variant/10 font-medium text-sm flex justify-between">
+                                 <span>{t('notifications')}</span>
+                                 <button onClick={() => setNotifications([])} className="text-xs text-m3-on-surface-variant hover:text-google-blue hidden">{t('clearAll')}</button>
+                             </div>
+                             <div className="max-h-64 overflow-y-auto">
+                                 {notifications.length === 0 ? (
+                                     <div className="p-4 text-center text-xs text-m3-on-surface-variant">{t('noNotifications')}</div>
+                                 ) : (
+                                     notifications.map(n => (
+                                         <div key={n.id} onClick={() => actions.handleReadNotification(n.id)} className={`p-3 border-b border-m3-outline-variant/10 cursor-pointer hover:bg-white/5 ${n.read ? 'opacity-60' : 'bg-google-blue/5'}`}>
+                                             <div className="text-sm font-medium mb-1">{n.title}</div>
+                                             <div className="text-xs text-m3-on-surface-variant">{n.message}</div>
+                                             <div className="text-[10px] text-m3-on-surface-variant/60 mt-1 text-right">{new Date(n.createdAt).toLocaleDateString()}</div>
+                                         </div>
+                                     ))
+                                 )}
+                             </div>
+                         </div>
+                     )}
+                </div>
+
                 {isAdmin && (
                   <button onClick={() => setShowAdmin(!showAdmin)} className={`p-2 rounded-full transition-colors ${showAdmin ? 'bg-google-blue text-white' : 'text-m3-on-surface-variant hover:bg-google-blue/10'}`} title={t('adminConsole')}>
                     <Shield className="w-5 h-5" />
@@ -250,16 +308,17 @@ export default function App() {
                     queueParticipants={queueParticipants}
                     gatherFields={gatherFields}
                     gatherSubmissions={gatherSubmissions}
-                    scheduleSubmissions={scheduleSubmissions}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
+                    scheduleSubmissions={scheduleSubmissions}
+                    bookingSlots={bookingSlots}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
                     t={t}
                 />
               ) : (
                 <Routes>
                     <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               )}
