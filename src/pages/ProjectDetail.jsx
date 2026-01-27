@@ -5,10 +5,11 @@ import { useUI } from '../components/UIComponents';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
+import QueueView from '../components/QueueView';
 import GatherView from '../components/GatherView';
 import ClaimView from '../components/ClaimView';
 
-export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, gatherFields, gatherSubmissions, claimItems, actions, t }) {
+export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, claimItems, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -82,6 +83,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const projectItems = items.filter(i => i.projectId === project.id);
   const projectRooms = rooms.filter(r => r.projectId === project.id);
   const projectRouletteData = rouletteData.filter(r => r.projectId === project.id);
+  const projectQueueData = (queueData || []).filter(q => q.projectId === project.id);
   const projectGatherFields = (gatherFields || []).filter(f => f.projectId === project.id);
   const projectGatherSubmissions = (gatherSubmissions || []).filter(s => s.projectId === project.id);
   const projectClaimItems = (claimItems || []).filter(c => c.projectId === project.id);
@@ -142,6 +144,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
       {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={actions.handleVote} isProjectOwner={isOwner} projectId={project.id} t={t} />}
       {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
       {project.type === 'roulette' && <RouletteView user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'project' && (

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare } from '../components/Icons';
+import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -52,9 +52,10 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       color: 'text-google-yellow', 
       bg: 'bg-google-yellow',
       // Legacy 'type' mapping: 'roulette' projects belong to 'select'
-      types: ['roulette'], 
+      types: ['roulette', 'queue'], 
       modules: [
-        { id: 'roulette', label: t('roulette'), icon: Dices, desc: t('rouletteDesc') }
+        { id: 'roulette', label: t('roulette'), icon: Dices, desc: t('rouletteDesc') },
+        { id: 'queue', label: t('queue'), icon: ListOrdered, desc: t('queueDesc') }
       ]
     },
     project: {
@@ -93,7 +94,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
        const type = project.type; 
        let routePrefix = 'collect';
        if (type === 'team') routePrefix = 'connect';
-       if (type === 'roulette') routePrefix = 'select';
+       if (type === 'roulette' || type === 'queue') routePrefix = 'select';
        if (type === 'project') routePrefix = 'project'; // Future route
        // For now, project type also goes to detail or stays here? 
        // User said "temporarily no application" so maybe just navigate to detail page which will show generic info?

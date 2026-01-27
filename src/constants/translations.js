@@ -184,7 +184,24 @@ export const TRANSLATIONS = {
     myTasks: "My Tasks",
     progress: "Progress",
     spotsLeft: "{count} spots left",
-    taken: "Taken"
+    taken: "Taken",
+    // Queue
+    queue: "Queue",
+    queueDesc: "Fair ordering by participants",
+    startQueue: "Start Queue",
+    queueResult: "Queue Result",
+    queueHelpTitle: "How to use Queue",
+    queueHelpSteps: [
+      "Enter your name and a random number.",
+      "Admin starts the queue generation.",
+      "Algorithm orders everyone fairly.",
+      "Results are shown in order."
+    ],
+    joinQueue: "Join Queue",
+    queueNumber: "Secret Number",
+    queueing: "Queueing...",
+    queueAlgorithm: "Algorithm Explanation",
+    queueAlgoDesc: "Participants pick a number. The list is ordered by sequentially calculating (Sum % Remaining) to pick the next person.",
   },
   zh: {
     // Language Switcher
@@ -371,6 +388,23 @@ export const TRANSLATIONS = {
     myTasks: "我的任务",
     progress: "进度",
     spotsLeft: "剩余 {count} 名额",
-    taken: "已领"
+    taken: "已领",
+    // Queue
+    queue: "排队",
+    queueDesc: "公平的随机排队工具",
+    startQueue: "开始排队",
+    queueResult: "排队结果",
+    queueHelpTitle: "如何使用排队",
+    queueHelpSteps: [
+        "输入名字和一个随机数字加入。",
+        "管理员开始生成队列。",
+        "算法会根据总和公平排序所有参与者。",
+        "查看最终的排队顺序。"
+    ],
+    joinQueue: "加入队列",
+    queueNumber: "幸运数字",
+    queueing: "排队中...",
+    queueAlgorithm: "算法解释",
+    queueAlgoDesc: "参与者选择一个数字。系统通过(总和 % 剩余人数)依次选出下一个人，直到所有人排好位置。",
   }
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link } from 'react-router-dom';
 import { onAuthStateChanged, isSignInWithEmailLink, signInWithEmailLink, signOut } from 'firebase/auth';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { TRANSLATIONS } from './constants/translations';
 import { LogOut, Shield } from './components/Icons';
@@ -42,6 +42,7 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
+  const [queueParticipants, setQueueParticipants] = useState([]);
   const [gatherFields, setGatherFields] = useState([]);
   const [gatherSubmissions, setGatherSubmissions] = useState([]);
   const [claimItems, setClaimItems] = useState([]);
@@ -77,10 +78,11 @@ export default function App() {
     const unsubItems = onSnapshot(collection(db, 'voting_items'), (s) => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRooms = onSnapshot(collection(db, 'rooms'), (s) => setRooms(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRoulette = onSnapshot(collection(db, 'roulette_participants'), (s) => setRouletteParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubQueue = onSnapshot(collection(db, 'queue_participants'), (s) => setQueueParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherFields = onSnapshot(collection(db, 'gather_fields'), (s) => setGatherFields(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherSubmissions = onSnapshot(collection(db, 'gather_submissions'), (s) => setGatherSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubGatherFields(); unsubGatherSubmissions(); unsubClaimItems(); };
+    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubClaimItems(); };
   }, [user]);
 
   // Actions
@@ -106,6 +108,38 @@ export default function App() {
       },
       handleKickMember: async (roomId, memberObject) => updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberObject) }),
       handleDeleteRoom: async (roomId) => deleteDoc(doc(db, 'rooms', roomId)),
+      handleJoinQueue: async (projectId, userName, value) => {
+         if (!user) return;
+         await addDoc(collection(db, 'queue_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), queueOrder: null });
+      },
+      handleGenerateQueue: async (projectId) => {
+         if (!user) return;
+         const parts = queueParticipants.filter(p => p.projectId === projectId);
+         if (parts.length === 0) return;
+         
+         let pool = [...parts];
+         let order = 1;
+         const updates = [];
+         
+         while (pool.length > 0) {
+            const currentSum = pool.reduce((acc, p) => acc + p.value, 0);
+            const index = currentSum % pool.length;
+            const winner = pool[index];
+            updates.push({ id: winner.id, queueOrder: order });
+            order++;
+            pool.splice(index, 1);
+         }
+         
+         const batch = writeBatch(db);
+         updates.forEach(u => {
+            const ref = doc(db, 'queue_participants', u.id);
+            batch.update(ref, { queueOrder: u.queueOrder });
+         });
+         const projectRef = doc(db, 'projects', projectId);
+         batch.update(projectRef, { status: 'finished' });
+         
+         await batch.commit();
+      },
       handleJoinRoulette: async (projectId, userName, value) => {
          if (!user) return;
          await addDoc(collection(db, 'roulette_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), isWinner: false });
@@ -198,6 +232,7 @@ export default function App() {
                     items={items}
                     rooms={rooms}
                     rouletteParticipants={rouletteParticipants}
+                    queueParticipants={queueParticipants}
                     gatherFields={gatherFields}
                     gatherSubmissions={gatherSubmissions}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
                     t={t}
@@ -205,10 +240,10 @@ export default function App() {
               ) : (
                 <Routes>
                     <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               )}
