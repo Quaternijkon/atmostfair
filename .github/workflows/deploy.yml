@@ -1,0 +1,39 @@
+name: Deploy to GitHub Pages
+
+on:
+  # 监听 main 分支的 push 事件
+  push:
+    branches: [ main ]
+
+# 给 GITHUB_TOKEN 写入权限，以便部署到 gh-pages 分支
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ⚙️
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies 🔧
+        run: npm install
+
+      - name: Build 🏗️
+        run: npm run build
+        env:
+          # 如果你的 package.json 中有相关的构建脚本配置，可以在这里调整
+          # 通常 vite build 会输出到 dist 目录
+          CI: false
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: dist # Vite 默认的构建输出目录是 dist
+          branch: gh-pages # 部署到的分支
