@@ -44,6 +44,7 @@ export default function App() {
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
   const [gatherFields, setGatherFields] = useState([]);
   const [gatherSubmissions, setGatherSubmissions] = useState([]);
+  const [claimItems, setClaimItems] = useState([]);
 
   // Auth & Magik Link Effect
   useEffect(() => {
@@ -78,7 +79,8 @@ export default function App() {
     const unsubRoulette = onSnapshot(collection(db, 'roulette_participants'), (s) => setRouletteParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherFields = onSnapshot(collection(db, 'gather_fields'), (s) => setGatherFields(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherSubmissions = onSnapshot(collection(db, 'gather_submissions'), (s) => setGatherSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubGatherFields(); unsubGatherSubmissions(); };
+    const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubGatherFields(); unsubGatherSubmissions(); unsubClaimItems(); };
   }, [user]);
 
   // Actions
@@ -133,6 +135,27 @@ export default function App() {
         // Check if already submitted? Handled in UI, and rule (or check here)
         // We will just add.
         await addDoc(collection(db, 'gather_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', data, submittedAt: Date.now() });
+      },
+      handleCreateClaimItem: async (projectId, title, maxClaims) => {
+         if (!user || !title.trim()) return;
+         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], createdAt: Date.now() });
+      },
+      handleDeleteClaimItem: async (itemId) => {
+         await deleteDoc(doc(db, 'claim_items', itemId));
+      },
+      handleToggleClaim: async (item, userName) => {
+         if (!user) return;
+         const ref = doc(db, 'claim_items', item.id);
+         const existingClaim = item.claimants.find(c => c.uid === user.uid);
+         if (existingClaim) {
+             // Unclaim
+             await updateDoc(ref, { claimants: arrayRemove(existingClaim) });
+         } else {
+             // Claim
+             if (item.claimants.length >= item.maxClaims) return; // Full
+             const claimInfo = { uid: user.uid, name: userName||user.displayName||'User', at: Date.now() };
+             await updateDoc(ref, { claimants: arrayUnion(claimInfo) });
+         }
       }
   };
 
@@ -176,17 +199,16 @@ export default function App() {
                     rooms={rooms}
                     rouletteParticipants={rouletteParticipants}
                     gatherFields={gatherFields}
-                    gatherSubmissions={gatherSubmissions}
-                    onClose={() => setShowAdmin(false)}
+                    gatherSubmissions={gatherSubmissions}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
                     t={t}
                 />
               ) : (
                 <Routes>
                     <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} actions={actions} t={t} />} />
-                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} actions={actions} t={t} />} />
-                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} actions={actions} t={t} />} />
-                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} actions={actions} t={t} />} />
+                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               )}

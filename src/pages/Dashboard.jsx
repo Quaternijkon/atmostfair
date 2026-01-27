@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList } from '../components/Icons';
+import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -40,9 +40,10 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       color: 'text-google-red', 
       bg: 'bg-google-red',
       // Legacy 'type' mapping: 'team' projects belong to 'connect'
-      types: ['team'], 
+      types: ['team', 'claim'], 
       modules: [
-        { id: 'team', label: t('teams'), icon: Users, desc: t('teamsDesc') }
+        { id: 'team', label: t('teams'), icon: Users, desc: t('teamsDesc') },
+        { id: 'claim', label: t('tasks'), icon: CheckSquare, desc: t('tasksDesc') }
       ]
     },
     select: { 

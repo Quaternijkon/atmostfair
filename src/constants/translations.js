@@ -171,7 +171,20 @@ export const TRANSLATIONS = {
     noFields: "No fields defined yet.",
     responses: "Responses",
     submit: "Submit",
-    fillForm: "Fill Form"
+    fillForm: "Fill Form",
+    // Claim / Tasks
+    tasks: "Task List",
+    tasksDesc: "Publish checklists for others to claim/sign up.",
+    taskTitle: "Task / Item",
+    maxClaims: "Max People",
+    claim: "Take",
+    unclaim: "Drop",
+    full: "Full",
+    claimedBy: "Taken by",
+    myTasks: "My Tasks",
+    progress: "Progress",
+    spotsLeft: "{count} spots left",
+    taken: "Taken"
   },
   zh: {
     // Language Switcher
@@ -345,6 +358,19 @@ export const TRANSLATIONS = {
     noFields: "暂无收集项，请等待创建者添加。",
     responses: "收集结果",
     submit: "提交",
-    fillForm: "填写表单"
+    fillForm: "填写表单",
+    // Claim / Tasks
+    tasks: "任务清单",
+    tasksDesc: "发布清单，供团队成员认领或报名参加。",
+    taskTitle: "任务/项目内容",
+    maxClaims: "限制人数",
+    claim: "接受",
+    unclaim: "放弃",
+    full: "已满",
+    claimedBy: "认领人",
+    myTasks: "我的任务",
+    progress: "进度",
+    spotsLeft: "剩余 {count} 名额",
+    taken: "已领"
   }
 };

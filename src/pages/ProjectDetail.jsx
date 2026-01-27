@@ -6,8 +6,9 @@ import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
 import GatherView from '../components/GatherView';
+import ClaimView from '../components/ClaimView';
 
-export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, gatherFields, gatherSubmissions, actions, t }) {
+export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, gatherFields, gatherSubmissions, claimItems, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -83,6 +84,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const projectRouletteData = rouletteData.filter(r => r.projectId === project.id);
   const projectGatherFields = (gatherFields || []).filter(f => f.projectId === project.id);
   const projectGatherSubmissions = (gatherSubmissions || []).filter(s => s.projectId === project.id);
+  const projectClaimItems = (claimItems || []).filter(c => c.projectId === project.id);
 
   return (
     <div className="animate-fade-in pb-20">
@@ -141,6 +143,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
       {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
       {project.type === 'roulette' && <RouletteView user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'project' && (
         <div className="flex flex-col items-center justify-center p-12 bg-m3-surface-container-low rounded-[24px]">
             <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
