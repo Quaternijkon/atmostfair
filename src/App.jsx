@@ -45,6 +45,7 @@ export default function App() {
   const [queueParticipants, setQueueParticipants] = useState([]);
   const [gatherFields, setGatherFields] = useState([]);
   const [gatherSubmissions, setGatherSubmissions] = useState([]);
+  const [scheduleSubmissions, setScheduleSubmissions] = useState([]);
   const [claimItems, setClaimItems] = useState([]);
 
   // Auth & Magik Link Effect
@@ -81,8 +82,9 @@ export default function App() {
     const unsubQueue = onSnapshot(collection(db, 'queue_participants'), (s) => setQueueParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherFields = onSnapshot(collection(db, 'gather_fields'), (s) => setGatherFields(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGatherSubmissions = onSnapshot(collection(db, 'gather_submissions'), (s) => setGatherSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubScheduleSubmissions = onSnapshot(collection(db, 'schedule_submissions'), (s) => setScheduleSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubClaimItems(); };
+    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubClaimItems(); };
   }, [user]);
 
   // Actions
@@ -170,6 +172,19 @@ export default function App() {
         // We will just add.
         await addDoc(collection(db, 'gather_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', data, submittedAt: Date.now() });
       },
+      handleUpdateScheduleConfig: async (projectId, config) => {
+         if (!user) return;
+         await updateDoc(doc(db, 'projects', projectId), { scheduleConfig: config });
+      },
+      handleSubmitSchedule: async (projectId, availability, submitterName) => {
+         if (!user) return;
+         const existing = scheduleSubmissions.find(s => s.projectId === projectId && s.uid === user.uid);
+         if (existing) {
+             await updateDoc(doc(db, 'schedule_submissions', existing.id), { availability, submittedAt: Date.now() });
+         } else {
+             await addDoc(collection(db, 'schedule_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', availability, submittedAt: Date.now() });
+         }
+      },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          if (!user || !title.trim()) return;
          await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: user.displayName || 'Anonymous', createdAt: Date.now() });
@@ -234,16 +249,17 @@ export default function App() {
                     rouletteParticipants={rouletteParticipants}
                     queueParticipants={queueParticipants}
                     gatherFields={gatherFields}
-                    gatherSubmissions={gatherSubmissions}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
+                    gatherSubmissions={gatherSubmissions}
+                    scheduleSubmissions={scheduleSubmissions}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
                     t={t}
                 />
               ) : (
                 <Routes>
                     <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
+                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} claimItems={claimItems} actions={actions} t={t} />} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               )}

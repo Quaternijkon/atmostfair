@@ -4,7 +4,7 @@ import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useUI } from './UIComponents';
 
-export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, claimItems, onClose, t }) {
+export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, scheduleSubmissions, claimItems, onClose, t }) {
   const { confirm, showToast } = useUI();
   // Logic to find orphans
   const projectIds = new Set(projects.map(p => p.id));
@@ -15,25 +15,18 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
     queue: (queueParticipants || []).filter(p => !projectIds.has(p.projectId)),
     fields: (gatherFields || []).filter(f => !projectIds.has(f.projectId)),
     submissions: (gatherSubmissions || []).filter(s => !projectIds.has(s.projectId)),
+    schedules: (scheduleSubmissions || []).filter(s => !projectIds.has(s.projectId)),
     claims: (claimItems || []).filter(c => !projectIds.has(c.projectId))
   };
 
   const hasOrphans = Object.values(orphans).some(arr => arr.length > 0);
 
   const cleanOrphans = async () => {
-    const counts = `
-      ${orphans.items.length} Votes
-      ${orphans.rooms.length} Rooms
-      ${orphans.participants.length} Roulette
-      ${orphans.queue.length} Queue
-      ${orphans.fields.length} Forms
-      ${orphans.submissions.length} Submissions
-      ${orphans.claims.length} Tasks
-    `;
+    const counts = ``;
     
     confirm({
       title: t('cleanOrphans') || 'Clean Orphans', 
-      message: t('orphanConfirm').replace('{items}', orphans.items.length).replace('{rooms}', orphans.rooms.length).replace('{participants}', orphans.participants.length) + ` (+ ${orphans.fields.length} fields, ${orphans.submissions.length} subs, ${orphans.claims.length} tasks, ${orphans.queue.length} queue)`,
+      message: t('orphanConfirm').replace('{items}', orphans.items.length).replace('{rooms}', orphans.rooms.length).replace('{participants}', orphans.participants.length) + ` (+ ${orphans.fields.length} fields, ${orphans.submissions.length} subs, ${orphans.schedules.length} schedules, ${orphans.claims.length} tasks, ${orphans.queue.length} queue)`,
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
@@ -46,6 +39,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
               ...orphans.queue.map(p => deleteDoc(doc(db, 'queue_participants', p.id))),
               ...orphans.fields.map(f => deleteDoc(doc(db, 'gather_fields', f.id))),
               ...orphans.submissions.map(s => deleteDoc(doc(db, 'gather_submissions', s.id))),
+              ...orphans.schedules.map(s => deleteDoc(doc(db, 'schedule_submissions', s.id))),
               ...orphans.claims.map(c => deleteDoc(doc(db, 'claim_items', c.id)))
           ];
           await Promise.all(promises);

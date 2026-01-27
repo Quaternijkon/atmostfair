@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered } from '../components/Icons';
+import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -28,10 +28,11 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       color: 'text-google-blue', 
       bg: 'bg-google-blue',
       // Legacy 'type' mapping: 'vote' projects belong to 'collect'
-      types: ['vote', 'gather'], 
+      types: ['vote', 'gather', 'schedule'], 
       modules: [
         { id: 'vote', label: t('voting'), icon: Vote, desc: t('votingDesc') },
-        { id: 'gather', label: t('gather'), icon: ClipboardList, desc: t('gatherDesc') }
+        { id: 'gather', label: t('gather'), icon: ClipboardList, desc: t('gatherDesc') },
+        { id: 'schedule', label: t('schedule'), icon: CalendarClock, desc: t('scheduleDesc') }
       ]
     },
     connect: { 
@@ -93,6 +94,8 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   const navigateToProject = (project) => {
        const type = project.type; 
        let routePrefix = 'collect';
+       // Add 'schedule' to 'collect' logic (if not auto-handled)
+       if (type === 'schedule') routePrefix = 'collect';
        if (type === 'team') routePrefix = 'connect';
        if (type === 'roulette' || type === 'queue') routePrefix = 'select';
        if (type === 'project') routePrefix = 'project'; // Future route
