@@ -4,7 +4,7 @@ import { onAuthStateChanged, isSignInWithEmailLink, signInWithEmailLink, signOut
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { TRANSLATIONS } from './constants/translations';
-import { LogOut, Shield, Bell } from './components/Icons';
+import { LogOut, Shield, Bell, Users, X } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
 import { UIProvider } from './components/UIComponents';
 import AnnouncementSystem from './components/AnnouncementSystem';
@@ -52,6 +52,8 @@ export default function App() {
   const [claimItems, setClaimItems] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const [showFriends, setShowFriends] = useState(false);
 
   // Auth & Magik Link Effect
   useEffect(() => {
@@ -283,7 +285,16 @@ export default function App() {
                 <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
                 
                 <AnnouncementSystem t={t} />
-                <FriendSystem currentUser={user} t={t} />
+                
+                <button 
+                  onClick={() => setShowFriends(true)} 
+                  className="p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 transition-colors relative"
+                  title={t('friends') || 'Friends'}
+                >
+                  <Users className="w-5 h-5" />
+                </button>
+
+                {showFriends && <FriendSystem user={user} onClose={() => setShowFriends(false)} t={t} />}
 
                 {/* Notifications & Mailbox */}
                 <div className="relative">
