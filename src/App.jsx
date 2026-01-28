@@ -205,7 +205,7 @@ export default function App() {
       handleCreateBookingSlot: async (projectId, start, end, label) => {
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
-         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, createdAt: Date.now() });
+         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, createdAt: Date.now() });
       },
       handleDeleteBookingSlot: async (slotId) => deleteDoc(doc(db, 'booking_slots', slotId)),
       handleBookSlot: async (slotId, bookingData) => {

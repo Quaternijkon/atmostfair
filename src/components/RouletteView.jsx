@@ -122,16 +122,21 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       }
       else if (mode === 'elim') {
           let survivorsNeeded = parseInt(config.survivorCount) || 1;
-          if (survivorsNeeded >= pool.length) survivorsNeeded = pool.length - 1; 
+          if (survivorsNeeded < 1) survivorsNeeded = 1;
+          if (survivorsNeeded >= pool.length && pool.length > 0) survivorsNeeded = Math.max(1, pool.length - 1); 
           
           let round = 1;
           // Phase 1: Eliminate until survivors count reached
           let currentPool = pool.filter(p => !eliminated.has(p.uid));
           
-          while (currentPool.length > survivorsNeeded) {
+          let loopGuard = 0;
+          while (currentPool.length > survivorsNeeded && loopGuard < 1000) {
+               loopGuard++;
                const randVal = prng.range(currentPool.length);
                const loser = currentPool[randVal];
                
+               if (!loser) break; // Should not happen
+
                steps.push({
                    type: 'elim',
                    step: round++,
@@ -147,9 +152,13 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           let survivors = pool.filter(p => !eliminated.has(p.uid));
           
           // For display, adding survivors as winners step
-          while (survivors.length > 0) {
+          loopGuard = 0;
+          while (survivors.length > 0 && loopGuard < 1000) {
+              loopGuard++;
               const randVal = prng.range(survivors.length);
               const winner = survivors[randVal];
+              if (!winner) break;
+
                steps.push({
                    type: 'win',
                    step: round++,

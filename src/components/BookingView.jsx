@@ -167,97 +167,118 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
         )}
 
         {config.mode === 'half' && (
-            <div className="overflow-x-auto">
-                <div className="min-w-[600px] bg-m3-surface-container rounded-xl overflow-hidden shadow-sm">
-                    {/* Header Row */}
-                    <div className="grid grid-cols-[100px_1fr_1fr_1fr] bg-m3-surface-container-high border-b border-m3-outline-variant/30">
-                        <div className="p-4 font-medium text-xs text-m3-on-surface-variant uppercase tracking-wider items-center flex justify-center sticky left-0 bg-m3-surface-container-high z-10">{t('date')}</div>
-                        {['Morning', 'Afternoon', 'Evening'].map(p => (
-                            <div key={p} className="p-4 text-center font-medium text-sm text-m3-on-surface">
-                                <div className="flex flex-col gap-1 items-center">
-                                    <span className="opacity-80">{t(p.toLowerCase())}</span>
-                                    {isOwner && (
-                                        <div className="flex gap-1">
-                                            <button onClick={() => dates.forEach(d => toggleSlot(`${d}_${p}`, `${d}_${p}`, p))} className="text-[10px] text-google-blue hover:underline">All</button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+            <div className="overflow-x-auto rounded-xl border border-m3-outline-variant/30 bg-m3-surface-container/20">
+                <table className="w-full text-sm border-collapse">
+                    <thead>
+                        <tr className="bg-m3-surface-container-high text-xs text-m3-on-surface-variant font-medium">
+                            <th className="p-3 text-left w-24 sticky left-0 bg-m3-surface-container-high z-20 border-b border-m3-outline-variant/20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                {t('date')} / {t('time')}
+                            </th>
+                            {dates.map(date => (
+                                <th key={date} className="p-3 min-w-[120px] border-b border-m3-outline-variant/20 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <span className="font-bold text-m3-on-surface">{new Date(date).toLocaleDateString(undefined, {weekday:'short'})}</span>
+                                        <span className="opacity-80">{new Date(date).toLocaleDateString(undefined, {month:'short', day:'numeric'})}</span>
+                                        {isOwner && (
+                                            <button 
+                                                onClick={() => {
+                                                    ['Morning', 'Afternoon', 'Evening'].forEach(p => toggleSlot(`${date}_${p}`, `${date}_${p}`, p));
+                                                }} 
+                                                className="text-[10px] text-google-blue hover:bg-google-blue/10 px-2 py-0.5 rounded transition-colors"
+                                            >
+                                                Select All
+                                            </button>
+                                        )}
+                                    </div>
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {['Morning', 'Afternoon', 'Evening'].map(period => (
+                            <tr key={period} className="border-b border-m3-outline-variant/10 hover:bg-black/5 transition-colors">
+                                <td className="p-3 font-medium text-m3-on-surface sticky left-0 bg-m3-surface-container z-10 border-r border-m3-outline-variant/20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                    <div className="flex flex-col gap-1 items-start">
+                                        <span>{t(period.toLowerCase())}</span>
+                                        {isOwner && (
+                                            <button 
+                                                onClick={() => {
+                                                    dates.forEach(d => toggleSlot(`${d}_${period}`, `${d}_${period}`, period));
+                                                }}
+                                                className="text-[10px] text-google-blue hover:bg-google-blue/10 px-2 py-0.5 rounded transition-colors"
+                                            >
+                                                Select All
+                                            </button>
+                                        )}
+                                    </div>
+                                </td>
+                                {dates.map(date => {
+                                    const slotStart = `${date}_${period}`;
+                                    const existing = slots.find(s => s.start === slotStart);
+                                    const isBooked = existing?.bookedBy;
+                                    const isMine = existing?.bookedBy === user?.uid;
+
+                                    const handleClick = () => {
+                                        if (isOwner) toggleSlot(slotStart, slotStart, period);
+                                        else if (existing && !isBooked) setShowBookModal(existing);
+                                    };
+
+                                    // Styling Logic (Copied and adapted for Table Cell)
+                                    let content;
+                                    let cellClass = "p-2 rounded-lg transition-all flex flex-col items-center justify-center text-xs h-[80px] w-full cursor-pointer border ";
+                                    
+                                    if (isOwner) {
+                                        if (existing) {
+                                            if (isBooked) {
+                                                cellClass += "bg-m3-primary-container border-google-blue text-m3-on-primary-container";
+                                                content = (
+                                                    <>
+                                                        <div className="font-bold truncate w-full text-center">{existing.bookerName}</div>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleKick(existing); }} className="mt-1 p-1 hover:bg-google-red hover:text-white rounded-full transition-colors"><UserMinus className="w-4 h-4" /></button>
+                                                    </>
+                                                );
+                                            } else {
+                                                cellClass += "bg-google-green text-white border-transparent hover:brightness-95";
+                                                content = <CheckSquare className="w-5 h-5" />;
+                                            }
+                                        } else {
+                                            cellClass += "bg-transparent border-dashed border-m3-outline-variant text-m3-on-surface-variant opacity-30 hover:opacity-100 hover:border-google-blue hover:text-google-blue";
+                                            content = <Plus className="w-5 h-5" />;
+                                        }
+                                    } else {
+                                        // User View
+                                        if (existing) {
+                                            if (isBooked) {
+                                                if (isMine) {
+                                                    cellClass += "bg-google-green text-white border-transparent shadow-elevation-1";
+                                                    content = <><span className="font-bold">{t('booked')}</span><div className="text-[10px] opacity-80">(You)</div></>;
+                                                } else {
+                                                    cellClass += "bg-m3-surface-container-high border-transparent text-m3-on-surface-variant opacity-50 cursor-not-allowed";
+                                                    content = <div className="flex flex-col items-center"><span className="line-through">{t('booked')}</span><span className="text-[9px] truncate w-[80px] text-center">{existing.bookerName}</span></div>;
+                                                }
+                                            } else {
+                                                cellClass += "bg-white border-google-green text-google-green hover:bg-google-green hover:text-white shadow-sm";
+                                                content = <span className="font-bold">{t('book')}</span>;
+                                            }
+                                        } else {
+                                            cellClass += "bg-m3-surface-container opacity-20 border-transparent cursor-not-allowed";
+                                            content = <span className="text-[10px]">-</span>;
+                                        }
+                                    }
+
+                                    return (
+                                        <td key={date} className="p-1 align-top">
+                                            <div onClick={handleClick} className={cellClass}>
+                                                {content}
+                                            </div>
+                                        </td>
+                                    );
+                                })}
+                            </tr>
                         ))}
-                    </div>
-                    {/* Data Rows */}
-                    {dates.map(date => (
-                         <div key={date} className="grid grid-cols-[100px_1fr_1fr_1fr] border-b border-m3-outline-variant/10 last:border-0 hover:bg-black/5 transition-colors">
-                             <div className="p-3 text-xs font-medium text-m3-on-surface-variant flex flex-col justify-center items-center sticky left-0 bg-m3-surface-container z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                 <span className="font-bold text-sm text-m3-on-surface">{new Date(date).toLocaleDateString(undefined, {day:'numeric'})}</span>
-                                 <span className="uppercase">{new Date(date).toLocaleDateString(undefined, {weekday:'short'})}</span>
-                             </div>
-                             {['Morning', 'Afternoon', 'Evening'].map(period => {
-                                 const slotStart = `${date}_${period}`;
-                                 const existing = slots.find(s => s.start === slotStart);
-                                 const isBooked = existing?.bookedBy;
-                                 const isMine = existing?.bookedBy === user?.uid;
-
-                                 const handleClick = () => {
-                                     if (isOwner) toggleSlot(slotStart, slotStart, period);
-                                     else if (existing && !isBooked) setShowBookModal(existing);
-                                 };
-
-                                 // Styling Logic
-                                 let content;
-                                 let cellClass = "p-2 m-1 rounded-lg transition-all flex flex-col items-center justify-center text-xs h-[80px] cursor-pointer border ";
-                                 
-                                 if (isOwner) {
-                                     if (existing) {
-                                         if (isBooked) {
-                                             cellClass += "bg-m3-primary-container border-google-blue text-m3-on-primary-container";
-                                             content = (
-                                                 <>
-                                                     <div className="font-bold truncate w-full text-center">{existing.bookerName}</div>
-                                                     <button onClick={(e) => { e.stopPropagation(); handleKick(existing); }} className="mt-1 p-1 hover:bg-google-red hover:text-white rounded-full transition-colors"><UserMinus className="w-4 h-4" /></button>
-                                                 </>
-                                             );
-                                         } else {
-                                             cellClass += "bg-google-green text-white border-transparent hover:brightness-95";
-                                             content = <CheckSquare className="w-5 h-5" />;
-                                         }
-                                     } else {
-                                         cellClass += "bg-transparent border-dashed border-m3-outline-variant text-m3-on-surface-variant opacity-30 hover:opacity-100 hover:border-google-blue hover:text-google-blue";
-                                         content = <Plus className="w-5 h-5" />;
-                                     }
-                                 } else {
-                                     // User View
-                                     if (existing) {
-                                         if (isBooked) {
-                                             if (isMine) {
-                                                 cellClass += "bg-google-green text-white border-transparent shadow-elevation-1";
-                                                 content = <><span className="font-bold">{t('booked')}</span><div className="text-[10px] opacity-80">(You)</div></>;
-                                             } else {
-                                                 cellClass += "bg-m3-surface-container-high border-transparent text-m3-on-surface-variant opacity-50 cursor-not-allowed";
-                                                 content = <div className="flex flex-col items-center"><span className="line-through">{t('booked')}</span><span className="text-[9px]">{existing.bookerName}</span></div>;
-                                             }
-                                         } else {
-                                             cellClass += "bg-white border-google-green text-google-green hover:bg-google-green hover:text-white shadow-sm";
-                                             content = <span className="font-bold">{t('book')}</span>;
-                                         }
-                                     } else {
-                                         cellClass += "bg-m3-surface-container opacity-20 border-transparent cursor-not-allowed";
-                                         content = <span className="text-[10px]">-</span>;
-                                     }
-                                 }
-
-                                 return (
-                                     <div key={period} onClick={handleClick} className="flex justify-center items-center">
-                                         <div className={`${cellClass} w-full`}>
-                                             {content}
-                                         </div>
-                                     </div>
-                                 );
-                             })}
-                         </div>
-                    ))}
-                </div>
-                {isOwner && <div className="text-center text-xs text-m3-on-surface-variant mt-2">Click empty slots to enable them. Red slots are booked.</div>}
+                    </tbody>
+                </table>
+                {isOwner && <div className="text-center text-xs text-m3-on-surface-variant p-2 border-t border-m3-outline-variant/10">Click empty slots to enable them. Red slots are booked.</div>}
             </div>
         )}
 
