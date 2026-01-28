@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../main';
+import { db } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { Flag, X, Info, AlertTriangle } from './Icons';
 

@@ -47,8 +47,6 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   
   // Calculate simulation steps and final results
   const simulationData = useMemo(() => {
-  // Calculate simulation steps and final results
-  const simulationData = useMemo(() => {
       // 1. Calculate Initial Total
       const initialTotal = sortedParticipants.reduce((acc, curr) => acc + (parseInt(curr.value, 10) || 0), 0);
       
