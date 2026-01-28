@@ -3,25 +3,6 @@ import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForwar
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIComponents';
 
-// --- Deterministic PRNG ---
-class PseudoRandom {
-  constructor(seed) {
-    this.seed = seed % 2147483647;
-    if (this.seed <= 0) this.seed += 2147483646;
-  }
-  next() {
-    this.seed = (this.seed * 16807) % 2147483647;
-    return this.seed;
-  }
-  nextFloat() {
-    return (this.next() - 1) / 2147483646;
-  }
-  // Returns integer [0, n-1]
-  range(n) {
-    return Math.floor(this.nextFloat() * n);
-  }
-}
-
 export default function RouletteView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const { showToast } = useUI();
   
@@ -52,6 +33,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
   // -- Derived Data --
   const sortedParticipants = useMemo(() => [...participants].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)), [participants]);
+  const hasJoined = useMemo(() => user && participants.some(p => p.uid === user.uid), [participants, user]);
   
   // Sync config from project if not editing
   useEffect(() => {
@@ -65,28 +47,48 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   
   // Calculate simulation steps and final results
   const simulationData = useMemo(() => {
-      // 1. Calculate Seed
-      const totalValue = sortedParticipants.reduce((acc, curr) => acc + (curr.value || 0), 0);
-      const prng = new PseudoRandom(totalValue); 
+  // Calculate simulation steps and final results
+  const simulationData = useMemo(() => {
+      // 1. Calculate Initial Total
+      const initialTotal = sortedParticipants.reduce((acc, curr) => acc + (parseInt(curr.value, 10) || 0), 0);
       
       const steps = [];
       const winners = [];
-      const eliminated = new Set();
       
-      let pool = sortedParticipants.map(p => ({...p})); // Clone
+      // Clone for mutation
+      let pool = sortedParticipants.map(p => ({...p})); 
+      let currentSum = initialTotal;
       
+      // For "Repeat Allowed" mode ONLY, we need a PRNG state because sum doesn't change
+      // Using standard LCG constant: 16807 (7^5)
+      let prngState = initialTotal % 2147483647;
+      if (prngState <= 0) prngState += 2147483646;
+
+      const getNextIndex = (currentPoolLength, isRepeatMode) => {
+          if (isRepeatMode) {
+              // Apply formula to shuffle ONLY if repeats allowed (preserves randomness when state doesn't change)
+              prngState = (prngState * 16807) % 2147483647;
+              return Math.abs(prngState - 1) % currentPoolLength;
+          } else {
+              // STRICTLY use Sum % Length per user request
+              // This ensures the result is purely derived from the current pool's remaining sum
+              return Math.abs(currentSum) % currentPoolLength;
+          }
+      };
+
       const mode = config.mode || 'classic';
       
       if (mode === 'classic') {
           if (pool.length > 0) {
-              const winnerIndex = totalValue % pool.length;
-              const winner = pool[winnerIndex];
+              // Classic Mode: Directly use Total Sum Modulo Count
+              const idx = getNextIndex(pool.length, false);
+              const winner = pool[idx];
               steps.push({ 
                   type: 'win', 
                   step: 1, 
                   target: winner, 
                   label: t('winner'),
-                  detail: `Index: ${winnerIndex} (Sum ${totalValue} % ${pool.length})` 
+                  detail: `Index: ${idx} (Sum ${currentSum} % ${pool.length})` 
               });
               winners.push({...winner, rank: 1, prize: 'Winner'});
           }
@@ -100,25 +102,33 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           
           if (config.order === 'rev') prizeQueue = prizeQueue.reverse();
           
-          prizeQueue.forEach((prizeName, idx) => {
-               // Filter pool if no repeat
-               let currentPool = config.allowRepeat ? pool : pool.filter(p => !eliminated.has(p.uid));
-               
-               if (currentPool.length > 0) {
-                   const randVal = prng.range(currentPool.length);
-                   const winner = currentPool[randVal];
-                   
-                   steps.push({
-                       type: 'win',
-                       step: idx + 1,
-                       target: winner,
-                       label: `${t('rWinner')}: ${prizeName}`,
-                       detail: `calc(${randVal})`
-                   });
-                   winners.push({...winner, prize: prizeName, rank: idx+1});
-                   eliminated.add(winner.uid);
+          const isRepeat = config.allowRepeat;
+
+          for (let i = 0; i < prizeQueue.length; i++) {
+               if (pool.length === 0) break;
+
+               const prizeName = prizeQueue[i];
+               const idx = getNextIndex(pool.length, isRepeat);
+               const winner = pool[idx];
+
+               steps.push({
+                   type: 'win',
+                   step: i + 1,
+                   target: winner,
+                   label: `${t('rWinner')}: ${prizeName}`,
+                   detail: isRepeat 
+                      ? `Random: ${idx}` 
+                      : `Index: ${idx} (Sum ${currentSum} % ${pool.length})`
+               });
+               winners.push({...winner, prize: prizeName, rank: i+1});
+
+               if (!isRepeat) {
+                   // Remove from pool and subtract value (As requested)
+                   const val = parseInt(winner.value, 10) || 0;
+                   currentSum -= val;
+                   pool.splice(idx, 1);
                }
-          });
+          }
       }
       else if (mode === 'elim') {
           let survivorsNeeded = parseInt(config.survivorCount) || 1;
@@ -127,36 +137,37 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           
           let round = 1;
           // Phase 1: Eliminate until survivors count reached
-          let currentPool = pool.filter(p => !eliminated.has(p.uid));
+          // Elimination naturally implies NO repeats
           
           let loopGuard = 0;
-          while (currentPool.length > survivorsNeeded && loopGuard < 1000) {
+          while (pool.length > survivorsNeeded && loopGuard < 1000) {
                loopGuard++;
-               const randVal = prng.range(currentPool.length);
-               const loser = currentPool[randVal];
+               const idx = getNextIndex(pool.length, false);
+               const loser = pool[idx];
                
-               if (!loser) break; // Should not happen
+               if (!loser) break; 
 
                steps.push({
                    type: 'elim',
                    step: round++,
                    target: loser,
                    label: t('rEliminated'),
-                   detail: `calc(${randVal})`
+                   detail: `Index: ${idx} (Sum ${currentSum} % ${pool.length})`
                });
-               eliminated.add(loser.uid);
-               currentPool = pool.filter(p => !eliminated.has(p.uid));
+               
+               // Remove loser and subtract value
+               const val = parseInt(loser.value, 10) || 0;
+               currentSum -= val;
+               pool.splice(idx, 1);
           }
           
           // Phase 2: Remainder are winners
-          let survivors = pool.filter(p => !eliminated.has(p.uid));
-          
-          // For display, adding survivors as winners step
+          // Pick them out one by one to give them an order/rank
           loopGuard = 0;
-          while (survivors.length > 0 && loopGuard < 1000) {
+          while (pool.length > 0 && loopGuard < 1000) {
               loopGuard++;
-              const randVal = prng.range(survivors.length);
-              const winner = survivors[randVal];
+              const idx = getNextIndex(pool.length, false);
+              const winner = pool[idx];
               if (!winner) break;
 
                steps.push({
@@ -167,11 +178,14 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                    detail: `Survivor`
                });
                winners.push(winner);
-               survivors = survivors.filter(s => s.uid !== winner.uid);
+
+               const val = parseInt(winner.value, 10) || 0;
+               currentSum -= val;
+               pool.splice(idx, 1);
           }
       }
       
-      return { steps, winners, totalValue };
+      return { steps, winners, totalValue: initialTotal };
   }, [sortedParticipants, config, t]);
 
   // -- Handlers --
@@ -373,9 +387,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
   // -- Main View --
 
-  if (isFinished && !replayState.active) {
-      return (
-        <div className="space-y-6 animate-fade-in relative pb-10">
+  const renderResults = () => (
+        <div className="mb-8 space-y-6 animate-fade-in relative">
             <div className="bg-m3-surface-container-high rounded-[32px] p-10 text-center border border-google-yellow/50 shadow-elevation-1">
                  <div className="mb-6"><Crown className="w-12 h-12 inline-block text-google-yellow" /></div>
                  <h2 className="text-3xl font-normal mb-8">{t('rDrawComplete')}</h2>
@@ -406,11 +419,12 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
             
             <InfoCard title={t('distributionChart')} steps={[t('availAfterResults')]} />
         </div>
-      );
-  }
+  );
 
   return (
     <div className="space-y-8 animate-fade-in relative pb-10">
+      
+      {isFinished && !replayState.active && renderResults()}
       
       {/* Setup / Config (Admin only) */}
       {!isFinished && isOwner && renderConfigPanel()}
@@ -445,7 +459,15 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       {/* Entry Form (If active) */}
       {!isFinished && !isStopped && (
         <div className="bg-m3-surface p-8 rounded-[28px] border border-m3-outline-variant/50 relative overflow-hidden">
-             {/* Same entry form as before... */}
+             {hasJoined ? (
+                 <div className="text-center py-8">
+                     <div className="w-16 h-16 bg-google-green/20 text-google-green rounded-full flex items-center justify-center mx-auto mb-4">
+                         <Lock className="w-8 h-8" />
+                     </div>
+                     <h3 className="text-xl font-medium mb-2">{t('youHaveJoined') || 'You have joined'}</h3>
+                     <p className="text-m3-on-surface-variant text-sm">{t('waitForDraw') || 'Your entry has been recorded.'}</p>
+                 </div>
+             ) : (
              <div className="flex flex-col md:flex-row gap-8 items-start">
                 <div className="flex-1 w-full">
                   <h3 className="font-normal text-2xl text-m3-on-surface mb-2">{t('joinToPlay')}</h3>
@@ -458,6 +480,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                   <button onClick={() => actions.handleJoinRoulette(project.id, joinName, joinValue)} className="w-full mt-8 bg-google-yellow text-gray-900 text-lg font-medium py-3 rounded-full hover:shadow-elevation-1 transition-shadow">{t('submitEntry')}</button>
                 </div>
               </div>
+             )}
         </div>
       )}
 

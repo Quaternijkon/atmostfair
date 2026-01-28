@@ -171,7 +171,7 @@ export const TRANSLATIONS = {
     rSaveConfig: "Save Configuration",
     rStartDraw: "Start Draw",
     rDrawComplete: "Draw Complete!",
-    rCreatorWeightPublic: "Reveal Creator's Weight",
+    rCreatorWeightPublic: "Reveal Creator's Value",
     // Admin
     adminTitle: "Admin Console",
     exitAdmin: "Exit Console",
@@ -449,7 +449,7 @@ export const TRANSLATIONS = {
     rSaveConfig: "保存配置",
     rStartDraw: "开始抽奖",
     rDrawComplete: "抽奖完成！",
-    rCreatorWeightPublic: "公开创建者的权重",
+    rCreatorWeightPublic: "公开创建者的数值",
     // Admin
     adminTitle: "后台管理",
     exitAdmin: "退出管理",

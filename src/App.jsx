@@ -149,6 +149,8 @@ export default function App() {
       },
       handleJoinRoulette: async (projectId, userName, value) => {
          if (!user) return;
+         const existing = rouletteParticipants.find(p => p.projectId === projectId && p.uid === user.uid);
+         if (existing) return; 
          await addDoc(collection(db, 'roulette_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), isWinner: false });
       },
       handleUpdateRouletteConfig: async (projectId, config) => {
