@@ -35,6 +35,11 @@ export const Users = (props) => <IconBase {...props}><path d="M16 21v-2a4 4 0 0 
 export const Vote = (props) => <IconBase {...props}><rect width="18" height="18" x="3" y="3" rx="2" /><path d="m9 12 2 2 4-4" /></IconBase>;
 export const Dices = (props) => <IconBase {...props}><rect width="12" height="12" x="2" y="10" rx="2" ry="2" /><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6" /><path d="M6 18h.01" /><path d="M10 14h.01" /><path d="M15 6h.01" /><path d="M18 9h.01" /></IconBase>;
 export const Crown = (props) => <IconBase {...props}><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14" /></IconBase>;
+export const Settings = (props) => <IconBase {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.72l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></IconBase>;
+export const Play = (props) => <IconBase {...props}><polygon points="5 3 19 12 5 21 5 3" /></IconBase>;
+export const Pause = (props) => <IconBase {...props}><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></IconBase>;
+export const FastForward = (props) => <IconBase {...props}><polygon points="13 19 22 12 13 5 13 19" /><polygon points="2 19 11 12 2 5 2 19" /></IconBase>;
+export const RotateCcw = (props) => <IconBase {...props}><path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></IconBase>;
 export const Key = (props) => <IconBase {...props}><path d="m21 2-2 2m-7.6 7.6a6.5 6.5 0 1 1-9.2 7.8 6.5 6.5 0 0 1 9.2-7.8zm0 0 3.8-3.8m-5.5 5.5 2.1 2.1" /></IconBase>;
 export const X = (props) => <IconBase {...props}><path d="M18 6 6 18" /><path d="m6 6 18 18" /></IconBase>;
 export const ChartLine = (props) => <IconBase {...props}><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></IconBase>;

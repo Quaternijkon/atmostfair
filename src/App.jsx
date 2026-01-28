@@ -151,6 +151,14 @@ export default function App() {
          if (!user) return;
          await addDoc(collection(db, 'roulette_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), isWinner: false });
       },
+      handleUpdateRouletteConfig: async (projectId, config) => {
+         if (!user) return;
+         await updateDoc(doc(db, 'projects', projectId), { rouletteConfig: config });
+      },
+      handleSaveRouletteResult: async (projectId, resultData) => {
+         // Saves the complex result blob and marks project finished
+         await updateDoc(doc(db, 'projects', projectId), { rouletteResult: resultData, status: 'finished' });
+      },
       handleRecordWinner: async (projectId, winnerInfo) => {
          await updateDoc(doc(db, 'projects', projectId), { winners: arrayUnion({ ...winnerInfo, wonAt: Date.now() }), status: 'finished' });
          if (winnerInfo.participantId) await updateDoc(doc(db, 'roulette_participants', winnerInfo.participantId), { isWinner: true });
