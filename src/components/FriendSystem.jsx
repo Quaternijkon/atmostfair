@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, updateDoc, startAt, endAt, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
@@ -175,9 +176,21 @@ export default function FriendSystem({ user, onClose, t }) {
     // --- Render ---
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
+        <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
             {/* Modal Container: Max width restricted for desktop, full width/height adaptable for mobile */}
-            <div className="bg-m3-surface w-full md:max-w-4xl h-[85vh] md:h-[650px] rounded-[28px] overflow-hidden flex shadow-elevation-3 relative">
+            <motion.div 
+                initial={{ scale: 0.95, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 30 }}
+                transition={{ type: "spring", damping: 25, stiffness: 350 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-m3-surface w-full md:max-w-4xl h-[85vh] md:h-[650px] rounded-[28px] overflow-hidden flex shadow-elevation-3 relative"
+            >
                 
                 {/* Close Button (Global for Desktop, integrated in headers for mobile) */}
                 <button onClick={onClose} className="absolute top-4 right-4 z-[60] p-2 bg-black/10 hover:bg-black/20 rounded-full md:hidden text-m3-on-surface">
@@ -331,8 +344,8 @@ export default function FriendSystem({ user, onClose, t }) {
                     )}
                 </div>
 
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 }
 

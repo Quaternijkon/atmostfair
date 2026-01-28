@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, isSignInWithEmailLink, signInWithEmailLink, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
@@ -15,7 +16,21 @@ import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import AdminDashboard from './components/AdminDashboard';
 
-export default function App() {
+// Page Transition Wrapper
+const PageTransition = ({ children }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.98 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 0.98 }}
+    transition={{ duration: 0.3, ease: "anticipate" }}
+    className="w-full h-full"
+  >
+    {children}
+  </motion.div>
+);
+
+function AppContent() {
+  const location = useLocation();
   const [lang, setLang] = useState(localStorage.getItem('app_lang') || 'zh');
   const t = (key, params = {}) => {
     let str = TRANSLATIONS[lang]?.[key] || key;
@@ -271,7 +286,6 @@ export default function App() {
   if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-m3-surface">{t('loading')}</div>;
 
   return (
-    <Router>
       <UIProvider>
         {!user ? (
           <Login lang={lang} setLang={setLang} t={t} />
@@ -294,7 +308,9 @@ export default function App() {
                   <Users className="w-5 h-5" />
                 </button>
 
-                {showFriends && <FriendSystem user={user} onClose={() => setShowFriends(false)} t={t} />}
+                <AnimatePresence>
+                  {showFriends && <FriendSystem user={user} onClose={() => setShowFriends(false)} t={t} />}
+                </AnimatePresence>
 
                 {/* Notifications & Mailbox */}
                 <div className="relative">
@@ -350,19 +366,28 @@ export default function App() {
                     t={t}
                 />
               ) : (
-                <Routes>
-                    <Route path="/" element={<Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} />} />
-                    <Route path="/collect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/connect/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/select/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="/projects/:id" element={<ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} />} />
-                    <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
+                <AnimatePresence mode="wait">
+                  <Routes location={location} key={location.pathname}>
+                      <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
+                      <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                </AnimatePresence>
               )}
             </main>
           </div>
         )}
       </UIProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <Router>
+      <AppContent />
     </Router>
   );
 }

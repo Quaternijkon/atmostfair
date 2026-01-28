@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
@@ -146,22 +147,42 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     team: { color: 'text-google-red', bgParams: 'bg-google-red/10', activeColor: 'text-google-red', activeBg: 'bg-google-red/5' },
     roulette: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
     project: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
+    // Map other types for safety
+    gather: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
+    schedule: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
+    book: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
+    claim: { color: 'text-google-red', bgParams: 'bg-google-red/10', activeColor: 'text-google-red', activeBg: 'bg-google-red/5' },
+    queue: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
   };
 
-  const TabButton = ({ id, label, icon: Icon, category }) => {
-      const isActive = activeTab === id;
-      // Dynamic button color when active
-      const activeClass = isActive 
-        ? `${category.bg} text-white shadow-md` 
-        : 'text-m3-on-surface-variant hover:bg-m3-on-surface/5';
+  const TAB_COLORS = {
+    collect: '#4285F4',
+    connect: '#EA4335',
+    select: '#FBBC05',
+    project: '#34A853',
+  };
 
+  const TabButton = ({ id, label, icon: Icon }) => {
+      const isActive = activeTab === id;
+      
       return (
         <button 
             onClick={() => { setActiveTab(id); setShowCreate(false); setSelectedModule(null); }} 
-            className={`flex-auto py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-all rounded-full ${activeClass}`}
+            className="relative flex-auto py-2.5 text-sm font-medium flex items-center justify-center gap-2 rounded-full outline-none focus-visible:ring-2 ring-google-blue/50"
         >
-          {isActive ? <Icon className="w-4 h-4" /> : <Icon className="w-4 h-4 opacity-50" />}
-          <span className={isActive ? 'inline' : 'hidden md:inline'}>{label}</span>
+          {isActive && (
+            <motion.div
+              layoutId="activeTabPill"
+              className="absolute inset-0 rounded-full shadow-md"
+              style={{ backgroundColor: TAB_COLORS[id] }}
+              initial={false}
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            />
+          )}
+          <span className={`relative z-10 flex items-center gap-2 transition-colors duration-200 ${isActive ? 'text-white' : 'text-m3-on-surface-variant group-hover:text-m3-on-surface'}`}>
+            <Icon className="w-4 h-4" />
+            <span className={isActive ? 'inline' : 'hidden md:inline'}>{label}</span>
+          </span>
         </button>
       );
   };
@@ -288,45 +309,56 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
 
 // Helper to render grid to keep main component clean
 const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
-  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-    {filteredProjects.map((project) => {
-      // Map project type to legacy style keys
-      const styleKey = project.type; 
-      const activeStyle = styles[styleKey] || styles.vote;
+  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[50vh] content-start">
+    <AnimatePresence mode="popLayout">
+      {filteredProjects.map((project) => {
+        // Map project type to legacy style keys
+        const styleKey = project.type; 
+        const activeStyle = styles[styleKey] || styles.vote;
 
-      const isActive = project.status !== 'stopped' && project.status !== 'finished';
-      const statusColor = isActive ? activeStyle.activeColor : 'text-m3-on-surface-variant'; 
-      const statusBg = isActive ? activeStyle.activeBg : 'bg-m3-on-surface/5';
-      const statusIconBg = isActive ? activeStyle.bgParams : 'bg-m3-on-surface/10'; // Circle Bg
-      
-      return (
-      <div key={project.id} onClick={() => handleProjectClick(project)} className={`group cursor-pointer p-0 rounded-[24px] border border-transparent hover:border-m3-outline-variant hover:shadow-elevation-1 transition-all overflow-hidden relative active:scale-[0.99] active:shadow-none ${statusBg}`}>
-        <div className="p-5 h-full flex flex-col">
-          <div className="flex justify-between items-start mb-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusIconBg}`}>
-              {project.type === 'vote' ? <Vote className={`w-5 h-5 ${statusColor}`} /> :
-                project.type === 'team' ? <Users className={`w-5 h-5 ${statusColor}`} /> :
-                project.type === 'project' ? <FolderPlus className={`w-5 h-5 ${statusColor}`} /> :
-                  <Dices className={`w-5 h-5 ${statusColor}`} />}
+        const isActive = project.status !== 'stopped' && project.status !== 'finished';
+        const statusColor = isActive ? activeStyle.activeColor : 'text-m3-on-surface-variant'; 
+        const statusBg = isActive ? activeStyle.activeBg : 'bg-m3-on-surface/5';
+        const statusIconBg = isActive ? activeStyle.bgParams : 'bg-m3-on-surface/10'; // Circle Bg
+        
+        return (
+        <motion.div
+          layout
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.2 }}
+          key={project.id} 
+          onClick={() => handleProjectClick(project)} 
+          className={`group cursor-pointer p-0 rounded-[24px] border border-transparent hover:border-m3-outline-variant hover:shadow-elevation-1 transition-all overflow-hidden relative active:scale-[0.98] ${statusBg}`}
+        >
+          <div className="p-5 h-full flex flex-col">
+            <div className="flex justify-between items-start mb-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusIconBg}`}>
+                {project.type === 'vote' ? <Vote className={`w-5 h-5 ${statusColor}`} /> :
+                  project.type === 'team' ? <Users className={`w-5 h-5 ${statusColor}`} /> :
+                  project.type === 'project' ? <FolderPlus className={`w-5 h-5 ${statusColor}`} /> :
+                    <Dices className={`w-5 h-5 ${statusColor}`} />}
+              </div>
+              {project.status === 'finished' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('finished')}</span>}
+              {project.status === 'stopped' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('paused')}</span>}
+              {project.password && <Lock className={`w-4 h-4 ${isActive ? 'text-google-yellow' : 'text-m3-on-surface-variant'}`} />}
             </div>
-            {project.status === 'finished' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('finished')}</span>}
-            {project.status === 'stopped' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('paused')}</span>}
-            {project.password && <Lock className={`w-4 h-4 ${isActive ? 'text-google-yellow' : 'text-m3-on-surface-variant'}`} />}
+            <h3 className={`font-medium text-lg mb-1 transition-colors px-1 truncate ${isActive ? 'text-m3-on-surface font-semibold' : 'text-m3-on-surface-variant'}`}>{project.title}</h3>
+            <div className="mt-auto pt-4 flex justify-between items-center text-xs text-m3-on-surface-variant px-1 border-t border-m3-outline-variant/20">
+              <span className="font-mono opacity-70">ID: {project.id.slice(0, 6)}</span>
+              <span className="opacity-70">{project.creatorName}</span>
+            </div>
           </div>
-          <h3 className={`font-medium text-lg mb-1 transition-colors px-1 truncate ${isActive ? 'text-m3-on-surface font-semibold' : 'text-m3-on-surface-variant'}`}>{project.title}</h3>
-          <div className="mt-auto pt-4 flex justify-between items-center text-xs text-m3-on-surface-variant px-1 border-t border-m3-outline-variant/20">
-            <span className="font-mono opacity-70">ID: {project.id.slice(0, 6)}</span>
-            <span className="opacity-70">{project.creatorName}</span>
-          </div>
-        </div>
-      </div>
-    );
-    })}
+        </motion.div>
+      );
+      })}
+    </AnimatePresence>
     {filteredProjects.length === 0 && (
-      <div className="col-span-full flex flex-col items-center justify-center py-16 text-m3-on-surface-variant/50 border-2 border-dashed border-m3-outline-variant/30 rounded-[28px]">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-full flex flex-col items-center justify-center py-16 text-m3-on-surface-variant/50 border-2 border-dashed border-m3-outline-variant/30 rounded-[28px]">
         <FolderPlus className="w-12 h-12 mb-3 opacity-20" />
         <p>{t('noProjects')}</p>
-      </div>
+      </motion.div>
     )}
   </div>
 );
