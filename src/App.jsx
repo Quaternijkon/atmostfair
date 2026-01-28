@@ -7,6 +7,8 @@ import { TRANSLATIONS } from './constants/translations';
 import { LogOut, Shield, Bell } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
 import { UIProvider } from './components/UIComponents';
+import AnnouncementSystem from './components/AnnouncementSystem';
+import FriendSystem from './components/FriendSystem';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -68,9 +70,20 @@ export default function App() {
   }, [lang]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setAuthChecking(false);
+      if (u) {
+          try {
+             await setDoc(doc(db, 'users', u.uid), {
+                 uid: u.uid,
+                 email: u.email,
+                 displayName: u.displayName || u.email?.split('@')[0] || 'User',
+                 createdAt: u.metadata.creationTime,
+                 lastSeen: Date.now()
+             }, { merge: true });
+          } catch (e) { console.error("Error syncing user profile", e); }
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -269,6 +282,9 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
                 
+                <AnnouncementSystem t={t} />
+                <FriendSystem currentUser={user} t={t} />
+
                 {/* Notifications & Mailbox */}
                 <div className="relative">
                      <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 relative">

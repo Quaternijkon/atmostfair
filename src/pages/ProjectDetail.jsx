@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Copy, Key, Lock, Flag, Trash2, Info } from '../components/Icons';
+import { ArrowLeft, Copy, Key, Lock, Flag, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
 import { useUI } from '../components/UIComponents';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
@@ -10,6 +10,8 @@ import GatherView from '../components/GatherView';
 import ScheduleView from '../components/ScheduleView';
 import BookingView from '../components/BookingView';
 import ClaimView from '../components/ClaimView';
+import QRCodeShare from '../components/QRCodeShare';
+import ChatRoom from '../components/ChatRoom';
 
 export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, actions, t }) {
   const { id } = useParams();
@@ -20,6 +22,8 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const [unlocked, setUnlocked] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const project = projects.find(p => p.id === id);
 
@@ -110,41 +114,57 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
             {isFinished && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-google-red/10 text-xs font-medium text-google-red border border-google-red/20"><Flag className="w-3 h-3" /> {t('finished')}</div>}
           </div>
         </div>
-        {hasAdminRights && !isFinished && (
-          <div className="flex gap-2">
-            <button onClick={() => actions.handleToggleProjectStatus(project)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all ${isStopped ? 'bg-m3-primary-container text-m3-on-primary-container hover:shadow-elevation-1' : 'bg-m3-surface-container-high text-m3-on-surface hover:bg-m3-surface-container-high/80 border border-m3-outline-variant'}`}>{isStopped ? t('resume') : t('pause')}</button>
-            <button 
-              onClick={() => confirm({
-                title: t('deleteProject'),
-                message: t('deleteConfirm'),
-                confirmText: t('delete'),
-                cancelText: t('cancel'),
-                type: 'destructive',
-                onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
-              })} 
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-google-red hover:bg-google-red/10"
-            >
-              <Trash2 className="w-4 h-4" /> {t('delete')}
-            </button>
-          </div>
-        )}
-        {hasAdminRights && isFinished && (
-          <button 
-            onClick={() => confirm({
-                title: t('deleteProject'),
-                message: t('deleteConfirm'),
-                confirmText: t('delete'),
-                cancelText: t('cancel'),
-                type: 'destructive',
-                onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
-            })}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm bg-google-red text-white hover:shadow-elevation-1"
-          >
-            <Trash2 className="w-4 h-4" /> {t('deleteProject')}
-          </button>
-        )}
+        
+        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center mt-4 md:mt-0">
+           <div className="flex gap-2">
+             <button onClick={() => setShowQR(true)} className="p-2.5 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 border border-m3-outline-variant/30" title={t('share')}>
+                <QrCode className="w-5 h-5" />
+             </button>
+             <button onClick={() => setShowChat(!showChat)} className={`p-2.5 rounded-full border transition-all ${showChat ? 'bg-m3-primary-container text-m3-on-primary-container border-transparent' : 'text-m3-on-surface-variant hover:bg-m3-on-surface/5 border-m3-outline-variant/30'}`} title={t('chat')}>
+                <MessageSquare className="w-5 h-5" />
+             </button>
+           </div>
+
+           {hasAdminRights && !isFinished && (
+             <div className="flex gap-2">
+               <button onClick={() => actions.handleToggleProjectStatus(project)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all ${isStopped ? 'bg-m3-primary-container text-m3-on-primary-container hover:shadow-elevation-1' : 'bg-m3-surface-container-high text-m3-on-surface hover:bg-m3-surface-container-high/80 border border-m3-outline-variant'}`}>{isStopped ? t('resume') : t('pause')}</button>
+               <button 
+                 onClick={() => confirm({
+                   title: t('deleteProject'),
+                   message: t('deleteConfirm'),
+                   confirmText: t('delete'),
+                   cancelText: t('cancel'),
+                   type: 'destructive',
+                   onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
+                 })} 
+                 className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-google-red hover:bg-google-red/10 border border-transparent hover:border-google-red/20"
+               >
+                 <Trash2 className="w-4 h-4" /> <span className="hidden lg:inline">{t('delete')}</span>
+               </button>
+             </div>
+           )}
+           {hasAdminRights && isFinished && (
+             <button 
+               onClick={() => confirm({
+                   title: t('deleteProject'),
+                   message: t('deleteConfirm'),
+                   confirmText: t('delete'),
+                   cancelText: t('cancel'),
+                   type: 'destructive',
+                   onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
+               })}
+               className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm bg-google-red text-white hover:shadow-elevation-1"
+             >
+               <Trash2 className="w-4 h-4" /> {t('deleteProject')}
+             </button>
+           )}
+        </div>
       </div>
 
+      {showQR && <QRCodeShare url={window.location.href} title={project.title} onClose={() => setShowQR(false)} t={t} />}
+
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        <div className="flex-1 w-full min-w-0 space-y-6">
       {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={actions.handleVote} isProjectOwner={isOwner} projectId={project.id} t={t} />}
       {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
       {project.type === 'roulette' && <RouletteView user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
@@ -162,6 +182,14 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
             <p className="text-m3-on-surface-variant">Project View</p>
         </div>
       )}
+        </div>
+        
+        {showChat && (
+           <div className="w-full xl:w-96 animate-fade-in sticky top-24 self-start">
+               <ChatRoom projectId={project.id} currentUser={user} t={t} />
+           </div>
+        )}
+      </div>
     </div>
   );
 }
