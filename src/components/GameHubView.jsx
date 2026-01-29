@@ -393,7 +393,7 @@ const MinesweeperGame = ({ user, room, onLeave }) => {
   
   // Sync Progress to Firestore
   useEffect(() => {
-      if (!isPlayer || status === 'loading') return;
+      if (!isPlayer || status === 'loading' || room.isLocal) return; // Skip for Local/Practice games
       
       const totalSafe = (rows * cols) - mines;
       const progress = revealed.size;
