@@ -1,7 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2 } from '../components/Icons';
+
+const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
+  return (
+    <button 
+        onClick={onClick} 
+        className="relative z-10 flex-auto py-2.5 text-sm font-medium flex items-center justify-center gap-2 rounded-full outline-none focus-visible:ring-2 ring-google-blue/50"
+    >
+      <span className={`relative flex items-center gap-2 transition-colors duration-200 ${isActive ? 'text-white' : 'text-m3-on-surface-variant group-hover:text-m3-on-surface'}`}>
+        <Icon className="w-4 h-4" />
+        <span className={isActive ? 'inline' : 'hidden md:inline'}>{label}</span>
+      </span>
+    </button>
+  );
+};
+
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -63,10 +78,10 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     },
     project: {
       id: 'project',
-      label: t('games'), // Renamed text
+      label: t('games') || "Games",
       color: 'text-google-green',
       bg: 'bg-google-green',
-      types: ['game_hub'], // Replaced 'project' with 'game_hub'
+      types: ['game_hub'], 
       modules: [
         { id: 'game_hub', label: t('gameHub'), icon: Gamepad2, desc: t('gameHubDesc') }
       ]
@@ -85,7 +100,6 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   const handleCreateSubmit = (e) => {
     e.preventDefault();
     if (!selectedModule) return;
-    // Pass the module ID (e.g. 'vote') as the 'type' to backend
     onCreateProject(newTitle, selectedModule.id, creatorName, newPassword);
     setShowCreate(false); 
     setNewTitle(''); 
@@ -96,7 +110,6 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   const navigateToProject = (project) => {
        const type = project.type; 
        let routePrefix = 'collect';
-       // Add 'schedule', 'book' to 'collect' logic (if not auto-handled)
        if (type === 'schedule' || type === 'book') routePrefix = 'collect';
        if (type === 'team') routePrefix = 'connect';
        if (type === 'roulette' || type === 'queue') routePrefix = 'select';
@@ -116,15 +129,12 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   const verifyPassword = (e) => {
     e.preventDefault();
     if (inputPassword === passwordPromptProject.password) {
-      // In a real app we would pass state or token. 
-      // For now we assume if they know password here, they can enter.
-      // But actually, if we navigate, the Next Page will re-ask if we don't persist it.
-      // We will handle passing 'unlocked' state in route.
       const project = passwordPromptProject;
       const type = project.type; 
       let routePrefix = 'collect';
       if (type === 'team') routePrefix = 'connect';
       if (type === 'roulette') routePrefix = 'select';
+      if (type === 'game_hub') routePrefix = 'games';
       if (type === 'project') routePrefix = 'projects';
       navigate(`/${routePrefix}/${project.id}`, { state: { unlocked: true } });
       setPasswordPromptProject(null);
@@ -138,7 +148,6 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     roulette: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
     project: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
     game_hub: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
-    // Map other types for safety
     gather: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
     schedule: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
     book: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
@@ -146,37 +155,19 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     queue: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
   };
 
-  const TAB_COLORS = {
-    collect: '#4285F4',
-    connect: '#EA4335',
-    select: '#FBBC05',
-    project: '#34A853',
-  };
+  const TAB_IDS = ['collect', 'connect', 'select', 'project'];
+  const TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853']; // Google colors
+  const tabIndex = useMotionValue(0);
 
-  const TabButton = ({ id, label, icon: Icon }) => {
-      const isActive = activeTab === id;
-      
-      return (
-        <button 
-            onClick={() => { setActiveTab(id); setShowCreate(false); setSelectedModule(null); }} 
-            className="relative flex-auto py-2.5 text-sm font-medium flex items-center justify-center gap-2 rounded-full outline-none focus-visible:ring-2 ring-google-blue/50"
-        >
-          {isActive && (
-            <motion.div
-              layoutId="activeTabPill"
-              className="absolute inset-0 rounded-full shadow-md"
-              style={{ backgroundColor: TAB_COLORS[id] }}
-              initial={false}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            />
-          )}
-          <span className={`relative z-10 flex items-center gap-2 transition-colors duration-200 ${isActive ? 'text-white' : 'text-m3-on-surface-variant group-hover:text-m3-on-surface'}`}>
-            <Icon className="w-4 h-4" />
-            <span className={isActive ? 'inline' : 'hidden md:inline'}>{label}</span>
-          </span>
-        </button>
-      );
-  };
+  useEffect(() => {
+    const index = TAB_IDS.indexOf(activeTab);
+    animate(tabIndex, index, { type: "spring", stiffness: 350, damping: 30 });
+  }, [activeTab, tabIndex]);
+
+  const pillColor = useTransform(tabIndex, [0, 1, 2, 3], TAB_BG_COLORS);
+  // Calculate left percentage. 0 -> 0%, 3 -> 75% (for 4 items)
+  // Or in a container of 100%, each is 25%.
+  const pillLeft = useTransform(tabIndex, (val) => `${val * 25}%`);
 
   return (
     <div className="animate-fade-in space-y-6 max-w-7xl mx-auto p-4 md:p-8">
@@ -209,11 +200,21 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
 
       {/* Navigation Rail / Tabs (Renamed & Styled) */}
       <div className="flex justify-center mb-8">
-        <div className="bg-m3-surface-container-high p-1 rounded-full inline-flex w-full max-w-2xl border border-m3-outline-variant/30 gap-1">
-          <TabButton id="collect" label={t('collect')} icon={Vote} category={CATEGORIES.collect} />
-          <TabButton id="connect" label={t('connect')} icon={Users} category={CATEGORIES.connect} />
-          <TabButton id="select" label={t('select')} icon={Dices} category={CATEGORIES.select} />
-          <TabButton id="project" label={t('games')} icon={Gamepad2} category={CATEGORIES.project} />
+        <div className="relative bg-m3-surface-container-high p-1 rounded-full grid grid-cols-4 w-full max-w-2xl border border-m3-outline-variant/30 gap-0 isolation-auto">
+          {/* Animated Background Pill */}
+          <motion.div 
+             className="absolute top-1 bottom-1 rounded-full shadow-md z-0"
+             style={{ 
+               backgroundColor: pillColor, 
+               left: useTransform(tabIndex, (val) => `calc(${val * 25}% + 4px)`), 
+               width: 'calc(25% - 8px)'
+             }}
+          />
+
+          <TabButton id="collect" label={t('collect')} icon={Vote} isActive={activeTab === 'collect'} onClick={() => { setActiveTab('collect'); setShowCreate(false); setSelectedModule(null); }} />
+          <TabButton id="connect" label={t('connect')} icon={Users} isActive={activeTab === 'connect'} onClick={() => { setActiveTab('connect'); setShowCreate(false); setSelectedModule(null); }} />
+          <TabButton id="select" label={t('select')} icon={Dices} isActive={activeTab === 'select'} onClick={() => { setActiveTab('select'); setShowCreate(false); setSelectedModule(null); }} />
+          <TabButton id="project" label={t('games') || "Games"} icon={Gamepad2} isActive={activeTab === 'project'} onClick={() => { setActiveTab('project'); setShowCreate(false); setSelectedModule(null); }} />
         </div>
       </div>
 
