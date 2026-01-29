@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2 } from './Icons';
+import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle } from './Icons';
 import { useUI } from './UIComponents';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, query, where, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -353,6 +353,327 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
 };
 
 
+// --- Minesweeper Game ---
+const MinesweeperGame = ({ user, room, onLeave }) => {
+  const { showToast } = useUI();
+  const [grid, setGrid] = useState([]);
+  const [status, setStatus] = useState('loading'); // loading, ready, playing, dead, won
+  const [mineLocations, setMineLocations] = useState(new Set());
+  const [flags, setFlags] = useState(new Set());
+  const [revealed, setRevealed] = useState(new Set());
+  const [explodedMine, setExplodedMine] = useState(null); // {r, c}
+  const [longPressTimer, setLongPressTimer] = useState(null);
+  
+  const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
+  const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
+  const isSpectator = !isPlayer || me?.status === 'spectating'; // if implemented
+
+  const { rows, cols, mines } = room.config;
+
+  // Initialize Board
+  useEffect(() => {
+    if (!room.config.mineLocations) return;
+    
+    const mineSet = new Set(room.config.mineLocations);
+    setMineLocations(mineSet);
+    
+    // Construct Grid
+    const newGrid = [];
+    for (let r = 0; r < rows; r++) {
+      const row = [];
+      for (let c = 0; c < cols; c++) {
+        row.push({ r, c });
+      }
+      newGrid.push(row);
+    }
+    setGrid(newGrid);
+    setStatus('ready');
+
+  }, [room.config]);
+  
+  // Sync Progress to Firestore
+  useEffect(() => {
+      if (!isPlayer || status === 'loading') return;
+      
+      const totalSafe = (rows * cols) - mines;
+      const progress = revealed.size;
+      const percent = Math.floor((progress / totalSafe) * 100);
+      
+      // Debounce update to avoid spamming
+      const timer = setTimeout(() => {
+          if (me.progress !== percent || me.status !== status) {
+               const newPlayers = room.players.map(p => {
+                  if (p.uid === user.uid) {
+                      return { ...p, progress: percent, status: (status === 'dead' || status === 'won') ? status : 'playing' };
+                  }
+                  return p;
+               });
+               updateDoc(doc(db, 'game_rooms', room.id), { players: newPlayers });
+          }
+      }, 1000);
+      return () => clearTimeout(timer);
+  }, [revealed.size, status]);
+
+  const getNeighbors = (r, c) => {
+    const neighbors = [];
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        if (i === 0 && j === 0) continue;
+        const nr = r + i;
+        const nc = c + j;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          neighbors.push({ r: nr, c: nc });
+        }
+      }
+    }
+    return neighbors;
+  };
+
+  const countMines = (r, c) => {
+      return getNeighbors(r, c).filter(n => mineLocations.has(`${n.r},${n.c}`)).length;
+  };
+
+  const revealCell = (r, c) => {
+    if (status === 'dead' || status === 'won' || flags.has(`${r},${c}`) || revealed.has(`${r},${c}`)) return;
+    if (status === 'ready') setStatus('playing');
+
+    const key = `${r},${c}`;
+    if (mineLocations.has(key)) {
+        // BOOM
+        setExplodedMine({ r, c });
+        setStatus('dead');
+        const newRevealed = new Set(revealed);
+        newRevealed.add(key);
+        setRevealed(newRevealed);
+        return;
+    }
+
+    // Flood Fill
+    const newRevealed = new Set(revealed);
+    const queue = [{ r, c }];
+    
+    while (queue.length > 0) {
+        const { r: currR, c: currC } = queue.pop();
+        const currKey = `${currR},${currC}`;
+        
+        if (newRevealed.has(currKey)) continue;
+        newRevealed.add(currKey);
+        
+        if (countMines(currR, currC) === 0) {
+            getNeighbors(currR, currC).forEach(n => {
+                if (!newRevealed.has(`${n.r},${n.c}`) && !mineLocations.has(`${n.r},${n.c}`)) {
+                    queue.push(n);
+                }
+            });
+        }
+    }
+    setRevealed(newRevealed);
+    
+    // Check Win
+    if (newRevealed.size === (rows * cols) - mines) {
+        setStatus('won');
+    }
+  };
+
+  const toggleFlag = (e, r, c) => {
+      e.preventDefault();
+      if (status === 'dead' || status === 'won' || revealed.has(`${r},${c}`)) return;
+      
+      const key = `${r},${c}`;
+      const newFlags = new Set(flags);
+      if (newFlags.has(key)) newFlags.delete(key);
+      else newFlags.add(key);
+      setFlags(newFlags);
+  };
+
+  const handleChord = (r, c) => {
+      if (!revealed.has(`${r},${c}`)) return;
+      
+      const mineCount = countMines(r, c);
+      const neighbors = getNeighbors(r, c);
+      const flagCount = neighbors.filter(n => flags.has(`${n.r},${n.c}`)).length;
+      const hiddenNeighbors = neighbors.filter(n => !revealed.has(`${n.r},${n.c}`));
+
+      if (mineCount === flagCount) {
+          // Reveal all non-flagged neighbors
+          neighbors.forEach(n => {
+              if (!flags.has(`${n.r},${n.c}`)) revealCell(n.r, n.c);
+          });
+      } else if (hiddenNeighbors.length === mineCount - flagCount) {
+           // Auto-flag remaining hidden if they must be mines (not classic behavior but requested "shortcut")
+           // "If a格子周围还剩一些没打开的格子，刚好等于没有标记的雷的数量，则点击该数字格子可以快捷地把这些位置都标记为雷"
+           /* 
+             Actually logic:
+             Total Mines around = M
+             Already Flagged = F
+             Remaining Hidden = H
+             If H == M - F, then all H are mines.
+           */
+           const remainingMinesNeeded = mineCount - flagCount;
+           if (hiddenNeighbors.length === remainingMinesNeeded && remainingMinesNeeded > 0) {
+               const newFlags = new Set(flags);
+               hiddenNeighbors.forEach(n => newFlags.add(`${n.r},${n.c}`));
+               setFlags(newFlags);
+           }
+      }
+  };
+
+  const joinGame = async () => {
+       const newPlayer = { uid: user.uid, name: user.displayName || 'User', progress: 0, status: 'playing' };
+       await updateDoc(doc(db, 'game_rooms', room.id), {
+           players: arrayUnion(newPlayer)
+       });
+  };
+
+  // Render Cell
+  const Cell = useMemo(() => ({ r, c }) => {
+      const key = `${r},${c}`;
+      const isRevealed = revealed.has(key);
+      const isFlagged = flags.has(key);
+      const isMine = mineLocations.has(key);
+      const isExploded = explodedMine?.r === r && explodedMine?.c === c;
+      const count = !isMine ? countMines(r, c) : 0;
+      
+      let content = null;
+      let bgClass = "bg-m3-surface-container-high hover:bg-m3-surface-container-highest";
+      
+      if (status === 'dead' && isMine) { // Reveal mines on death
+           bgClass = isExploded ? "bg-google-red" : "bg-m3-surface-container-highest";
+           content = <Bomb className={`w-4 h-4 ${isExploded ? 'text-white' : 'text-google-red'}`} />;
+      } else if (isRevealed) {
+          bgClass = "bg-m3-surface-container border border-m3-outline/5";
+          if (isMine) {
+               content = <Bomb className="w-5 h-5 text-google-red" />;
+          } else if (count > 0) {
+              const colors = ["", "text-google-blue", "text-google-green", "text-google-red", "text-purple-600", "text-orange-600"];
+              content = <span className={`font-bold text-lg ${colors[count] || 'text-black'}`}>{count}</span>;
+          }
+      } else if (isFlagged) {
+          content = <Flag className="w-4 h-4 text-google-red" />;
+      }
+
+      const handlePointerDown = (e) => {
+          if(e.button === 2) return; // Ignore actual right clicks handled by contextmenu
+          const timer = setTimeout(() => {
+              toggleFlag(e, r, c); // Long press
+          }, 500);
+          setLongPressTimer(timer);
+      };
+      
+      const handlePointerUp = () => {
+          if (longPressTimer) clearTimeout(longPressTimer);
+          setLongPressTimer(null);
+      };
+
+      return (
+          <div
+            className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded cursor-pointer select-none transition-colors ${bgClass}`}
+            onClick={() => { if(!isFlagged && !isRevealed) revealCell(r,c); else if(isRevealed) handleChord(r,c); }}
+            onContextMenu={(e) => toggleFlag(e, r, c)}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+          >
+              {content}
+          </div>
+      );
+  }, [revealed, flags, status, mineLocations, explodedMine]);
+
+  if (!room) return null;
+
+  return (
+      <div className="flex flex-col lg:flex-row gap-6 h-full p-4 overflow-hidden">
+        {/* Game Area */}
+        <div className="flex-1 flex flex-col items-center overflow-auto">
+             <div className="flex justify-between w-full max-w-2xl mb-4 items-center">
+                 <div className="flex items-center gap-2">
+                     <button onClick={onLeave} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5"/></button>
+                     <div className="flex flex-col">
+                        <h2 className="font-bold text-lg">{room.name}</h2>
+                        <span className="text-xs text-m3-on-surface-variant capitalize">{room.config.difficulty} Mode</span>
+                     </div>
+                 </div>
+                 <div className="flex gap-4">
+                     <div className="bg-m3-surface-container px-3 py-1 rounded-full flex items-center gap-2">
+                         <Flag className="w-4 h-4 text-google-red"/> {mines - flags.size}
+                     </div>
+                     <div className="bg-m3-surface-container px-3 py-1 rounded-full flex items-center gap-2">
+                         <Clock className="w-4 h-4 text-google-blue"/> 
+                         {/* Timer could be local based on start time */}
+                         Play
+                     </div>
+                 </div>
+             </div>
+             
+             {isPlayer ? (
+                 <div 
+                   className="bg-m3-surface-container-low p-2 rounded-xl shadow-inner overflow-auto max-w-full max-h-full border border-m3-outline-variant"
+                   onContextMenu={(e) => e.preventDefault()}
+                 >
+                     <div 
+                        className="grid gap-[2px]" 
+                        style={{ gridTemplateColumns: `repeat(${cols}, min-content)` }}
+                     >
+                        {grid.map((row, r) => row.map((cell, c) => (
+                            <Cell key={`${r}-${c}`} r={r} c={c} />
+                        )))}
+                     </div>
+                 </div>
+             ) : (
+                 <div className="flex-1 flex items-center justify-center flex-col gap-4">
+                     <Grid3x3 className="w-24 h-24 text-m3-on-surface-variant/20"/>
+                     <button onClick={joinGame} className="px-6 py-3 bg-google-blue text-white rounded-full font-medium shadow-lg hover:scale-105 transition-transform">
+                         Join Minesweeper
+                     </button>
+                 </div>
+             )}
+             
+             {status === 'dead' && (
+                 <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mt-4 p-4 bg-red-100 text-red-800 rounded-xl flex items-center gap-3">
+                     <AlertTriangle className="w-6 h-6"/>
+                     <div>
+                         <div className="font-bold">BOOM! Game Over</div>
+                         <div className="text-sm">You cleared {Math.floor((revealed.size / ((rows*cols)-mines))*100)}%</div>
+                         <button onClick={() => setStatus('ready')} className="text-xs underline mt-1">Spectate others</button>
+                     </div>
+                 </motion.div>
+             )}
+             {status === 'won' && (
+                 <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mt-4 p-4 bg-green-100 text-green-800 rounded-xl flex items-center gap-3">
+                     <Trophy className="w-6 h-6 text-yellow-600"/>
+                     <div className="font-bold">Mission Accomplished!</div>
+                 </motion.div>
+             )}
+        </div>
+        
+        {/* Sidebar: Players List */}
+         <div className="w-full lg:w-80 bg-m3-surface-container rounded-2xl p-4 flex flex-col h-full">
+             <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> Players ({room.players?.length})</h3>
+             <div className="flex-1 overflow-y-auto space-y-3">
+                 {room.players?.sort((a,b) => (b.progress||0) - (a.progress||0)).map(p => (
+                     <div key={p.uid} className={`relative p-3 rounded-xl border ${p.status === 'dead' ? 'bg-red-50 border-red-100' : 'bg-m3-surface border-transparent'}`}>
+                         <div className="flex justify-between items-center mb-1">
+                             <span className="font-medium text-sm truncate max-w-[120px]">{p.name} {p.uid === user.uid && '(You)'}</span>
+                             {p.status === 'dead' && <span className="text-[10px] bg-red-200 text-red-800 px-1.5 py-0.5 rounded">Failed</span>}
+                             {p.status === 'won' && <span className="text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded">Success</span>}
+                             {p.status === 'playing' && <span className="text-xs font-mono">{p.progress}%</span>}
+                         </div>
+                         <div className="h-2 bg-m3-surface-container-high rounded-full overflow-hidden">
+                             <motion.div 
+                                className={`h-full ${p.status === 'dead' ? 'bg-red-400' : p.status === 'won' ? 'bg-green-500' : 'bg-google-blue'}`}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${p.progress}%` }}
+                             />
+                         </div>
+                     </div>
+                 ))}
+             </div>
+         </div>
+      </div>
+  );
+};
+
+
 export default function GameHubView({ project, user, t }) {
   const { showToast } = useUI();
   const [activeTab, setActiveTab] = useState('lobby'); // lobby | finished
@@ -362,8 +683,10 @@ export default function GameHubView({ project, user, t }) {
   
   // Create Form State
   const [roomName, setRoomName] = useState('');
+  const [selectedGame, setSelectedGame] = useState('rps'); // rps, mine
   const [bestOf, setBestOf] = useState(3);
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
+  const [mineDifficulty, setMineDifficulty] = useState('easy'); // easy, medium, hard
 
   // Sync Rooms
   useEffect(() => {
@@ -377,6 +700,211 @@ export default function GameHubView({ project, user, t }) {
         setRooms(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
+  }, [project.id, activeTab]);
+
+  const handleCreateRoom = async (e) => {
+      e.preventDefault();
+      if (!roomName.trim()) return;
+      
+      let config = {};
+      
+      if (selectedGame === 'rps') {
+           config = {
+              bestOf: parseInt(bestOf),
+              timeout: parseInt(timeoutSeconds)
+          };
+      } else if (selectedGame === 'mine') {
+          // Difficulty Config
+          let rows=9, cols=9, mines=10;
+          if (mineDifficulty === 'medium') { rows=16; cols=16; mines=40; }
+          if (mineDifficulty === 'hard') { rows=16; cols=30; mines=99; }
+          
+          // Generate Seed (Mine Coordinates)
+          const locations = [];
+          while (locations.length < mines) {
+              const r = Math.floor(Math.random() * rows);
+              const c = Math.floor(Math.random() * cols);
+              const key = `${r},${c}`;
+              if (!locations.includes(key)) locations.push(key);
+          }
+           
+          config = {
+              difficulty: mineDifficulty,
+              rows, cols, mines,
+              mineLocations: locations
+          };
+      }
+      
+      const newRoom = {
+          projectId: project.id,
+          name: roomName,
+          game: selectedGame, // 'rps' or 'mine'
+          status: 'playing', 
+          players: [], 
+          config,
+          createdAt: Date.now(),
+          createdBy: user.uid
+      };
+      
+      const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
+      setShowCreate(false);
+      setRoomName('');
+  };
+  
+  const handleJoin = async (room) => {
+       setActiveRoom(room);
+  };
+  
+  if (activeRoom) {
+      if (activeRoom.game === 'mine') {
+          return <MinesweeperGame user={user} room={activeRoom} onLeave={() => setActiveRoom(null)} />;
+      }
+      return <RPSGame user={user} room={activeRoom} projectId={project.id} onLeave={() => setActiveRoom(null)} />;
+  }
+  
+  const GAMES = [
+      { id: 'rps', label: 'Rock Paper Scissors', icon: Scissors, color: 'bg-google-blue' },
+      { id: 'mine', label: 'Minesweeper', icon: Bomb, color: 'bg-google-red' }
+  ];
+
+  return (
+    <div className="h-full flex flex-col p-4 md:p-8 animate-fade-in">
+       {/* Header */}
+       <div className="flex justify-between items-center mb-8">
+           <h1 className="text-3xl font-normal text-m3-on-surface">Game Hub</h1>
+           <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-2 px-6 py-3 bg-m3-primary-container text-m3-on-primary-container rounded-2xl font-medium hover:shadow-elevation-1 transition-all">
+               {showCreate ? <X className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
+               {showCreate ? 'Close' : 'Create Room'}
+           </button>
+       </div>
+       
+       {showCreate && (
+           <div className="mb-8 p-6 bg-m3-surface-container rounded-[28px] animate-slide-down border border-m3-outline-variant/50">
+               <h3 className="text-xl mb-6">Start a New Game</h3>
+               <form onSubmit={handleCreateRoom} className="space-y-6">
+                   <div className="flex flex-col md:flex-row gap-6">
+                       {/* Game Selection */}
+                       <div className="flex-1">
+                           <label className="text-xs uppercase tracking-wider text-m3-on-surface-variant font-medium mb-3 block">Select Game</label>
+                           <div className="grid grid-cols-2 gap-4">
+                               {GAMES.map(g => (
+                                   <div 
+                                      key={g.id} 
+                                      onClick={() => setSelectedGame(g.id)}
+                                      className={`cursor-pointer p-4 rounded-xl border flex items-center gap-3 transition-all ${selectedGame === g.id ? 'border-google-blue bg-google-blue/5' : 'border-m3-outline-variant/30 hover:bg-m3-surface'}`}
+                                   >
+                                       <div className={`p-2 rounded-full ${g.color} text-white`}>
+                                           <g.icon className="w-5 h-5"/>
+                                       </div>
+                                       <span className="font-medium">{g.label}</span>
+                                   </div>
+                               ))}
+                           </div>
+                       </div>
+                       
+                       <div className="flex-1 space-y-4">
+                           <div>
+                               <label className="text-xs uppercase tracking-wider text-m3-on-surface-variant font-medium mb-2 block">Room Name</label>
+                               <input type="text" placeholder="e.g. Friday Fun" value={roomName} onChange={e => setRoomName(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none focus:border-google-blue" required />
+                           </div>
+                           
+                           {/* Game Specific Config */}
+                           {selectedGame === 'rps' && (
+                               <div className="flex gap-4">
+                                   <div className="flex-1">
+                                       <label className="text-xs text-m3-on-surface-variant mb-1 block">Best Of (Rounds)</label>
+                                       <select value={bestOf} onChange={e => setBestOf(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none">
+                                           <option value="1">1 (Sudden Death)</option>
+                                           <option value="3">3</option>
+                                           <option value="5">5</option>
+                                       </select>
+                                   </div>
+                                   <div className="flex-1">
+                                        <label className="text-xs text-m3-on-surface-variant mb-1 block">Turn Timeout</label>
+                                        <select value={timeoutSeconds} onChange={e => setTimeoutSeconds(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none">
+                                           <option value="15">15s</option>
+                                           <option value="30">30s</option>
+                                           <option value="60">60s</option>
+                                       </select>
+                                   </div>
+                               </div>
+                           )}
+                           
+                           {selectedGame === 'mine' && (
+                               <div>
+                                   <label className="text-xs text-m3-on-surface-variant mb-1 block">Difficulty</label>
+                                   <div className="flex gap-2">
+                                       {['easy', 'medium', 'hard'].map(d => (
+                                           <button 
+                                              type="button" 
+                                              key={d} 
+                                              onClick={() => setMineDifficulty(d)}
+                                              className={`flex-1 py-2 rounded-lg border text-sm capitalize transition-colors ${mineDifficulty === d ? 'bg-m3-primary text-white border-transparent' : 'border-m3-outline hover:bg-m3-surface-container-high'}`}
+                                           >
+                                               {d}
+                                           </button>
+                                       ))}
+                                   </div>
+                                    <div className="text-xs text-m3-on-surface-variant mt-2">
+                                       {mineDifficulty === 'easy' && '9x9 Grid, 10 Mines'}
+                                       {mineDifficulty === 'medium' && '16x16 Grid, 40 Mines'}
+                                       {mineDifficulty === 'hard' && '30x16 Grid, 99 Mines'}
+                                   </div>
+                               </div>
+                           )}
+                       </div>
+                   </div>
+                   <div className="flex justify-end">
+                       <button type="submit" className="px-8 py-3 bg-google-blue text-white rounded-full font-medium shadow-elevation-1 hover:shadow-elevation-2">
+                           Create Room
+                       </button>
+                   </div>
+               </form>
+           </div>
+       )}
+       
+       {/* Rooms Grid */}
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           {rooms.length === 0 ? (
+               <div className="col-span-full text-center py-20 text-m3-on-surface-variant/50">
+                   <Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-50"/>
+                   No active rooms. Create one to start playing!
+               </div>
+           ) : (
+               rooms.map(room => (
+                   <div key={room.id} onClick={() => handleJoin(room)} className="group cursor-pointer bg-m3-surface-container hover:bg-m3-surface-container-high border border-m3-outline-variant/30 rounded-2xl p-5 transition-all hover:-translate-y-1 hover:shadow-xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                           {room.game === 'mine' ? <Bomb className="w-24 h-24 rotate-12"/> : <Scissors className="w-24 h-24 -rotate-12"/> }
+                       </div>
+                       
+                       <div className="relative">
+                           <div className="flex justify-between items-start mb-4">
+                               <div className={`p-2 rounded-xl text-white ${room.game === 'mine' ? 'bg-google-red' : 'bg-google-blue'}`}>
+                                   {room.game === 'mine' ? <Bomb className="w-6 h-6"/> : <Scissors className="w-6 h-6"/>}
+                               </div>
+                               <div className="px-2 py-1 bg-m3-surface/50 rounded text-xs font-mono">
+                                   {room.players?.length || 0} / {room.game === 'mine' ? 8 : 2}
+                               </div>
+                           </div>
+                           
+                           <h3 className="text-lg font-bold mb-1">{room.name}</h3>
+                           <p className="text-sm text-m3-on-surface-variant mb-4 capitalize">
+                               {room.game === 'mine' ? `${room.config.difficulty} Mode` : `Best of ${room.config.bestOf}`}
+                           </p>
+                           
+                           <div className="flex items-center gap-2 text-xs text-m3-on-surface-variant/70">
+                               <User className="w-3 h-3"/>
+                               <span>Created by {room.createdBy === user.uid ? 'You' : 'User ' + room.createdBy.slice(0,4)}</span>
+                           </div>
+                       </div>
+                   </div>
+               ))
+           )}
+       </div>
+    </div>
+  );
+}
+
   }, [project.id, activeTab]);
 
   const handleCreateRoom = async (e) => {
