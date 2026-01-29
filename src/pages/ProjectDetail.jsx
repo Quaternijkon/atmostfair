@@ -12,6 +12,7 @@ import BookingView from '../components/BookingView';
 import ClaimView from '../components/ClaimView';
 import QRCodeShare from '../components/QRCodeShare';
 import ChatRoom from '../components/ChatRoom';
+import GameHubView from '../components/GameHubView';
 
 export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, actions, t }) {
   const { id } = useParams();
@@ -173,6 +174,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
       {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'game_hub' && <GameHubView project={project} user={user} t={t} />}
       {project.type === 'project' && (
         <div className="flex flex-col items-center justify-center p-12 bg-m3-surface-container-low rounded-[24px]">
             <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">

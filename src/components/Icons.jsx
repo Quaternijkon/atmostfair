@@ -71,6 +71,13 @@ export const Square = (props) => <IconBase {...props}><rect width="18" height="1
 export const UserCheck = (props) => <IconBase {...props}><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><path d="m9 12 2 2 4-4" /></IconBase>; // Actually just Vote icon reused or similar
 export const MinusCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></IconBase>;
 
+export const Gamepad2 = (props) => <IconBase {...props}><line x1="6" x2="10" y1="12" y2="12" /><line x1="8" x2="8" y1="10" y2="14" /><line x1="15" x2="15.01" y1="13" y2="13" /><line x1="18" x2="18.01" y1="11" y2="11" /><rect width="20" height="12" x="2" y="6" rx="2" /></IconBase>;
+export const Clock = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></IconBase>;
+export const Hand = (props) => <IconBase {...props}><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" /><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" /><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></IconBase>; // Paper
+export const Scissors = (props) => <IconBase {...props}><circle cx="6" cy="6" r="3" /><path d="M8.12 8.12 12 12" /><path d="M20 4 8.12 15.88" /><circle cx="6" cy="18" r="3" /><path d="M14.8 14.8 20 20" /></IconBase>;
+export const Disc = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /></IconBase>; // Rock/Stone alternative
+export const Check = (props) => <IconBase {...props}><polyline points="20 6 9 17 4 12" /></IconBase>;
+
 // --- Real Brand Icons ---
 export const GoogleIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

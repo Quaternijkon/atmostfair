@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck } from '../components/Icons';
+import { Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2 } from '../components/Icons';
 
 export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
-  // Navigation State: 'collect' | 'connect' | 'select' | 'project'
+  // Navigation State: 'collect' | 'connect' | 'select' | 'play'
   const [activeTab, setActiveTab] = useState('collect');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -63,12 +63,12 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     },
     project: {
       id: 'project',
-      label: t('project'),
+      label: t('games'), // Renamed text
       color: 'text-google-green',
       bg: 'bg-google-green',
-      types: ['project'], // New generic type
+      types: ['game_hub'], // Replaced 'project' with 'game_hub'
       modules: [
-        { id: 'project', label: t('project'), icon: FolderPlus, desc: t('projectsDesc') } // Using FolderPlus as generic icon
+        { id: 'game_hub', label: t('gameHub'), icon: Gamepad2, desc: t('gameHubDesc') }
       ]
     }
   };
@@ -100,18 +100,8 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
        if (type === 'schedule' || type === 'book') routePrefix = 'collect';
        if (type === 'team') routePrefix = 'connect';
        if (type === 'roulette' || type === 'queue') routePrefix = 'select';
-       if (type === 'project') routePrefix = 'project'; // Future route
-       // For now, project type also goes to detail or stays here? 
-       // User said "temporarily no application" so maybe just navigate to detail page which will show generic info?
-       // Currently ProjectDetail handles voting/team/roulette. We might need a generic handling in ProjectDetail or just alert.
-       if(type === 'project') {
-         // Placeholder alert or generic view.
-         // Let's assume generic view is implemented or just go to /collect/ID for now as fallback if Detail supports it?
-         // Actually ProjectDetail checks type.
-         // Let's route to /project/:id and let Router catch it (we need to add that route in App.jsx)
-         navigate(`/projects/${project.id}`); 
-         return;
-       }
+       if (type === 'game_hub') routePrefix = 'games'; 
+       
        navigate(`/${routePrefix}/${project.id}`);
   }
 
@@ -147,6 +137,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     team: { color: 'text-google-red', bgParams: 'bg-google-red/10', activeColor: 'text-google-red', activeBg: 'bg-google-red/5' },
     roulette: { color: 'text-google-yellow', bgParams: 'bg-google-yellow/10', activeColor: 'text-google-yellow', activeBg: 'bg-google-yellow/5' },
     project: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
+    game_hub: { color: 'text-google-green', bgParams: 'bg-google-green/10', activeColor: 'text-google-green', activeBg: 'bg-google-green/5' },
     // Map other types for safety
     gather: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
     schedule: { color: 'text-google-blue', bgParams: 'bg-google-blue/10', activeColor: 'text-google-blue', activeBg: 'bg-google-blue/5' },
@@ -222,7 +213,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
           <TabButton id="collect" label={t('collect')} icon={Vote} category={CATEGORIES.collect} />
           <TabButton id="connect" label={t('connect')} icon={Users} category={CATEGORIES.connect} />
           <TabButton id="select" label={t('select')} icon={Dices} category={CATEGORIES.select} />
-          <TabButton id="project" label={t('project')} icon={FolderPlus} category={CATEGORIES.project} />
+          <TabButton id="project" label={t('games')} icon={Gamepad2} category={CATEGORIES.project} />
         </div>
       </div>
 
@@ -337,7 +328,7 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
               <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusIconBg}`}>
                 {project.type === 'vote' ? <Vote className={`w-5 h-5 ${statusColor}`} /> :
                   project.type === 'team' ? <Users className={`w-5 h-5 ${statusColor}`} /> :
-                  project.type === 'project' ? <FolderPlus className={`w-5 h-5 ${statusColor}`} /> :
+                  project.type === 'game_hub' ? <Gamepad2 className={`w-5 h-5 ${statusColor}`} /> :
                     <Dices className={`w-5 h-5 ${statusColor}`} />}
               </div>
               {project.status === 'finished' && <span className="bg-m3-on-surface/10 text-m3-on-surface-variant text-xs px-2 py-1 rounded-md font-medium">{t('finished')}</span>}
