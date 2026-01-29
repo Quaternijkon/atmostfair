@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- 辅助函数 ---
+    
+    // 检查请求者是否为该项目的创建者
+    function isProjectAdmin(projectId) {
+      // 注意：这会产生一次额外的读取操作
+      let project = get(/databases/$(database)/documents/projects/$(projectId));
+      return project != null && project.data.creatorId == request.auth.uid;
+    }
+
+    // --- 核心项目模块 (Core Project Features) ---
+
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      // 允许创建者更新，或者如果是抽奖项目且逻辑需要写入获胜者名单时
+      allow update: if request.auth != null && (resource.data.creatorId == request.auth.uid || request.auth.uid in resource.data.winners);
+      allow delete: if request.auth != null && resource.data.creatorId == request.auth.uid;
+    }
+
+    match /voting_items/{itemId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null; 
+    }
+
+    match /queue_participants/{docId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      // 允许本人退出/修改，或项目管理员操作（如生成顺序）
+      allow update, delete: if request.auth != null && (resource.data.uid == request.auth.uid || isProjectAdmin(resource.data.projectId));
+    }
+    
+    match /roulette_participants/{participantId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      // 允许本人退出，或项目管理员标记获胜
+      allow update, delete: if request.auth != null && (resource.data.uid == request.auth.uid || isProjectAdmin(resource.data.projectId));
+    }
+    
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+    
+    match /gather_fields/{fieldId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+    
+    match /gather_submissions/{subId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (resource.data.uid == request.auth.uid || isProjectAdmin(resource.data.projectId));
+    }
+
+    match /schedule_submissions/{subId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (resource.data.uid == request.auth.uid || isProjectAdmin(resource.data.projectId));
+    }
+
+    match /claim_items/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    match /booking_slots/{slotId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null; // 您可以在此处添加 isProjectAdmin 校验以增强安全性
+      
+      allow update: if request.auth != null && (
+        // Case 1: 预约 (当前无人预订 && 用户将名额设为自己)
+        (resource.data.get('bookedBy', null) == null && request.resource.data.bookedBy == request.auth.uid) ||
+        
+        // Case 2: 取消/踢人 (当前已预订 && 将名额设为null)
+        // 且必须满足: (操作者是预订人本人 OR 操作者是项目管理员)
+        (resource.data.get('bookedBy', null) != null && request.resource.data.bookedBy == null && (
+            resource.data.bookedBy == request.auth.uid || 
+            isProjectAdmin(resource.data.projectId)
+        ))
+      );
+    }
+
+    // --- 社交与外围功能 (Social & Peripheral Features) ---
+
+    // 1. 公开用户信息 (用于好友搜索)
+    match /users/{userId} {
+       allow read: if true;
+       allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 2. 好友关系
+    match /friendships/{friendshipId} {
+       // 只有关系中的成员可以读写
+       allow read, write: if request.auth != null && (request.auth.uid in resource.data.members || request.auth.uid in request.resource.data.members);
+    }
+    
+    // 3. 好友私信
+    match /friend_messages/{messageId} {
+       // MVP允许登录用户读取 (更严格的做法是get()父级friendship文档校验成员资格，但这会消耗大量读额度)
+       allow read: if request.auth != null; 
+       // 只能发送属于自己的消息
+       allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid;
+    }
+    
+    // 4. 项目公共聊天室
+    match /project_chats/{messageId} {
+       allow read: if true; 
+       allow create: if request.auth != null;
+    }
+    
+    // 5. 系统公告
+    match /announcements/{announcementId} {
+       allow read: if true;
+       allow write: if false; // 仅允许通过 Firebase 控制台管理员写入
+    }
+    
+    // 6. 通知系统 (合并后的规则)
+    match /notifications/{notificationId} {
+      // 只有接收者可以读取和更新状态(已读)
+      allow read, update: if request.auth != null && resource.data.recipientId == request.auth.uid;
+      // 允许登录用户发送通知 (例如发送好友请求通知)
+      allow create: if request.auth != null;
+      // 允许接收者删除自己的通知
+      allow delete: if request.auth != null && resource.data.recipientId == request.auth.uid;
+    }
+
+    // --- 兜底规则 ---
+    // 只有经过身份验证的用户才能访问未明确定义的集合 (开发阶段安全网)
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // --- Game System Rules ---
+    match /game_rooms/{roomId} {
+      // Allow reading rooms if authenticated
+      allow read: if request.auth != null;
+      
+      // Allow creating rooms
+      allow create: if request.auth != null 
+                    && request.resource.data.players.size() <= 2 // Allow initializing with players (e.g. Bot)
+                    && request.resource.data.status in ['waiting', 'playing']; // Allow starting immediately
+
+      // Allow updates (Playing the game)
+      // In a strict environment, you would validate every field change (scores, moves, turn logic).
+      // For this demo, we allow players inside the room to update the state.
+      allow update: if request.auth != null; 
+      
+      // Allow creator to delete/close functionality if needed
+      allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
+    }    
+  }
+}

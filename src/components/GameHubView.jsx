@@ -99,10 +99,20 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
       if ((selectedMove || me.move) && room.status === 'playing') return; // Already acted locally
       setSelectedMove(move);
       
-      const newPlayers = room.players.map(p => {
+      let newPlayers = room.players.map(p => {
           if (p.uid === user.uid) return { ...p, move: move };
           return p;
       });
+
+      // Bot Logic
+      const bot = newPlayers.find(p => p.uid === 'computer');
+      if (bot && !bot.move) {
+          const moves = ['rock', 'paper', 'scissors'];
+          const botMove = moves[Math.floor(Math.random() * moves.length)];
+          newPlayers = newPlayers.map(p => 
+              p.uid === 'computer' ? { ...p, move: botMove } : p
+          );
+      }
       
       const allMoved = newPlayers.every(p => p.move);
       let updateData = { players: newPlayers };
@@ -687,6 +697,7 @@ export default function GameHubView({ project, user, t }) {
   const [bestOf, setBestOf] = useState(3);
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
   const [mineDifficulty, setMineDifficulty] = useState('easy'); // easy, medium, hard
+  const [vsComputer, setVsComputer] = useState(false);
 
   // Sync Rooms
   useEffect(() => {
@@ -739,13 +750,22 @@ export default function GameHubView({ project, user, t }) {
           projectId: project.id,
           name: roomName,
           game: selectedGame, // 'rps' or 'mine'
-          status: 'playing', 
+          status: (vsComputer || selectedGame === 'mine') ? 'playing' : 'waiting', 
           players: [], 
           config,
           createdAt: Date.now(),
           createdBy: user.uid
       };
       
+      if (selectedGame === 'rps' && vsComputer) {
+           newRoom.players = [
+               { uid: user.uid, name: user.displayName || 'You', score: 0, move: null },
+               { uid: 'computer', name: 'Bot 🤖', score: 0, move: null }
+           ];
+           newRoom.currentRound = 1;
+           newRoom.roundStartTime = Date.now();
+      }
+
       const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
       setShowCreate(false);
       setRoomName('');
@@ -828,6 +848,13 @@ export default function GameHubView({ project, user, t }) {
                                        </select>
                                    </div>
                                </div>
+                               
+                               <div className="flex items-center gap-2 mt-4 p-3 bg-m3-surface rounded-xl border border-m3-outline-variant/30 cursor-pointer" onClick={() => setVsComputer(!vsComputer)}>
+                                   <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${vsComputer ? 'bg-google-blue border-google-blue' : 'border-m3-outline'}`}>
+                                       {vsComputer && <Check className="w-3.5 h-3.5 text-white"/>}
+                                   </div>
+                                   <span className="text-sm font-medium">Play vs Computer</span>
+                               </div>
                            )}
                            
                            {selectedGame === 'mine' && (
@@ -905,198 +932,3 @@ export default function GameHubView({ project, user, t }) {
   );
 }
 
-  }, [project.id, activeTab]);
-
-  const handleCreateRoom = async (e) => {
-      e.preventDefault();
-      if (!roomName.trim()) return;
-      
-      const newRoom = {
-          projectId: project.id,
-          name: roomName,
-          game: 'rps',
-          status: 'waiting',
-          players: [], // Creator doesn't auto-join to allow them to be host/spectator initially? No, let's auto-join or just wait.
-                       // Prompt said "create room", users enter it.
-          config: {
-              bestOf: parseInt(bestOf),
-              timeout: parseInt(timeoutSeconds)
-          },
-          createdAt: Date.now(),
-          createdBy: user.uid
-      };
-      
-      const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
-      setShowCreate(false);
-      setRoomName('');
-      setActiveRoom({ id: ref.id, ...newRoom }); // Enter immediately
-  };
-  
-  const enterRoom = (room) => {
-      setActiveRoom(room);
-  };
-  
-  // Need to subscribe to the active Room specifically to get realtime updates inside the game component
-  useEffect(() => {
-     if (!activeRoom) return;
-     const unsub = onSnapshot(doc(db, 'game_rooms', activeRoom.id), (doc) => {
-         if (doc.exists()) setActiveRoom({ id: doc.id, ...doc.data() });
-         else setActiveRoom(null); // Deleted
-     });
-     return () => unsub();
-  }, [activeRoom?.id]);
-
-  if (activeRoom) {
-      return (
-          <div className="max-w-4xl mx-auto bg-m3-surface shadow-elevation-2 rounded-[24px] p-6 lg:p-8 min-h-[600px]">
-              <RPSGame user={user} room={activeRoom} projectId={project.id} onLeave={() => setActiveRoom(null)} />
-          </div>
-      );
-  }
-
-  return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-display text-m3-on-surface mb-2">{t('gameHub')}</h1>
-          <p className="text-m3-on-surface-variant flex items-center gap-2">
-            <Gamepad2 className="w-4 h-4" /> {project.title}
-          </p>
-        </div>
-        <button 
-          onClick={() => setShowCreate(true)} 
-          className="flex items-center gap-2 px-6 py-3 bg-m3-primary-container text-m3-on-primary-container rounded-2xl font-medium hover:shadow-elevation-1 transition-all"
-        >
-          <Plus className="w-5 h-5"/> {t('createRoom')}
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-4 mb-6 border-b border-m3-outline-variant/20">
-          {['lobby', 'finished'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-google-green text-google-green' : 'border-transparent text-m3-on-surface-variant hover:text-m3-on-surface'}`}
-              >
-                  {tab === 'lobby' ? t('activeGames') : t('history')}
-              </button>
-          ))}
-      </div>
-
-      {/* Room Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <AnimatePresence mode="popLayout">
-            {rooms.map(room => (
-                <motion.div 
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    key={room.id}
-                    onClick={() => enterRoom(room)}
-                    className="bg-m3-surface-container-high rounded-[20px] p-5 cursor-pointer hover:bg-m3-surface-container hover:shadow-elevation-1 border border-transparent hover:border-m3-outline-variant/50 transition-all group"
-                >
-                    <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2">
-                             <div className="w-8 h-8 rounded-full bg-google-green/10 flex items-center justify-center text-google-green">
-                                 {room.game === 'rps' ? <Scissors className="w-4 h-4"/> : <Gamepad2 className="w-4 h-4"/>}
-                             </div>
-                             <span className="font-medium text-m3-on-surface">{room.name}</span>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded-md font-medium ${room.status === 'playing' ? 'bg-google-green/10 text-google-green' : 'bg-m3-on-surface/10 text-m3-on-surface-variant'}`}>
-                            {room.status}
-                        </span>
-                    </div>
-                    
-                    <div className="space-y-2 mb-4">
-                        <div className="flex justify-between text-xs text-m3-on-surface-variant">
-                            <span>Players</span>
-                            <span>{room.players?.length || 0}/2</span>
-                        </div>
-                        <div className="w-full bg-m3-on-surface/5 h-1.5 rounded-full overflow-hidden">
-                            <div className="h-full bg-google-green transition-all" style={{ width: `${((room.players?.length || 0) / 2) * 100}%` }}></div>
-                        </div>
-                    </div>
-                    
-                    <div className="flex gap-2 text-xs text-m3-on-surface-variant opacity-80">
-                         <span className="flex items-center gap-1"><Trophy className="w-3 h-3"/> Best of {room.config.bestOf}</span>
-                         <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {room.config.timeout}s</span>
-                    </div>
-                </motion.div>
-            ))}
-          </AnimatePresence>
-          
-          {rooms.length === 0 && (
-              <div className="col-span-full py-20 text-center text-m3-on-surface-variant/50 flex flex-col items-center">
-                  <Gamepad2 className="w-12 h-12 mb-3 opacity-20"/>
-                  <p>{t('noRooms')}</p>
-              </div>
-          )}
-      </div>
-
-      {/* Create Modal */}
-      <AnimatePresence>
-        {showCreate && (
-             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                 <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.9, opacity: 0 }}
-                    className="bg-m3-surface w-full max-w-md rounded-[28px] p-6 shadow-elevation-3"
-                 >
-                     <h3 className="text-xl font-medium mb-6">{t('createRoom')}</h3>
-                     <form onSubmit={handleCreateRoom} className="space-y-4">
-                        <div>
-                            <label className="text-xs text-m3-on-surface-variant ml-3 mb-1 block">Room Name</label>
-                            <input 
-                                autoFocus
-                                type="text" 
-                                value={roomName}
-                                onChange={e => setRoomName(e.target.value)}
-                                className="w-full px-4 py-3 bg-m3-surface-container rounded-xl border-none outline-none focus:ring-2 focus:ring-google-green/50"
-                                placeholder="e.g. Friendly Match"
-                            />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs text-m3-on-surface-variant ml-3 mb-1 block">Best of (Odd)</label>
-                                <select 
-                                    value={bestOf}
-                                    onChange={e => setBestOf(e.target.value)}
-                                    className="w-full px-4 py-3 bg-m3-surface-container rounded-xl border-none outline-none"
-                                >
-                                    <option value="1">1 Round</option>
-                                    <option value="3">3 Rounds</option>
-                                    <option value="5">5 Rounds</option>
-                                    <option value="7">7 Rounds</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs text-m3-on-surface-variant ml-3 mb-1 block">Turn Timeout</label>
-                                <div className="relative">
-                                    <input 
-                                        type="number" 
-                                        value={timeoutSeconds}
-                                        onChange={e => setTimeoutSeconds(e.target.value)}
-                                        className="w-full px-4 py-3 bg-m3-surface-container rounded-xl border-none outline-none"
-                                        min="5" max="60"
-                                    />
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-m3-on-surface-variant">sec</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2 mt-8">
-                            <button type="button" onClick={() => setShowCreate(false)} className="px-6 py-2.5 text-m3-on-surface-variant hover:bg-black/5 rounded-full font-medium">Cancel</button>
-                            <button type="submit" disabled={!roomName.trim()} className="px-6 py-2.5 bg-google-green text-white rounded-full font-medium shadow-sm hover:shadow-md disabled:opacity-50">Create</button>
-                        </div>
-                     </form>
-                 </motion.div>
-             </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
