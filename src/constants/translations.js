@@ -44,6 +44,7 @@ export const TRANSLATIONS = {
     collect: "Collect",
     connect: "Connect",
     select: "Select",
+    games: "Project",
     // Create
     createTitle: "Create New {type} Project",
     selectTool: "Select Tool Type",
@@ -322,6 +323,7 @@ export const TRANSLATIONS = {
     collect: "Collect",
     connect: "Connect",
     select: "Select",
+    games: "Project",
     project: "Project",
     // Create
     createTitle: "创建新的 {type} 项目",
