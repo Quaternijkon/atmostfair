@@ -12,61 +12,107 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
   // Game State derived from room
   const [timeLeft, setTimeLeft] = useState(0);
   const [selectedMove, setSelectedMove] = useState(null);
+  const [showdownAnim, setShowdownAnim] = useState(null); // Local state for animation trigger
   
   const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
   const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
   const opponent = isPlayer ? room.players.find(p => p.uid !== user.uid) : null;
   const isSpectator = !isPlayer;
+  const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
   
   const ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
   const COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
 
-  // Timer logic
+  // Reset local selection when round changes
   useEffect(() => {
-    if (room.status !== 'playing') return;
-    
+    setSelectedMove(null);
+  }, [room.currentRound]);
+
+  // Timer & Game Loop logic
+  useEffect(() => {
+    if (!room) return;
+
     const interval = setInterval(() => {
         const now = Date.now();
-        // Calculate remaining based on round start time.
-        // Assuming room.roundStartTime is updated by clients/server
-        const elapsed = (now - (room.roundStartTime || now)) / 1000;
-        const remaining = Math.max(0, room.config.timeout - elapsed);
         
-        setTimeLeft(remaining);
+        // 1. PLAYING STATE TIMER
+        if (room.status === 'playing') {
+            const elapsed = (now - (room.roundStartTime || now)) / 1000;
+            const remaining = Math.max(0, room.config.timeout - elapsed);
+            setTimeLeft(remaining);
 
-        if (remaining <= 0 && isPlayer && !me.move) {
-           // Auto-play previous move or rock
-           handleMove(me.lastMove || 'rock');
+            // Timeout Auto-move (Client side enforcement by player themselves)
+            if (remaining <= 0 && isPlayer && !me.move) {
+               // Auto-play random or rock
+               const moves = ['rock', 'paper', 'scissors'];
+               const randomMove = moves[Math.floor(Math.random() * moves.length)];
+               handleMove(randomMove);
+            }
         }
+        
+        // 2. SHOWDOWN STATE TIMER (Host only handles transition)
+        if (room.status === 'showdown' && isHost) {
+             if (now > room.showdownEndTime) {
+                 startNextRound();
+             }
+        }
+
     }, 200);
     return () => clearInterval(interval);
-  }, [room, isPlayer, me]);
+  }, [room, isPlayer, me, isHost]);
+
+  const startNextRound = async () => {
+       // Check Win Condition already handled before entering showdown? 
+       // No, usually we check at end of showdown or start of next.
+       // Let's do it simply: We just clear moves and increment round, assuming scores updated before Showdown.
+       // Wait, if match ended, we shouldn't be in 'showdown' loop leading to 'playing'.
+       // Implementation detail: If Match Won, we go 'showdown' -> 'finished'.
+       
+       const winThreshold = Math.floor(room.config.bestOf / 2) + 1;
+       const p1 = room.players[0];
+       const p2 = room.players[1];
+       
+       let matchWinner = null;
+       if (p1.score >= winThreshold) matchWinner = p1.uid;
+       if (p2.score >= winThreshold) matchWinner = p2.uid;
+       
+       let updateData = {};
+       if (matchWinner) {
+           updateData = {
+               status: 'finished',
+               winnerId: matchWinner,
+               players: room.players.map(p => ({...p, lastMove: p.move, move: null})) 
+           };
+       } else {
+           updateData = {
+               status: 'playing',
+               currentRound: (room.currentRound || 1) + 1,
+               roundStartTime: Date.now(),
+               players: room.players.map(p => ({...p, lastMove: p.move, move: null}))
+           };
+       }
+       
+       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
+  };
 
   const handleMove = async (move) => {
-      if (selectedMove || me.move) return; // Already acted locally
+      if ((selectedMove || me.move) && room.status === 'playing') return; // Already acted locally
       setSelectedMove(move);
-      
-      // Update my move in Firestore
-      // For simplicity in this frontend-only demo, we write directly to the room doc
-      // In a real app, use subcollections or hidden fields.
-      // We rely on "Honor System" UI hiding here.
       
       const newPlayers = room.players.map(p => {
           if (p.uid === user.uid) return { ...p, move: move };
           return p;
       });
       
-      // Check if both moved
       const allMoved = newPlayers.every(p => p.move);
-      
       let updateData = { players: newPlayers };
       
       if (allMoved) {
-          // RESOLVE ROUND
+          // Both moved -> Calculate Result & Enter Showdown
           const p1 = newPlayers[0];
           const p2 = newPlayers[1];
-          
-          let winnerId = null;
+          let winnerId = null; // Round winner
+
           if (p1.move !== p2.move) {
               if (
                   (p1.move === 'rock' && p2.move === 'scissors') ||
@@ -80,7 +126,6 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                   p2.score = (p2.score || 0) + 1;
               }
           }
-           // Tie: No score change
            
           // Record History
           const historyItem = {
@@ -90,35 +135,20 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
               winnerId,
               timestamp: Date.now()
           };
-          
           const history = [...(room.history || []), historyItem];
           
-          // Check Match Win
-          const winThreshold = Math.floor(room.config.bestOf / 2) + 1;
-          let matchWinner = null;
-          if (p1.score >= winThreshold) matchWinner = p1.uid;
-          if (p2.score >= winThreshold) matchWinner = p2.uid;
-          
-          if (matchWinner) {
-              updateData = {
-                  players: newPlayers.map(p => ({...p, lastMove: p.move, move: null})), // Clear moves but keep scores
-                  status: 'finished',
-                  winnerId: matchWinner,
-                  history
-              };
-          } else {
-               // Next Round
-               updateData = {
-                   players: newPlayers.map(p => ({...p, lastMove: p.move, move: null})),
-                   currentRound: (room.currentRound || 1) + 1,
-                   roundStartTime: Date.now(),
-                   history
-               };
-          }
+          // Enter Showdown Mode
+          updateData = {
+              players: newPlayers, // Save moves/scores
+              history,
+              status: 'showdown',
+              showdownEndTime: Date.now() + 3000 // 3 seconds animation
+          };
       }
       
       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
   };
+
   
   const joinGame = async () => {
       if (room.players.length >= 2) return;
@@ -158,11 +188,82 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
 
         {/* Game Area */}
         <div className="flex-1 flex flex-col items-center justify-center gap-12 relative min-h-[400px]">
-            
+             
+            {/* Showdown Overlay */}
+            <AnimatePresence>
+                {room.status === 'showdown' && (
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-20 bg-m3-surface/80 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none"
+                    >
+                         <div className="flex items-center gap-8 mb-4">
+                             {/* P1 */}
+                             <motion.div 
+                                initial={{ x: -50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}
+                                className="flex flex-col items-center"
+                             >
+                                 <div className={`p-6 rounded-3xl bg-white shadow-xl ${room.players[0].move === 'rock' ? 'text-google-red' : room.players[0].move === 'paper' ? 'text-google-blue' : 'text-google-yellow'}`}>
+                                     {room.players[0].move === 'rock' && <Disc className="w-16 h-16"/>}
+                                     {room.players[0].move === 'paper' && <Hand className="w-16 h-16"/>}
+                                     {room.players[0].move === 'scissors' && <Scissors className="w-16 h-16"/>}
+                                 </div>
+                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[0].name}</div>
+                             </motion.div>
+
+                             <div className="text-2xl font-black italic text-m3-on-surface-variant">VS</div>
+
+                             {/* P2 */}
+                             <motion.div 
+                                initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}
+                                className="flex flex-col items-center"
+                             >
+                                 <div className={`p-6 rounded-3xl bg-white shadow-xl ${room.players[1].move === 'rock' ? 'text-google-red' : room.players[1].move === 'paper' ? 'text-google-blue' : 'text-google-yellow'}`}>
+                                     {room.players[1].move === 'rock' && <Disc className="w-16 h-16"/>}
+                                     {room.players[1].move === 'paper' && <Hand className="w-16 h-16"/>}
+                                     {room.players[1].move === 'scissors' && <Scissors className="w-16 h-16"/>}
+                                 </div>
+                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[1].name}</div>
+                             </motion.div>
+                         </div>
+                         
+                         {/* Result Text */}
+                         <motion.div 
+                            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}
+                            className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-google-blue to-google-green"
+                         >
+                            {(() => {
+                                const p1 = room.players[0];
+                                const p2 = room.players[1];
+                                if (p1.move === p2.move) return "DRAW!";
+                                // We calculated round winner logic in handleMove but hard to reconstruct here cleanly without duplicating logic
+                                // Or reading last history item?
+                                const lastRound = room.history && room.history[room.history.length - 1];
+                                if (lastRound) {
+                                    if (!lastRound.winnerId) return "DRAW!";
+                                    const winnerName = room.players.find(p => p.uid === lastRound.winnerId)?.name;
+                                    return `${winnerName} WINS!`;
+                                }
+                                return "ROUND OVER";
+                            })()}
+                         </motion.div>
+                         <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} 
+                            className="mt-2 text-sm text-m3-on-surface-variant"
+                         >
+                             Next round starting...
+                         </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Opponent Area */}
             <div className={`flex flex-col items-center transition-opacity duration-300 ${opponent ? 'opacity-100' : 'opacity-40'}`}>
                 <div className="w-16 h-16 rounded-full bg-m3-surface-container-high flex items-center justify-center mb-2 shadow-inner border-2 border-white relative">
                    {opponent ? (
+                       // Show Move in Showdown OR Playing (if we wanted to cheat/debug, but handled by logic above)
+                       // If Showdown, Show Icon? No, overlay handles it.
                        opponent.move && room.status === 'playing' ? 
                        <div className="text-4xl animate-bounce">🤔</div> : // Thinking
                        room.status === 'finished' && room.winnerId === opponent.uid ? 
@@ -180,7 +281,7 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
             {/* Center Status / Result */}
             <div className="text-center h-20 flex items-center justify-center">
                  {room.status === 'waiting' && <span className="text-m3-on-surface-variant animate-pulse">Waiting for opponent...</span>}
-                 {room.status === 'playing' && <div className="text-4xl font-display font-medium text-m3-on-surface/20">VS</div>}
+                 {room.status === 'playing' && <div className="text-4xl font-display font-medium text-m3-on-surface/20">ROUND {room.currentRound}</div>}
                  {room.status === 'finished' && (
                      <motion.div initial={{scale:0}} animate={{scale:1}} className="flex flex-col items-center">
                          <div className="text-2xl font-bold text-google-yellow mb-1">{room.winnerId === user.uid ? 'Victory!' : 'Defeat'}</div>
