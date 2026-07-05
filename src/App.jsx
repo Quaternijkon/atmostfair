@@ -589,13 +589,22 @@ function AppContent() {
       }
   });
 
-  const handleCreateProject = async (title, type, creatorName, password) => {
+  const handleCreateProject = async (title, type, creatorName, password, showToast) => {
     const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
-    if (!projectData) return;
+    if (!projectData) {
+      showToast(t('createProjectFailed'), 'error');
+      return { ok: false };
+    }
     try {
       const projectRef = await addDoc(collection(db, 'projects'), projectData);
       void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: projectData.title, actorName: projectData.creatorName });
-    } catch (e) { console.error(e); }
+      showToast(t('createProjectSuccess', { title: projectData.title }), 'success');
+      return { ok: true, projectId: projectRef.id };
+    } catch (e) {
+      console.error(e);
+      showToast(t('createProjectFailed'), 'error');
+      return { ok: false };
+    }
   };
 
   if (authChecking) {
@@ -727,7 +736,7 @@ function AppContent() {
                                 recentProjectIds={recentProjectIds}
                                 onToggleProjectPin={actions.handleToggleProjectPin}
                                 onRecordProjectOpen={actions.handleRecordProjectOpen}
-                                onCreateProject={handleCreateProject}
+                                onCreateProject={(title, type, creatorName, password) => handleCreateProject(title, type, creatorName, password, showToast)}
                                 defaultName={user.displayName || ''}
                                 t={t}
                               />

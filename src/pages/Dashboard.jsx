@@ -45,6 +45,8 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const [newTitle, setNewTitle] = useState('');
   const [creatorName, setCreatorName] = useState(defaultName);
   const [newPassword, setNewPassword] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [createError, setCreateError] = useState('');
   
   // Unlock Password State
   const [passwordPromptProject, setPasswordPromptProject] = useState(null);
@@ -123,14 +125,26 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
 
   const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
 
-  const handleCreateSubmit = (e) => {
+  const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    if (!canCreateProject) return;
-    onCreateProject(newTitle, selectedModule.id, creatorName, newPassword);
-    setShowCreate(false); 
-    setNewTitle(''); 
-    setNewPassword('');
-    setSelectedModule(null);
+    if (!canCreateProject || isCreatingProject) return;
+    setIsCreatingProject(true);
+    setCreateError('');
+    try {
+      const result = await onCreateProject(newTitle, selectedModule.id, creatorName, newPassword);
+      if (result?.ok === false) {
+        setCreateError(t('createProjectFailed'));
+        return;
+      }
+      setShowCreate(false);
+      setNewTitle('');
+      setNewPassword('');
+      setSelectedModule(null);
+    } catch {
+      setCreateError(t('createProjectFailed'));
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
   const navigateToProject = (project, options) => {
@@ -353,8 +367,9 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                   <button
                     type="button"
                     key={mod.id} 
+                    disabled={isCreatingProject}
                     onClick={() => setSelectedModule(mod)} 
-                    className={`app-card flex min-h-[104px] items-start gap-4 p-4 text-left ${selectedModule?.id === mod.id ? 'border-google-blue bg-m3-primary-container/70 shadow-elevation-1' : 'hover:bg-m3-surface-container-low'}`}
+                    className={`app-card flex min-h-[104px] items-start gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-60 ${selectedModule?.id === mod.id ? 'border-google-blue bg-m3-primary-container/70 shadow-elevation-1' : 'hover:bg-m3-surface-container-low'}`}
                   >
                     <div className={`p-2 rounded-full ${selectedModule?.id === mod.id ? 'bg-white/50' : 'bg-m3-surface-container-high'}`}>
                       <mod.icon className={`w-6 h-6 ${currentCategory.color}`} />
@@ -377,22 +392,23 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                  <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
                     <label className="app-label">{t('projTitle')}</label>
-                    <input type="text" placeholder={t('projTitlePlaceholder')} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="app-input" required maxLength={PROJECT_TITLE_MAX_LENGTH} />
+                    <input type="text" placeholder={t('projTitlePlaceholder')} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="app-input" required maxLength={PROJECT_TITLE_MAX_LENGTH} disabled={isCreatingProject} />
                   </div>
                   <div className="w-full md:w-1/3">
                     <label className="app-label">{t('creatorName')}</label>
-                    <input type="text" placeholder={t('creatorNamePlaceholder')} value={creatorName} onChange={e => setCreatorName(e.target.value)} className="app-input" required />
+                    <input type="text" placeholder={t('creatorNamePlaceholder')} value={creatorName} onChange={e => setCreatorName(e.target.value)} className="app-input" required disabled={isCreatingProject} />
                   </div>
                 </div>
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                   <div className="flex-1 w-full">
                     <label className="app-label">{t('accessPass')}</label>
-                    <input type="text" placeholder={t('leaveEmpty')} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="app-input" />
+                    <input type="text" placeholder={t('leaveEmpty')} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="app-input" disabled={isCreatingProject} />
                   </div>
-                  <button type="submit" disabled={!canCreateProject} className={`app-button w-full px-8 text-white hover:shadow-elevation-2 disabled:cursor-not-allowed disabled:opacity-45 md:w-auto ${currentCategory.bg}`}>
-                    {t('createBtn', { label: selectedModule.label })}
+                  <button type="submit" disabled={!canCreateProject || isCreatingProject} className={`app-button w-full px-8 text-white hover:shadow-elevation-2 disabled:cursor-not-allowed disabled:opacity-45 md:w-auto ${currentCategory.bg}`}>
+                    {isCreatingProject ? t('processing') : t('createBtn', { label: selectedModule.label })}
                   </button>
                 </div>
+                {createError && <p className="text-sm font-medium text-google-red">{createError}</p>}
               </div>
             )}
           </form>

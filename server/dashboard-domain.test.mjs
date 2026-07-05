@@ -240,10 +240,38 @@ test('dashboard create form blocks whitespace and overlong project titles before
   const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
 
   assert.match(dashboard, /PROJECT_TITLE_MAX_LENGTH/, 'Dashboard should share the project title limit with the domain helper');
-  assert.match(dashboard, /const canCreateProject = Boolean\(selectedModule && newTitle\.trim\(\) && newTitle\.length <= PROJECT_TITLE_MAX_LENGTH\);/, 'Dashboard should derive a stable create-enabled state');
-  assert.match(dashboard, /if \(!canCreateProject\) return;/, 'Dashboard should keep the create form open when input is invalid');
+  assert.match(dashboard, /const canCreateProject = Boolean\(selectedModule && newTitle\.trim\(\) && newTitle\.length <= PROJECT_TITLE_MAX_LENGTH\)/, 'Dashboard should derive a stable create-enabled state');
+  assert.match(dashboard, /if \(!canCreateProject \|\| isCreatingProject\) return;/, 'Dashboard should keep the create form open when input is invalid or already submitting');
   assert.match(dashboard, /maxLength=\{PROJECT_TITLE_MAX_LENGTH\}/, 'Dashboard title input should enforce the same max length in the UI');
-  assert.match(dashboard, /disabled=\{!canCreateProject\}/, 'Dashboard create button should be disabled until the project shell is valid');
+  assert.match(dashboard, /disabled=\{!canCreateProject \|\| isCreatingProject\}/, 'Dashboard create button should be disabled until the project shell is valid and idle');
+});
+
+test('dashboard create flow prevents duplicate submissions and preserves drafts on failure', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+  };
+
+  for (const key of ['createProjectSuccess', 'createProjectFailed']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.dashboard, /\[isCreatingProject,\s*setIsCreatingProject\]\s*=\s*useState\(false\)/, 'Dashboard should track project creation progress');
+  assert.match(files.dashboard, /\[createError,\s*setCreateError\]\s*=\s*useState\(''\)/, 'Dashboard should keep an inline create error');
+  assert.match(files.dashboard, /const handleCreateSubmit = async \(e\) =>/, 'Create submit should await the async project write');
+  assert.match(files.dashboard, /if \(!canCreateProject \|\| isCreatingProject\) return;/, 'Create submit should ignore duplicate submissions while pending');
+  assert.match(files.dashboard, /setIsCreatingProject\(true\)/, 'Create submit should enter a pending state before writing');
+  assert.match(files.dashboard, /const result = await onCreateProject/, 'Create submit should wait for the app create action result');
+  assert.match(files.dashboard, /if \(result\?\.ok === false\)/, 'Create submit should detect failed create attempts');
+  assert.match(files.dashboard, /setCreateError\(t\('createProjectFailed'\)\)/, 'Failed create attempts should show localized inline feedback');
+  assert.match(files.dashboard, /disabled=\{!canCreateProject \|\| isCreatingProject\}/, 'Create button should be disabled while submitting');
+  assert.match(files.dashboard, /isCreatingProject \? t\('processing'\) : t\('createBtn'/, 'Create button should show localized progress copy');
+
+  assert.match(files.app, /return \{ ok: true, projectId: projectRef\.id \}/, 'App create action should report a successful project id');
+  assert.match(files.app, /showToast\(t\('createProjectSuccess'/, 'Successful project creation should use app toast feedback');
+  assert.match(files.app, /showToast\(t\('createProjectFailed'/, 'Failed project creation should use app toast feedback');
+  assert.match(files.app, /return \{ ok: false \}/, 'Failed project creation should report failure to keep the dashboard draft open');
 });
 
 test('dashboard exposes accessible user-scoped project pinning', async () => {
