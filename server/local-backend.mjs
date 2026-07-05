@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { createAuthService } from './auth-service.mjs';
 import { createDataStore } from './data-store.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
+import {
+  createGameRoomJoinPatch,
+  createRpsNextRoundPatch,
+} from '../src/lib/projectDomain.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -36,6 +40,9 @@ const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
+const GAME_TYPES = new Set(['rps', 'mine']);
+const RPS_MOVES = new Set(['rock', 'paper', 'scissors']);
+const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
 const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['voting_items', 'projectId'],
@@ -397,6 +404,10 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     return authorizeProjectChatOperation({ user, type, data, existing });
   }
 
+  if (collection === 'game_rooms') {
+    return authorizeGameRoomOperation({ user, type, data, existing });
+  }
+
   if (
     collection === 'queue_participants'
     || collection === 'roulette_participants'
@@ -560,6 +571,330 @@ function normalizeProjectChatCreateData(data, user) {
     uid: user.uid,
     name: cleanUserProvidedName('', user),
   };
+}
+
+function authorizeGameRoomOperation({ user, type, data, existing }) {
+  if (!existing) {
+    return normalizeGameRoomCreateData(data, user);
+  }
+
+  if (type !== 'update') forbidden();
+  assertGameRoomImmutableFields(data, existing);
+
+  if (existing.game === 'rps') {
+    return authorizeRpsRoomUpdate({ user, data, existing });
+  }
+
+  if (existing.game === 'mine') {
+    return authorizeMineRoomUpdate({ user, data, existing });
+  }
+
+  forbidden();
+}
+
+function normalizeGameRoomCreateData(data, user) {
+  const projectId = typeof data?.projectId === 'string' ? data.projectId.trim() : '';
+  const name = String(data?.name || '').trim();
+  const game = typeof data?.game === 'string' ? data.game.trim() : '';
+  if (!projectId || !name || !GAME_TYPES.has(game)) {
+    throwDataError(400, 'data/invalid-game-room', 'Game room name and type are required.');
+  }
+
+  if (game === 'rps') {
+    return normalizeRpsRoomCreateData({ data, user, projectId, name });
+  }
+
+  return {
+    projectId,
+    name,
+    game: 'mine',
+    status: 'playing',
+    players: [],
+    config: normalizeMineConfig(data?.config),
+    createdAt: data?.createdAt,
+    createdBy: user.uid,
+  };
+}
+
+function normalizeRpsRoomCreateData({ data, user, projectId, name }) {
+  const requestedPlayers = Array.isArray(data?.players) ? data.players : [];
+  const userPlayer = requestedPlayers.find((player) => player?.uid === user.uid);
+  const computerPlayer = requestedPlayers.find((player) => player?.uid === 'computer');
+  const base = {
+    projectId,
+    name,
+    game: 'rps',
+    status: 'waiting',
+    players: [],
+    config: normalizeRpsConfig(data?.config),
+    createdAt: data?.createdAt,
+    createdBy: user.uid,
+  };
+
+  if (!userPlayer || !computerPlayer) return base;
+
+  return {
+    ...base,
+    status: 'playing',
+    players: [
+      {
+        uid: user.uid,
+        name: cleanUserProvidedName(userPlayer.name, user),
+        score: 0,
+        move: null,
+      },
+      {
+        uid: 'computer',
+        name: String(computerPlayer.name || 'Bot').trim() || 'Bot',
+        score: 0,
+        move: null,
+      },
+    ],
+    currentRound: Number.parseInt(data?.currentRound, 10) || 1,
+    roundStartTime: data?.roundStartTime ?? data?.createdAt,
+  };
+}
+
+function normalizeRpsConfig(config) {
+  const bestOf = [1, 3, 5].includes(Number.parseInt(config?.bestOf, 10))
+    ? Number.parseInt(config.bestOf, 10)
+    : 3;
+  const timeout = [15, 30, 60].includes(Number.parseInt(config?.timeout, 10))
+    ? Number.parseInt(config.timeout, 10)
+    : 30;
+  return { bestOf, timeout };
+}
+
+function normalizeMineConfig(config) {
+  const difficulty = ['easy', 'medium', 'hard'].includes(config?.difficulty) ? config.difficulty : 'easy';
+  const rows = normalizeBoundedInt(config?.rows, 1, 30, difficulty === 'hard' ? 16 : difficulty === 'medium' ? 16 : 9);
+  const cols = normalizeBoundedInt(config?.cols, 1, 30, difficulty === 'hard' ? 30 : difficulty === 'medium' ? 16 : 9);
+  const maxMines = Math.max(1, rows * cols - 1);
+  const mines = normalizeBoundedInt(config?.mines, 1, maxMines, difficulty === 'hard' ? 99 : difficulty === 'medium' ? 40 : 10);
+  const mineLocations = Array.isArray(config?.mineLocations)
+    ? [...new Set(config.mineLocations.map((item) => String(item || '').trim()).filter(Boolean))].slice(0, mines)
+    : [];
+
+  return { difficulty, rows, cols, mines, mineLocations };
+}
+
+function normalizeBoundedInt(value, min, max, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function assertGameRoomImmutableFields(data, existing) {
+  for (const field of ['projectId', 'game', 'createdBy', 'createdAt', 'config', 'name']) {
+    if (!Object.hasOwn(data || {}, field)) continue;
+    if (!deepEqualData(data[field], existing[field])) forbidden();
+  }
+}
+
+function authorizeRpsRoomUpdate({ user, data, existing }) {
+  if (!Object.hasOwn(data || {}, 'players')) forbidden();
+
+  const existingPlayers = normalizeGamePlayers(existing.players);
+  if (!existingPlayers.some((player) => player.uid === user.uid)) {
+    return authorizeGameRoomJoin({ user, data, existing });
+  }
+
+  if (existing.status === 'waiting') {
+    return authorizeGameRoomJoin({ user, data, existing });
+  }
+
+  if (existing.status === 'playing') {
+    return authorizeRpsPlayingUpdate({ user, data, existing });
+  }
+
+  if (existing.status === 'showdown') {
+    return authorizeRpsShowdownUpdate({ user, data, existing });
+  }
+
+  forbidden();
+}
+
+function authorizeGameRoomJoin({ user, data, existing }) {
+  const players = normalizeGamePlayers(existing.players);
+  if (players.some((player) => player.uid === user.uid)) {
+    throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
+  }
+
+  const maxPlayers = existing.game === 'mine' ? 8 : 2;
+  if (players.length >= maxPlayers) {
+    throwDataError(409, 'data/game-full', 'Game room is already full.');
+  }
+
+  const requestedPlayers = Array.isArray(data?.players) ? data.players : [];
+  const requestedPlayer = requestedPlayers.find((player) => player?.uid === user.uid) || {};
+  const expected = createGameRoomJoinPatch(existing, user, requestedPlayer.name, data?.roundStartTime);
+  if (!expected || !deepEqualData(data || {}, expected)) forbidden();
+  return expected;
+}
+
+function authorizeRpsPlayingUpdate({ user, data, existing }) {
+  const allowedKeys = ['players', 'status', 'history', 'showdownEndTime'];
+  assertOnlyGameRoomFields(data, allowedKeys);
+
+  const existingPlayers = normalizeGamePlayers(existing.players);
+  const nextPlayers = normalizeGamePlayers(data.players);
+  if (!hasSamePlayerOrder(existingPlayers, nextPlayers)) forbidden();
+
+  if (nextPlayers.every((player) => RPS_MOVES.has(player.move))) {
+    return authorizeRpsShowdownPatch({ user, data, existing, existingPlayers, nextPlayers });
+  }
+
+  const changedPlayers = changedPlayerEntries(existingPlayers, nextPlayers);
+  const userChanged = changedPlayers.some(({ before, after }) => before.uid === user.uid && isValidOwnRpsMoveChange(before, after));
+  const otherChanged = changedPlayers.filter(({ before }) => before.uid !== user.uid);
+  const allowedBotChange = otherChanged.length <= 1 && otherChanged.every(({ before, after }) => (
+    before.uid === 'computer'
+    && before.move == null
+    && RPS_MOVES.has(after.move)
+    && samePlayerExcept(before, after, ['move'])
+  ));
+  if (!userChanged || !allowedBotChange) forbidden();
+
+  const expected = { players: nextPlayers };
+  if (!deepEqualData(data || {}, expected)) forbidden();
+  return expected;
+}
+
+function authorizeRpsShowdownPatch({ user, data, existing, existingPlayers, nextPlayers }) {
+  assertOnlyGameRoomFields(data, ['players', 'status', 'history', 'showdownEndTime']);
+  if (data.status !== 'showdown' || data.showdownEndTime === undefined || data.showdownEndTime === null) forbidden();
+
+  let userChanged = false;
+  const movedPlayers = existingPlayers.map((player, index) => {
+    const candidate = nextPlayers[index] || {};
+    if (player.uid === user.uid) {
+      if (player.move != null || !RPS_MOVES.has(candidate.move)) forbidden();
+      userChanged = true;
+      return { ...player, move: candidate.move };
+    }
+    if (player.uid === 'computer' && player.move == null && RPS_MOVES.has(candidate.move)) {
+      return { ...player, move: candidate.move };
+    }
+    return player;
+  });
+  if (!userChanged || !movedPlayers.every((player) => RPS_MOVES.has(player.move))) forbidden();
+
+  const history = Array.isArray(existing.history) ? cloneDataValue(existing.history) : [];
+  const round = Number.parseInt(existing.currentRound, 10) || history.length + 1;
+  const p1 = { ...movedPlayers[0] };
+  const p2 = { ...movedPlayers[1] };
+  const winnerId = getRpsRoundWinnerId(p1.move, p2.move, p1.uid, p2.uid);
+  if (winnerId === p1.uid) p1.score = (Number.parseInt(p1.score, 10) || 0) + 1;
+  if (winnerId === p2.uid) p2.score = (Number.parseInt(p2.score, 10) || 0) + 1;
+
+  const incomingHistory = Array.isArray(data.history) ? data.history : [];
+  if (incomingHistory.length !== history.length + 1) forbidden();
+  const incomingRound = incomingHistory[incomingHistory.length - 1] || {};
+  const expectedRound = {
+    round,
+    p1Move: p1.move,
+    p2Move: p2.move,
+    winnerId,
+    timestamp: incomingRound.timestamp,
+  };
+  if (!Number.isFinite(Number(expectedRound.timestamp))) forbidden();
+
+  const expected = {
+    players: [p1, p2],
+    history: [...history, expectedRound],
+    status: 'showdown',
+    showdownEndTime: data.showdownEndTime,
+  };
+  if (!deepEqualData(data || {}, expected)) forbidden();
+  return expected;
+}
+
+function authorizeRpsShowdownUpdate({ user, data, existing }) {
+  const players = normalizeGamePlayers(existing.players);
+  if (players[0]?.uid !== user.uid) forbidden();
+
+  const transitionAt = data?.finishedAt ?? data?.roundStartTime;
+  const expected = createRpsNextRoundPatch(existing, transitionAt);
+  if (!expected || !deepEqualData(data || {}, expected)) forbidden();
+  return expected;
+}
+
+function getRpsRoundWinnerId(p1Move, p2Move, p1Uid, p2Uid) {
+  if (p1Move === p2Move) return null;
+  if (
+    (p1Move === 'rock' && p2Move === 'scissors')
+    || (p1Move === 'paper' && p2Move === 'rock')
+    || (p1Move === 'scissors' && p2Move === 'paper')
+  ) {
+    return p1Uid;
+  }
+  return p2Uid;
+}
+
+function isValidOwnRpsMoveChange(before, after) {
+  return before.move == null && RPS_MOVES.has(after.move) && samePlayerExcept(before, after, ['move']);
+}
+
+function authorizeMineRoomUpdate({ user, data, existing }) {
+  assertOnlyGameRoomFields(data, ['players']);
+  const existingPlayers = normalizeGamePlayers(existing.players);
+  const nextPlayers = normalizeGamePlayers(data.players);
+
+  if (!existingPlayers.some((player) => player.uid === user.uid)) {
+    return authorizeGameRoomJoin({ user, data, existing });
+  }
+
+  if (!hasSamePlayerOrder(existingPlayers, nextPlayers)) forbidden();
+  const changedPlayers = changedPlayerEntries(existingPlayers, nextPlayers);
+  if (changedPlayers.length !== 1 || changedPlayers[0].before.uid !== user.uid) forbidden();
+
+  const { before, after } = changedPlayers[0];
+  if (!samePlayerExcept(before, after, ['progress', 'status'])) forbidden();
+  const progress = Number.parseInt(after.progress, 10);
+  if (!Number.isInteger(progress) || progress < 0 || progress > 100) forbidden();
+  if (!MINE_PLAYER_STATUSES.has(after.status)) forbidden();
+
+  const expectedPlayers = existingPlayers.map((player) => (
+    player.uid === user.uid ? { ...player, progress, status: after.status } : player
+  ));
+  return { players: expectedPlayers };
+}
+
+function assertOnlyGameRoomFields(data, fields) {
+  const allowed = new Set(fields);
+  for (const key of Object.keys(data || {})) {
+    if (!allowed.has(key)) forbidden();
+  }
+}
+
+function normalizeGamePlayers(players) {
+  return Array.isArray(players) ? cloneDataValue(players) : [];
+}
+
+function hasSamePlayerOrder(existingPlayers, nextPlayers) {
+  return (
+    existingPlayers.length === nextPlayers.length
+    && existingPlayers.every((player, index) => player.uid === nextPlayers[index]?.uid)
+  );
+}
+
+function changedPlayerEntries(existingPlayers, nextPlayers) {
+  const changes = [];
+  existingPlayers.forEach((player, index) => {
+    const nextPlayer = nextPlayers[index];
+    if (!deepEqualData(player, nextPlayer)) changes.push({ before: player, after: nextPlayer });
+  });
+  return changes;
+}
+
+function samePlayerExcept(before, after, exceptFields) {
+  const beforeComparable = { ...before };
+  const afterComparable = { ...after };
+  for (const field of exceptFields) {
+    delete beforeComparable[field];
+    delete afterComparable[field];
+  }
+  return deepEqualData(beforeComparable, afterComparable);
 }
 
 function authorizeProjectActivityOperation({ user, type, data, project }) {

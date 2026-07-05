@@ -1870,6 +1870,246 @@ test('HTTP data API restricts room member writes to self-join and managed remova
   });
 });
 
+test('HTTP data API restricts game room writes to current-player transitions', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+      const carol = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'carol@example.com', password: 'secret123', displayName: 'Carol' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Game rules', type: 'game_hub', status: 'active', createdAt: 1 } },
+      });
+
+      const spoofedRoom = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          data: {
+            projectId: project.doc.id,
+            name: '  Spoofed match  ',
+            game: 'rps',
+            status: 'finished',
+            createdBy: alice.user.uid,
+            winnerId: alice.user.uid,
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 9, move: 'rock' },
+              { uid: carol.user.uid, name: 'Carol', score: 0, move: 'scissors' },
+            ],
+            config: { bestOf: 3, timeout: 30 },
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(spoofedRoom.doc.createdBy, bob.user.uid);
+      assert.equal(spoofedRoom.doc.name, 'Spoofed match');
+      assert.equal(spoofedRoom.doc.status, 'waiting');
+      assert.deepEqual(spoofedRoom.doc.players, []);
+      assert.equal(spoofedRoom.doc.winnerId, undefined);
+
+      const rpsRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'RPS',
+        game: 'rps',
+        status: 'waiting',
+        createdBy: alice.user.uid,
+        players: [{ uid: alice.user.uid, name: 'Alice', score: 0, move: null }],
+        config: { bestOf: 3, timeout: 30 },
+        createdAt: 3,
+      });
+      const bobJoin = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+              { uid: bob.user.uid, name: 'Bob', score: 0, move: null },
+            ],
+            status: 'playing',
+            roundStartTime: 4,
+            currentRound: 1,
+          },
+        },
+      });
+      assert.equal(bobJoin.doc.status, 'playing');
+      assert.equal(bobJoin.doc.players[1].uid, bob.user.uid);
+
+      const carolJoinFull = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+              { uid: bob.user.uid, name: 'Bob', score: 0, move: null },
+              { uid: carol.user.uid, name: 'Carol', score: 0, move: null },
+            ],
+          },
+        },
+      });
+      assert.equal(carolJoinFull.status, 409);
+      assert.equal(carolJoinFull.body.error.code, 'data/game-full');
+
+      const bobMovesAlice = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 1, move: 'paper' },
+              { uid: bob.user.uid, name: 'Bob', score: 0, move: 'rock' },
+            ],
+            status: 'showdown',
+            history: [{ round: 1, p1Move: 'paper', p2Move: 'rock', winnerId: alice.user.uid, timestamp: 5 }],
+            showdownEndTime: 8,
+          },
+        },
+      });
+      assert.equal(bobMovesAlice.status, 403);
+      assert.equal(bobMovesAlice.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('game_rooms', rpsRoom.id)).players[0].move, null);
+
+      const bobMove = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+              { uid: bob.user.uid, name: 'Bob', score: 0, move: 'rock' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobMove.doc.players[1].move, 'rock');
+
+      const aliceShowdown = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: 'scissors' },
+              { uid: bob.user.uid, name: 'Bob', score: 1, move: 'rock' },
+            ],
+            history: [{ round: 1, p1Move: 'scissors', p2Move: 'rock', winnerId: bob.user.uid, timestamp: 7 }],
+            status: 'showdown',
+            showdownEndTime: 10,
+          },
+        },
+      });
+      assert.equal(aliceShowdown.doc.status, 'showdown');
+      assert.equal(aliceShowdown.doc.players[1].score, 1);
+
+      const aliceNextRound = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          id: rpsRoom.id,
+          data: {
+            status: 'playing',
+            currentRound: 2,
+            roundStartTime: 11,
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: null, lastMove: 'scissors' },
+              { uid: bob.user.uid, name: 'Bob', score: 1, move: null, lastMove: 'rock' },
+            ],
+          },
+        },
+      });
+      assert.equal(aliceNextRound.doc.currentRound, 2);
+      assert.equal(aliceNextRound.doc.players[0].move, null);
+
+      const mineRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Mine',
+        game: 'mine',
+        status: 'playing',
+        createdBy: alice.user.uid,
+        players: [
+          { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+          { uid: bob.user.uid, name: 'Bob', progress: 0, status: 'playing' },
+        ],
+        config: { difficulty: 'easy', rows: 9, cols: 9, mines: 10, mineLocations: [] },
+        createdAt: 6,
+      });
+
+      const bobWinsForAlice = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 100, status: 'won' },
+              { uid: bob.user.uid, name: 'Bob', progress: 0, status: 'playing' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobWinsForAlice.status, 403);
+      assert.equal(bobWinsForAlice.body.error.code, 'data/forbidden');
+
+      const bobProgress = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+              { uid: bob.user.uid, name: 'Bob', progress: 42, status: 'playing' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobProgress.doc.players[1].progress, 42);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts managed child creation to project owners and normalizes runtime fields', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
