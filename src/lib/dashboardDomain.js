@@ -25,6 +25,9 @@ const PROJECT_ROUTE_PREFIXES = {
   project: 'projects',
 };
 
+const DEFAULT_RECENT_PROJECT_IDS_LIMIT = 100;
+const DEFAULT_RECENT_DASHBOARD_LIMIT = 4;
+
 export function getProjectRoutePrefix(projectType) {
   return PROJECT_ROUTE_PREFIXES[projectType] || 'projects';
 }
@@ -62,6 +65,42 @@ function normalizedProjects(projects) {
 }
 
 export function normalizePinnedProjectIds(projectIds) {
+  return normalizeProjectIdList(projectIds);
+}
+
+export function normalizeRecentProjectIds(projectIds, limit = DEFAULT_RECENT_PROJECT_IDS_LIMIT) {
+  return normalizeProjectIdList(projectIds).slice(0, normalizeLimit(limit, DEFAULT_RECENT_PROJECT_IDS_LIMIT));
+}
+
+export function createRecentProjectIdsPatch(projectId, currentRecentProjectIds, limit = DEFAULT_RECENT_PROJECT_IDS_LIMIT) {
+  const cleanProjectId = typeof projectId === 'string' ? projectId.trim() : '';
+  if (!cleanProjectId) return null;
+  const maxItems = normalizeLimit(limit, DEFAULT_RECENT_PROJECT_IDS_LIMIT);
+  const recentProjectIds = [
+    cleanProjectId,
+    ...normalizeRecentProjectIds(currentRecentProjectIds, maxItems).filter((entry) => entry !== cleanProjectId),
+  ].slice(0, maxItems);
+  return { recentProjectIds };
+}
+
+export function createRecentDashboardProjects(projects, recentProjectIds, limit = DEFAULT_RECENT_DASHBOARD_LIMIT) {
+  const maxItems = normalizeLimit(limit, DEFAULT_RECENT_DASHBOARD_LIMIT);
+  const projectsById = new Map(
+    normalizedProjects(projects)
+      .filter((project) => typeof project?.id === 'string' && project.id.trim())
+      .map((project) => [project.id, project]),
+  );
+  const recentProjects = [];
+  for (const projectId of normalizeRecentProjectIds(recentProjectIds)) {
+    const project = projectsById.get(projectId);
+    if (!project) continue;
+    recentProjects.push(project);
+    if (recentProjects.length >= maxItems) break;
+  }
+  return recentProjects;
+}
+
+function normalizeProjectIdList(projectIds) {
   if (!Array.isArray(projectIds)) return [];
   const seen = new Set();
   const normalized = [];
@@ -73,6 +112,12 @@ export function normalizePinnedProjectIds(projectIds) {
     normalized.push(cleanProjectId);
   }
   return normalized;
+}
+
+function normalizeLimit(limit, fallback) {
+  const parsed = Number(limit);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.floor(parsed));
 }
 
 function matchesArchiveFilter(project, statusFilter) {

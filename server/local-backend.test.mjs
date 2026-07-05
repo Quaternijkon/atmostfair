@@ -689,6 +689,30 @@ test('HTTP data API limits user document writes to the current user and preserve
       assert.equal(invalidPins.body.error.code, 'data/invalid-user-settings');
       assert.deepEqual((await store.get('users', alice.user.uid)).pinnedProjectIds, ['project-1', 'project-2']);
 
+      const recentUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { recentProjectIds: [' project-3 ', 'project-1', 'project-3', '', null] },
+        },
+      });
+      assert.deepEqual(recentUpdate.doc.recentProjectIds, ['project-3', 'project-1']);
+
+      const invalidRecent = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { recentProjectIds: 'project-4' },
+        },
+      });
+      assert.equal(invalidRecent.status, 400);
+      assert.equal(invalidRecent.body.error.code, 'data/invalid-user-settings');
+      assert.deepEqual((await store.get('users', alice.user.uid)).recentProjectIds, ['project-3', 'project-1']);
+
       const foreignPins = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: bob.token,
@@ -700,6 +724,7 @@ test('HTTP data API limits user document writes to the current user and preserve
       });
       assert.equal(foreignPins.status, 403);
       assert.deepEqual((await store.get('users', alice.user.uid)).pinnedProjectIds, ['project-1', 'project-2']);
+      assert.deepEqual((await store.get('users', alice.user.uid)).recentProjectIds, ['project-3', 'project-1']);
 
       const ownDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
         method: 'POST',

@@ -1,13 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2, Pin as PinIcon } from '../components/Icons';
+import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2, Pin as PinIcon, Clock } from '../components/Icons';
 import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
+  createRecentDashboardProjects,
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
   normalizePinnedProjectIds,
+  normalizeRecentProjectIds,
 } from '../lib/dashboardDomain';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
 import { PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
@@ -29,7 +31,7 @@ const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
 const DASHBOARD_TAB_IDS = ['collect', 'connect', 'select', 'project'];
 const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
 
-export default function Dashboard({ projects, pinnedProjectIds = [], onToggleProjectPin = () => {}, onCreateProject, defaultName, t }) {
+export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
   // Navigation State: 'collect' | 'connect' | 'select' | 'play'
   const [activeTab, setActiveTab] = useState('collect');
@@ -103,6 +105,11 @@ export default function Dashboard({ projects, pinnedProjectIds = [], onTogglePro
 
   const currentCategory = CATEGORIES[activeTab];
   const normalizedPinnedProjectIds = useMemo(() => normalizePinnedProjectIds(pinnedProjectIds), [pinnedProjectIds]);
+  const normalizedRecentProjectIds = useMemo(() => normalizeRecentProjectIds(recentProjectIds), [recentProjectIds]);
+  const recentProjects = useMemo(
+    () => createRecentDashboardProjects(projects, normalizedRecentProjectIds, 4),
+    [projects, normalizedRecentProjectIds],
+  );
 
   const filteredProjects = useMemo(() => {
     return filterAndSortDashboardProjects(projects, {
@@ -127,6 +134,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], onTogglePro
   };
 
   const navigateToProject = (project, options) => {
+       void onRecordProjectOpen(project.id);
        const routePrefix = getProjectRoutePrefix(project.type);
        navigate(`/${routePrefix}/${project.id}`, options);
   }
@@ -227,6 +235,67 @@ export default function Dashboard({ projects, pinnedProjectIds = [], onTogglePro
           <TabButton id="project" label={t('games')} icon={Gamepad2} isActive={activeTab === 'project'} onClick={() => { setActiveTab('project'); setShowCreate(false); setSelectedModule(null); }} />
         </div>
       </div>
+
+      {recentProjects.length > 0 && (
+        <section aria-label={t('recentProjects')} className="rounded-2xl border border-m3-outline-variant/45 bg-white/75 p-3 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-google-blue/10 text-google-blue">
+                <Clock className="h-4 w-4" />
+              </span>
+              <h2 className="truncate text-sm font-semibold text-m3-on-surface">{t('continueWork')}</h2>
+            </div>
+            <span className="shrink-0 rounded-full bg-m3-surface-container px-2.5 py-1 text-xs font-medium text-m3-on-surface-variant">
+              {t('recentProjectCount', { count: recentProjects.length })}
+            </span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {recentProjects.map((project) => {
+              const activeStyle = styles[project.type] || styles.vote;
+              const isArchived = Boolean(project.archived);
+              const isActive = !isArchived && project.status !== 'stopped' && project.status !== 'finished';
+              const statusColor = isActive ? activeStyle.activeColor : 'text-m3-on-surface-variant';
+              const statusBg = isActive ? activeStyle.activeBg : 'bg-m3-on-surface/5';
+              const statusIconBg = isActive ? activeStyle.bgParams : 'bg-m3-on-surface/10';
+              const RecentIcon = project.type === 'team' ? Users :
+                project.type === 'game_hub' ? Gamepad2 :
+                project.type === 'gather' ? ClipboardList :
+                project.type === 'schedule' ? CalendarClock :
+                project.type === 'book' ? CalendarCheck :
+                project.type === 'claim' ? CheckSquare :
+                project.type === 'queue' ? ListOrdered :
+                project.type === 'roulette' ? Dices :
+                  Vote;
+
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => handleProjectClick(project)}
+                  aria-label={`${project.title}, ID ${project.id.slice(0, 6)}`}
+                  className={`min-h-[88px] rounded-xl border border-m3-outline-variant/35 p-3 text-left transition-colors hover:border-google-blue/35 hover:bg-google-blue/5 ${statusBg}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${statusIconBg}`}>
+                      <RecentIcon className={`h-5 w-5 ${statusColor}`} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 text-sm font-semibold leading-snug text-m3-on-surface">{project.title}</span>
+                      <span className="mt-2 flex items-center gap-2 text-xs text-m3-on-surface-variant">
+                        <span className="font-mono opacity-70">ID: {project.id.slice(0, 6)}</span>
+                        {isArchived && <span className="app-chip bg-m3-on-surface/10 py-0.5"><Archive className="h-3 w-3" /> {t('archived')}</span>}
+                        {!isArchived && project.status === 'finished' && <span className="app-chip bg-m3-on-surface/10 py-0.5">{t('finished')}</span>}
+                        {!isArchived && project.status === 'stopped' && <span className="app-chip bg-m3-on-surface/10 py-0.5">{t('paused')}</span>}
+                        {hasProjectPassword(project) && <Lock className={`h-4 w-4 ${isActive ? 'text-google-yellow' : 'text-m3-on-surface-variant'}`} />}
+                      </span>
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Search & Action Bar */}
       <div className="flex flex-col items-center gap-4 md:flex-row">

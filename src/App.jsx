@@ -9,7 +9,12 @@ import {
   createProjectActivityData,
   PROJECT_ACTIVITY_TYPES,
 } from './lib/activityDomain';
-import { createProjectArchivePatch, normalizePinnedProjectIds } from './lib/dashboardDomain';
+import {
+  createProjectArchivePatch,
+  createRecentProjectIdsPatch,
+  normalizePinnedProjectIds,
+  normalizeRecentProjectIds,
+} from './lib/dashboardDomain';
 import {
   createBookingPatch,
   createBookingConfigData,
@@ -119,6 +124,7 @@ function AppContent() {
   const [showFriends, setShowFriends] = useState(false);
   const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
   const pinnedProjectIds = normalizePinnedProjectIds(userProfile?.pinnedProjectIds);
+  const recentProjectIds = normalizeRecentProjectIds(userProfile?.recentProjectIds);
   const isProjectWritable = (projectId) => {
     const project = projects.find((entry) => entry.id === projectId);
     return Boolean(project && !project.archived && !LOCKED_PROJECT_STATUSES.has(project.status));
@@ -565,6 +571,21 @@ function AppContent() {
           setUserProfile((current) => ({ ...(current || {}), pinnedProjectIds: previousPinnedProjectIds }));
           console.error('Error updating project pins', error);
         }
+      },
+      handleRecordProjectOpen: async (projectId) => {
+        const cleanProjectId = String(projectId || '').trim();
+        if (!user || !cleanProjectId || !projects.some((project) => project.id === cleanProjectId)) return;
+        const patch = createRecentProjectIdsPatch(cleanProjectId, recentProjectIds, 100);
+        if (!patch) return;
+        const previousRecentProjectIds = recentProjectIds;
+        const nextRecentProjectIds = patch.recentProjectIds;
+        setUserProfile((current) => ({ ...(current || {}), recentProjectIds: nextRecentProjectIds }));
+        try {
+          await setDoc(doc(db, 'users', user.uid), { recentProjectIds: nextRecentProjectIds }, { merge: true });
+        } catch (error) {
+          setUserProfile((current) => ({ ...(current || {}), recentProjectIds: previousRecentProjectIds }));
+          console.error('Error updating recent projects', error);
+        }
       }
   });
 
@@ -696,7 +717,23 @@ function AppContent() {
                 ) : (
                   <AnimatePresence mode="wait">
                     <Routes location={location} key={location.pathname}>
-                        <Route path="/" element={<PageTransition><Dashboard projects={projects} pinnedProjectIds={pinnedProjectIds} onToggleProjectPin={actions.handleToggleProjectPin} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
+                        <Route
+                          path="/"
+                          element={
+                            <PageTransition>
+                              <Dashboard
+                                projects={projects}
+                                pinnedProjectIds={pinnedProjectIds}
+                                recentProjectIds={recentProjectIds}
+                                onToggleProjectPin={actions.handleToggleProjectPin}
+                                onRecordProjectOpen={actions.handleRecordProjectOpen}
+                                onCreateProject={handleCreateProject}
+                                defaultName={user.displayName || ''}
+                                t={t}
+                              />
+                            </PageTransition>
+                          }
+                        />
                         <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />

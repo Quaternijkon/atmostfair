@@ -13,7 +13,7 @@ import {
   normalizeAnnouncementUpdateData,
 } from '../src/lib/announcementDomain.js';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
-import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
+import { normalizePinnedProjectIds, normalizeRecentProjectIds } from '../src/lib/dashboardDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
 import {
   PROJECT_CHILD_TEXT_MAX_LENGTH,
@@ -431,6 +431,12 @@ function normalizeUserData(data) {
       throwDataError(400, 'data/invalid-user-settings', 'Pinned projects must be a list.');
     }
     normalized.pinnedProjectIds = normalizePinnedProjectIds(normalized.pinnedProjectIds).slice(0, 100);
+  }
+  if (Object.hasOwn(normalized, 'recentProjectIds')) {
+    if (!Array.isArray(normalized.recentProjectIds)) {
+      throwDataError(400, 'data/invalid-user-settings', 'Recent projects must be a list.');
+    }
+    normalized.recentProjectIds = normalizeRecentProjectIds(normalized.recentProjectIds, 100);
   }
   return normalized;
 }

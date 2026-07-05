@@ -8,8 +8,11 @@ import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
   createProjectArchivePatch,
+  createRecentDashboardProjects,
+  createRecentProjectIdsPatch,
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
+  normalizeRecentProjectIds,
 } from '../src/lib/dashboardDomain.js';
 
 const root = process.cwd();
@@ -108,6 +111,27 @@ test('dashboard pinned projects stay first within the current filters', () => {
     }).map((project) => project.id),
     ['book-d'],
   );
+});
+
+test('dashboard recent projects keep newest existing projects first', () => {
+  assert.deepEqual(
+    normalizeRecentProjectIds([' game-e ', '', 'vote-a', 'game-e', 42, 'book-c']),
+    ['game-e', 'vote-a', 'book-c'],
+  );
+
+  assert.deepEqual(createRecentProjectIdsPatch(' book-c ', ['vote-a', 'book-c', 'missing'], 3), {
+    recentProjectIds: ['book-c', 'vote-a', 'missing'],
+  });
+  assert.deepEqual(createRecentProjectIdsPatch('game-e', ['vote-a', 'book-c', 'missing'], 3), {
+    recentProjectIds: ['game-e', 'vote-a', 'book-c'],
+  });
+  assert.equal(createRecentProjectIdsPatch('', ['vote-a']), null);
+
+  const recent = createRecentDashboardProjects(sampleProjects, ['missing', 'book-c', 'vote-a', 'book-c', 'game-e'], 3);
+  assert.deepEqual(recent.map((project) => project.id), ['book-c', 'vote-a', 'game-e']);
+
+  const archivedRecent = createRecentDashboardProjects(sampleProjects, ['book-d', 'missing'], 4);
+  assert.deepEqual(archivedRecent.map((project) => project.id), ['book-d']);
 });
 
 test('project archive patch records reversible archive state', () => {
@@ -246,4 +270,32 @@ test('dashboard exposes accessible user-scoped project pinning', async () => {
   assert.match(files.dashboard, /event\.stopPropagation\(\)/, 'Pin control should not trigger project navigation');
   assert.match(files.dashboard, /pinnedProjectIds/, 'Dashboard filtering should receive user pins');
   assert.match(files.dashboard, /filterAndSortDashboardProjects\([^)]*pinnedProjectIds/s, 'Dashboard sort should include pinned ids');
+});
+
+test('dashboard exposes durable recent-project continuation', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+  };
+
+  for (const key of ['continueWork', 'recentProjects', 'recentProjectCount']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.app, /normalizeRecentProjectIds/, 'App should normalize recent project ids before rendering');
+  assert.match(files.app, /createRecentProjectIdsPatch/, 'App should use a shared patch helper before persisting recent projects');
+  assert.match(files.app, /const recentProjectIds = normalizeRecentProjectIds\(userProfile\?\.recentProjectIds\)/, 'App should read recent projects from the user document');
+  assert.match(files.app, /handleRecordProjectOpen/, 'App should expose a user-scoped recent project action');
+  assert.match(files.app, /recentProjectIds=\{recentProjectIds\}/, 'Dashboard should receive recent project ids');
+  assert.match(files.app, /onRecordProjectOpen=\{actions\.handleRecordProjectOpen\}/, 'Dashboard should receive the shared recent project action');
+  assert.match(files.app, /setDoc\(doc\(db,\s*'users',\s*user\.uid\),\s*\{\s*recentProjectIds:/, 'Recent projects should persist to the user document');
+
+  assert.match(files.dashboard, /createRecentDashboardProjects/, 'Dashboard should use the shared recent project selector');
+  assert.match(files.dashboard, /const recentProjects = useMemo/, 'Dashboard should memoize the continue-work list');
+  assert.match(files.dashboard, /t\('continueWork'\)/, 'Continue-work heading should be localized');
+  assert.match(files.dashboard, /t\('recentProjectCount'/, 'Continue-work count should be localized');
+  assert.match(files.dashboard, /Clock/, 'Continue-work surface should use a vector icon');
+  assert.match(files.dashboard, /onRecordProjectOpen\(project\.id\)/, 'Project navigation should record a recent project only when opening');
+  assert.match(files.dashboard, /onClick=\{\(\) => handleProjectClick\(project\)\}/, 'Recent project buttons should reuse the normal project open path');
 });
