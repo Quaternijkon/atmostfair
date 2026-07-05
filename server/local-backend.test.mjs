@@ -629,6 +629,234 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
   });
 });
 
+test('HTTP data API restricts notification creation to verified app events', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+      const charlie = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'charlie@example.com', password: 'secret123', displayName: 'Charlie' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123', displayName: 'Admin' },
+      });
+
+      const arbitrarySelfNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: alice.user.uid,
+            type: 'system',
+            title: 'Self spam',
+            read: false,
+            createdAt: 1,
+          },
+        },
+      });
+      assert.equal(arbitrarySelfNotification.status, 403);
+      assert.equal(arbitrarySelfNotification.body.error.code, 'data/forbidden');
+
+      const forgedFriendNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_req',
+            title: 'Forged request',
+            read: false,
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(forgedFriendNotification.status, 403);
+      assert.equal(forgedFriendNotification.body.error.code, 'data/forbidden');
+
+      const friendship = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, bob.user.uid],
+            names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(friendship.doc.status, 'pending');
+
+      const validFriendNotification = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_req',
+            title: 'New friend request',
+            read: true,
+            createdAt: 4,
+          },
+        },
+      });
+      assert.equal(validFriendNotification.doc.recipientId, bob.user.uid);
+      assert.equal(validFriendNotification.doc.senderId, alice.user.uid);
+      assert.equal(validFriendNotification.doc.read, false);
+
+      const duplicateFriendNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_req',
+            title: 'Duplicate friend request',
+            read: false,
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(duplicateFriendNotification.status, 409);
+      assert.equal(duplicateFriendNotification.body.error.code, 'data/duplicate-notification');
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'projects', data: { title: 'Booking', status: 'active', createdAt: 6 } },
+      });
+      const stoppedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'projects', data: { title: 'Stopped Booking', status: 'stopped', createdAt: 7 } },
+      });
+
+      const projectNotification = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: charlie.user.uid,
+            type: 'kicked',
+            title: 'Booking cancelled',
+            projectId: project.doc.id,
+            read: true,
+            createdAt: 8,
+          },
+        },
+      });
+      assert.equal(projectNotification.doc.recipientId, charlie.user.uid);
+      assert.equal(projectNotification.doc.read, false);
+
+      const foreignProjectNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: charlie.user.uid,
+            type: 'kicked',
+            title: 'Forged booking',
+            projectId: project.doc.id,
+            read: false,
+            createdAt: 9,
+          },
+        },
+      });
+      assert.equal(foreignProjectNotification.status, 403);
+      assert.equal(foreignProjectNotification.body.error.code, 'data/forbidden');
+
+      const lockedProjectNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: charlie.user.uid,
+            type: 'booking_promoted',
+            title: 'Locked booking',
+            projectId: stoppedProject.doc.id,
+            read: false,
+            createdAt: 10,
+          },
+        },
+      });
+      assert.equal(lockedProjectNotification.status, 409);
+      assert.equal(lockedProjectNotification.body.error.code, 'data/project-locked');
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'project_activities', data: { projectId: project.doc.id, subject: 'partial' } },
+            {
+              type: 'add',
+              collection: 'notifications',
+              data: {
+                recipientId: charlie.user.uid,
+                type: 'kicked',
+                title: 'Batch forged',
+                projectId: project.doc.id,
+                read: false,
+                createdAt: 11,
+              },
+            },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 403);
+      assert.equal(blockedBatch.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.list('project_activities'), []);
+
+      const adminNotification = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: charlie.user.uid,
+            type: 'system',
+            title: 'Admin notice',
+            read: true,
+            createdAt: 12,
+          },
+        },
+      });
+      assert.equal(adminNotification.doc.recipientId, charlie.user.uid);
+      assert.equal(adminNotification.doc.read, true);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects child writes against stopped and finished projects without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

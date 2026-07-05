@@ -33,6 +33,7 @@ const DATA_API_COLLECTIONS = new Set([
 const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
+const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['voting_items', 'projectId'],
   ['rooms', 'projectId'],
@@ -393,17 +394,80 @@ async function canReadDataDoc({ store, user, collection, doc }) {
 }
 
 async function authorizeNotificationOperation({ store, user, type, id, data }) {
-  if (type === 'add') return data || {};
+  if (type === 'add') return normalizeNotificationCreateData({ store, user, data });
 
   const existing = await store.get('notifications', id);
   if (!existing) {
-    if (type === 'set') return data?.recipientId === user.uid || isAdminUser(user) ? data || {} : forbidden();
+    if (type === 'set') return normalizeNotificationCreateData({ store, user, data });
     throwDataError(404, 'data/not-found', 'Notification not found.');
   }
   if (!canWriteNotification(existing, user)) forbidden();
 
   if (type === 'delete') return undefined;
   return preserveImmutableField(data, existing, 'recipientId', type);
+}
+
+async function normalizeNotificationCreateData({ store, user, data }) {
+  if (isAdminUser(user)) return data || {};
+
+  const notification = data || {};
+  const recipientId = typeof notification.recipientId === 'string' ? notification.recipientId.trim() : '';
+  if (!recipientId) forbidden();
+
+  if (notification.type === 'friend_req') {
+    const friendship = await findPendingFriendRequest(store, user.uid, recipientId);
+    if (!friendship) forbidden();
+    if (await hasDuplicateFriendRequestNotification(store, user.uid, recipientId)) {
+      throwDataError(409, 'data/duplicate-notification', 'Notification already exists.');
+    }
+    return {
+      ...notification,
+      recipientId,
+      type: 'friend_req',
+      senderId: user.uid,
+      read: false,
+    };
+  }
+
+  if (PROJECT_NOTIFICATION_TYPES.has(notification.type)) {
+    const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : '';
+    if (!projectId) throwDataError(400, 'data/invalid-project', 'Project id is required.');
+    const project = await store.get('projects', projectId);
+    if (!project) throwDataError(404, 'data/project-not-found', 'Project not found.');
+    if (!canWriteProject(project, user)) forbidden();
+    if (isProjectLocked(project)) throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
+    return {
+      ...notification,
+      recipientId,
+      projectId,
+      read: false,
+    };
+  }
+
+  forbidden();
+}
+
+async function hasDuplicateFriendRequestNotification(store, senderId, recipientId) {
+  const notifications = await store.list('notifications', {
+    filters: [{ field: 'recipientId', op: '==', value: recipientId }],
+  });
+
+  return notifications.some((notification) => (
+    notification.type === 'friend_req'
+    && notification.senderId === senderId
+  ));
+}
+
+async function findPendingFriendRequest(store, initiatorId, recipientId) {
+  const relationships = await store.list('friendships', {
+    filters: [{ field: 'members', op: 'array-contains', value: initiatorId }],
+  });
+
+  return relationships.find((relationship) => (
+    relationship.status === 'pending'
+    && relationship.initiator === initiatorId
+    && hasMember(relationship, recipientId)
+  )) || null;
 }
 
 async function authorizeFriendshipOperation({ store, user, type, id, data }) {
