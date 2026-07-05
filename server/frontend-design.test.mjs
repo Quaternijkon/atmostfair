@@ -540,6 +540,7 @@ test('React compiler hotspots stay derived and deterministic', async () => {
 test('React refresh and animated tab hooks keep stable module boundaries', async () => {
   const files = {
     dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
     ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
     uiContext: await readFile(path.join(root, 'src/components/UIContext.js'), 'utf8'),
   };
@@ -550,6 +551,9 @@ test('React refresh and animated tab hooks keep stable module boundaries', async
   assert.match(files.dashboard, /DASHBOARD_TAB_IDS/, 'Dashboard tab ids should be a stable module constant');
   assert.match(files.dashboard, /DASHBOARD_TAB_BG_COLORS/, 'Dashboard tab colors should be a stable module constant');
   assert.doesNotMatch(files.dashboard, /\[projects,\s*searchTerm,\s*activeTab,\s*currentCategory\]/, 'Dashboard filtered projects should not carry an unnecessary activeTab dependency');
+  assert.match(files.dashboard, /getProjectRoutePrefix/, 'Dashboard project navigation should use the shared route prefix helper');
+  assert.match(files.detail, /getProjectRoutePrefix/, 'Project detail duplicate navigation should use the shared route prefix helper');
+  assert.doesNotMatch(files.dashboard, /if \(type === 'roulette'\)/, 'Dashboard should not keep route-prefix conditionals that drift from module categories');
 });
 
 test('application routes lazy-load heavy pages behind a localized fallback', async () => {

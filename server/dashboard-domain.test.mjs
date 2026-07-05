@@ -9,6 +9,7 @@ import {
   DASHBOARD_STATUS_FILTERS,
   createProjectArchivePatch,
   filterAndSortDashboardProjects,
+  getProjectRoutePrefix,
 } from '../src/lib/dashboardDomain.js';
 
 const root = process.cwd();
@@ -84,6 +85,37 @@ test('project archive patch records reversible archive state', () => {
     archivedAt: null,
   });
   assert.equal(createProjectArchivePatch(null, true, 8000), null);
+});
+
+test('project route prefixes cover every dashboard module consistently', () => {
+  assert.deepEqual(
+    {
+      vote: getProjectRoutePrefix('vote'),
+      gather: getProjectRoutePrefix('gather'),
+      schedule: getProjectRoutePrefix('schedule'),
+      book: getProjectRoutePrefix('book'),
+      team: getProjectRoutePrefix('team'),
+      claim: getProjectRoutePrefix('claim'),
+      roulette: getProjectRoutePrefix('roulette'),
+      queue: getProjectRoutePrefix('queue'),
+      game_hub: getProjectRoutePrefix('game_hub'),
+      project: getProjectRoutePrefix('project'),
+      unknown: getProjectRoutePrefix('unknown'),
+    },
+    {
+      vote: 'collect',
+      gather: 'collect',
+      schedule: 'collect',
+      book: 'collect',
+      team: 'connect',
+      claim: 'connect',
+      roulette: 'select',
+      queue: 'select',
+      game_hub: 'games',
+      project: 'projects',
+      unknown: 'projects',
+    },
+  );
 });
 
 test('dashboard and project detail expose localized archive filter controls', async () => {

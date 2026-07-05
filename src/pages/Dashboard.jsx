@@ -6,6 +6,7 @@ import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
   filterAndSortDashboardProjects,
+  getProjectRoutePrefix,
 } from '../lib/dashboardDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
@@ -119,13 +120,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   };
 
   const navigateToProject = (project) => {
-       const type = project.type; 
-       let routePrefix = 'collect';
-       if (type === 'schedule' || type === 'book') routePrefix = 'collect';
-       if (type === 'team') routePrefix = 'connect';
-       if (type === 'roulette' || type === 'queue') routePrefix = 'select';
-       if (type === 'game_hub') routePrefix = 'games'; 
-       
+       const routePrefix = getProjectRoutePrefix(project.type);
        navigate(`/${routePrefix}/${project.id}`);
   }
 
@@ -141,12 +136,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     e.preventDefault();
     if (inputPassword === passwordPromptProject.password) {
       const project = passwordPromptProject;
-      const type = project.type; 
-      let routePrefix = 'collect';
-      if (type === 'team') routePrefix = 'connect';
-      if (type === 'roulette') routePrefix = 'select';
-      if (type === 'game_hub') routePrefix = 'games';
-      if (type === 'project') routePrefix = 'projects';
+      const routePrefix = getProjectRoutePrefix(project.type);
       navigate(`/${routePrefix}/${project.id}`, { state: { unlocked: true } });
       setPasswordPromptProject(null);
     } else { setPasswordError(true); }

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { getActivityMessageKey } from '../lib/activityDomain';
+import { getProjectRoutePrefix } from '../lib/dashboardDomain';
 import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import VotingView from '../components/VotingView';
@@ -131,18 +132,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
     game_hub: t('gameHub'),
     project: t('project'),
   }[project.type] || t('project');
-  const projectRoutePrefix = {
-    vote: 'collect',
-    gather: 'collect',
-    schedule: 'collect',
-    book: 'collect',
-    team: 'connect',
-    claim: 'connect',
-    roulette: 'select',
-    queue: 'select',
-    game_hub: 'games',
-    project: 'projects',
-  }[project.type] || 'projects';
+  const projectRoutePrefix = getProjectRoutePrefix(project.type);
   
   const copyId = () => { navigator.clipboard.writeText(project.id); };
   const handleDuplicateProject = () => {

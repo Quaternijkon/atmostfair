@@ -12,6 +12,23 @@ export const DASHBOARD_SORT_OPTIONS = [
   { id: 'status', labelKey: 'sortStatus' },
 ];
 
+const PROJECT_ROUTE_PREFIXES = {
+  vote: 'collect',
+  gather: 'collect',
+  schedule: 'collect',
+  book: 'collect',
+  team: 'connect',
+  claim: 'connect',
+  roulette: 'select',
+  queue: 'select',
+  game_hub: 'games',
+  project: 'projects',
+};
+
+export function getProjectRoutePrefix(projectType) {
+  return PROJECT_ROUTE_PREFIXES[projectType] || 'projects';
+}
+
 export function filterAndSortDashboardProjects(projects, options = {}) {
   const {
     categoryTypes = [],
