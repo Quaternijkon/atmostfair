@@ -191,7 +191,11 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const data = await authorizeDataOperation({ store, user, type: 'set', collection, id, data: body.data || {} });
+    const accessLifecycle = collection === 'projects'
+      ? await getProjectAccessLifecycleChange({ store, type: 'set', id, data, options: body.options || {} })
+      : null;
     const rawDoc = await store.set(collection, id, data, body.options || {});
+    await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
     const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
@@ -200,7 +204,11 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const data = await authorizeDataOperation({ store, user, type: 'update', collection, id, data: body.data || {} });
+    const accessLifecycle = collection === 'projects'
+      ? await getProjectAccessLifecycleChange({ store, type: 'update', id, data })
+      : null;
     const rawDoc = await store.update(collection, id, data);
+    await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
     const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
@@ -209,14 +217,18 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     await authorizeDataOperation({ store, user, type: 'delete', collection, id });
+    const accessLifecycle = collection === 'projects' ? { projectId: id, revoke: true } : null;
     await store.delete(collection, id);
+    await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
     return sendJson(response, 200, { ok: true });
   }
 
   if (url.pathname === '/api/data/batch') {
     const operations = validateDataBatchOperations(body.operations || []);
     const authorizedOperations = await authorizeDataOperations({ store, user, operations });
+    const accessLifecycleChanges = await getProjectAccessLifecycleChanges({ store, operations: authorizedOperations });
     const rawResults = await store.batch(authorizedOperations);
+    await applyProjectAccessLifecycleChanges({ store, changes: accessLifecycleChanges });
     const results = await toReadableDataBatchResults({ store, user, operations: authorizedOperations, results: rawResults });
     return sendJson(response, 200, { results });
   }
@@ -1550,12 +1562,89 @@ async function hasProjectAccessGrant({ store, user, projectId }) {
   return grant?.projectId === projectId && grant?.uid === user.uid;
 }
 
+async function getProjectAccessLifecycleChanges({ store, operations }) {
+  const changes = [];
+  const context = createAuthorizationContext();
+
+  for (const operation of operations || []) {
+    if (operation?.collection !== 'projects') continue;
+
+    if (operation.type === 'add') continue;
+
+    const change = await getProjectAccessLifecycleChange({
+      store,
+      context,
+      type: operation.type,
+      id: operation.id,
+      data: operation.data || {},
+      options: operation.options || {},
+    });
+    if (change) changes.push(change);
+    await stageAuthorizedDataOperation({ store, context, operation });
+  }
+
+  return changes;
+}
+
+async function getProjectAccessLifecycleChange({ store, context, type, id, data, options }) {
+  const existing = await getProjectedDoc({ store, context, collection: 'projects', id });
+  if (!existing) return null;
+  if (type === 'delete') return { projectId: id, revoke: true };
+  if (type !== 'set' && type !== 'update') return null;
+
+  const beforePassword = normalizeProjectPassword(existing.password);
+  const afterPassword = getProjectPasswordAfterWrite({ type, existing, data, options });
+  if (beforePassword === afterPassword) return null;
+  return { projectId: id, revoke: true };
+}
+
+function getProjectPasswordAfterWrite({ type, existing, data, options }) {
+  if (type === 'update') {
+    return Object.hasOwn(data || {}, 'password')
+      ? normalizeProjectPassword(data.password)
+      : normalizeProjectPassword(existing?.password);
+  }
+
+  if (type === 'set' && options?.merge && !Object.hasOwn(data || {}, 'password')) {
+    return normalizeProjectPassword(existing?.password);
+  }
+
+  return normalizeProjectPassword(data?.password);
+}
+
+function normalizeProjectPassword(password) {
+  return String(password || '').trim();
+}
+
+async function applyProjectAccessLifecycleChanges({ store, changes }) {
+  const projectIds = new Set((changes || [])
+    .filter((change) => change?.revoke && typeof change.projectId === 'string' && change.projectId.trim())
+    .map((change) => change.projectId));
+
+  for (const projectId of projectIds) {
+    await revokeProjectAccessGrants({ store, projectId });
+  }
+}
+
+async function applyProjectAccessLifecycleChange({ store, change }) {
+  await applyProjectAccessLifecycleChanges({ store, changes: change ? [change] : [] });
+}
+
+async function revokeProjectAccessGrants({ store, projectId }) {
+  const grants = await store.list('project_access', {
+    filters: [{ field: 'projectId', op: '==', value: projectId }],
+  });
+  for (const grant of grants) {
+    await store.delete('project_access', grant.id);
+  }
+}
+
 function projectAccessGrantId(projectId, uid) {
   return `${projectId}:${uid}`;
 }
 
 function hasProjectPassword(project) {
-  return String(project?.password || '').trim() !== '';
+  return normalizeProjectPassword(project?.password) !== '';
 }
 
 async function authorizeNotificationOperation({ store, user, type, id, data }) {

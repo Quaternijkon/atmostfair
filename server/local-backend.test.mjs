@@ -3420,6 +3420,117 @@ test('HTTP data API hides private project contents until password unlock', async
   });
 });
 
+test('HTTP data API revokes private project unlock grants when password changes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123', displayName: 'Viewer' },
+      });
+
+      const privateProject = await store.add('projects', {
+        title: 'Secret Plan',
+        type: 'vote',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        password: 'first-secret',
+        brief: 'Hidden launch plan',
+        votingConfig: { mode: 'single' },
+        createdAt: 1,
+      });
+      const privateItem = await store.add('voting_items', {
+        projectId: privateProject.id,
+        title: 'Secret option',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [],
+        createdAt: 2,
+      });
+
+      const firstUnlock = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'first-secret' },
+      });
+      assert.equal(firstUnlock.project.accessGranted, true);
+
+      const viewerBeforePasswordChange = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(viewerBeforePasswordChange.doc.brief, 'Hidden launch plan');
+
+      const ownerUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: privateProject.id,
+          data: { password: 'second-secret', updatedAt: 3 },
+        },
+      });
+      assert.equal(ownerUpdate.doc.hasPassword, true);
+      assert.equal(ownerUpdate.doc.accessGranted, true);
+      assert.equal(Object.hasOwn(ownerUpdate.doc, 'password'), false);
+
+      const viewerAfterPasswordChange = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(viewerAfterPasswordChange.doc.hasPassword, true);
+      assert.equal(viewerAfterPasswordChange.doc.accessGranted, false);
+      assert.equal(Object.hasOwn(viewerAfterPasswordChange.doc, 'brief'), false);
+      assert.equal(Object.hasOwn(viewerAfterPasswordChange.doc, 'votingConfig'), false);
+      assert.equal(Object.hasOwn(viewerAfterPasswordChange.doc, 'password'), false);
+
+      const viewerItemsAfterPasswordChange = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'voting_items', query: {} },
+      });
+      assert.equal(
+        viewerItemsAfterPasswordChange.docs.some((entry) => entry.id === privateItem.id),
+        false,
+      );
+
+      const staleUnlock = await fetchJsonResponse(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'first-secret' },
+      });
+      assert.equal(staleUnlock.status, 403);
+      assert.equal(staleUnlock.body.error.code, 'project-access/invalid-password');
+
+      const freshUnlock = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'second-secret' },
+      });
+      assert.equal(freshUnlock.project.accessGranted, true);
+      assert.equal(freshUnlock.project.brief, 'Hidden launch plan');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API preserves private project passwords during authorized duplication', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
