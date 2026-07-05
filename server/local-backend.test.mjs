@@ -537,6 +537,98 @@ test('HTTP data API limits user document writes to the current user and preserve
   });
 });
 
+test('HTTP data API limits announcement writes to admins while keeping announcements readable', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const user = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'user@example.com', password: 'secret123', displayName: 'User' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123', displayName: 'Admin' },
+      });
+
+      const userAdd = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: user.token,
+        body: {
+          collection: 'announcements',
+          data: { title: 'Forged', content: 'Not allowed', createdAt: 1 },
+        },
+      });
+      assert.equal(userAdd.status, 403);
+      assert.equal(userAdd.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.list('announcements'), []);
+
+      const adminAdd = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'announcements',
+          data: { title: 'Release', content: 'Admin authored', createdAt: 2 },
+        },
+      });
+      assert.equal(adminAdd.doc.title, 'Release');
+
+      const userUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: user.token,
+        body: {
+          collection: 'announcements',
+          id: adminAdd.doc.id,
+          data: { title: 'Hijacked' },
+        },
+      });
+      assert.equal(userUpdate.status, 403);
+      assert.equal(userUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('announcements', adminAdd.doc.id)).title, 'Release');
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: user.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'project_activities', data: { projectId: 'visible', subject: 'partial' } },
+            { type: 'add', collection: 'announcements', data: { title: 'Batch forged', createdAt: 3 } },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 403);
+      assert.equal(blockedBatch.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.list('project_activities'), []);
+
+      const readable = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: user.token,
+        body: { collection: 'announcements', query: {} },
+      });
+      assert.deepEqual(readable.docs.map((entry) => entry.id), [adminAdd.doc.id]);
+
+      const adminDelete = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: admin.token,
+        body: { collection: 'announcements', id: adminAdd.doc.id },
+      });
+      assert.equal(adminDelete.ok, true);
+      assert.equal(await store.get('announcements', adminAdd.doc.id), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects child writes against stopped and finished projects without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

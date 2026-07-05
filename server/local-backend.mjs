@@ -262,6 +262,10 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
     return authorizeUserOperation({ store, user, type, id, data });
   }
 
+  if (collection === 'announcements') {
+    return authorizeAnnouncementOperation({ store, user, type, id, data });
+  }
+
   if (collection === 'notifications') {
     return authorizeNotificationOperation({ store, user, type, id, data });
   }
@@ -297,6 +301,19 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
 
   if (type === 'delete') return undefined;
   return preserveProjectOwner(data, existing, type);
+}
+
+async function authorizeAnnouncementOperation({ store, user, type, id, data }) {
+  if (!isAdminUser(user)) forbidden();
+  if (type === 'add') return data || {};
+
+  const existing = await store.get('announcements', id);
+  if (!existing) {
+    if (type === 'set') return data || {};
+    throwDataError(404, 'data/not-found', 'Announcement not found.');
+  }
+
+  return type === 'delete' ? undefined : data || {};
 }
 
 async function authorizeUserOperation({ store, user, type, id, data }) {
