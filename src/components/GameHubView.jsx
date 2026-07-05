@@ -9,6 +9,7 @@ import {
   createGameRoomCreateData,
   createGameRoomJoinPatch,
   createGameRoomSummary,
+  createUserGameResultHistory,
   createMineRoomProgressPatch,
   createRpsNextRoundPatch,
 } from '../lib/projectDomain';
@@ -739,6 +740,11 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
       ))
   ), [activeTab, rooms]);
 
+  const userResultHistory = useMemo(
+      () => createUserGameResultHistory(rooms, user.uid, 3),
+      [rooms, user.uid],
+  );
+
   const currentActiveRoom = useMemo(() => (
       activeRoomId ? rooms.find(room => room.id === activeRoomId) || null : null
   ), [activeRoomId, rooms]);
@@ -793,6 +799,11 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
       medium: t('difficultyMedium'),
       hard: t('difficultyHard'),
   };
+  const gameHistoryResultLabels = {
+      win: t('gameHistoryWin'),
+      loss: t('gameHistoryLoss'),
+      draw: t('gameHistoryDraw'),
+  };
 
   return (
     <div className="flex h-full flex-col animate-fade-in">
@@ -824,6 +835,66 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                {showCreate ? t('close') : t('createRoom')}
            </button>
        </div>
+
+       <section className="app-card-quiet mb-6 p-4 sm:p-5">
+           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+               <div className="min-w-0">
+                   <div className="mb-3 flex items-center gap-2">
+                       <Trophy className="h-5 w-5 text-google-yellow" />
+                       <h2 className="text-base font-medium text-m3-on-surface">{t('gameMyHistory')}</h2>
+                   </div>
+                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                       {[
+                           [t('gameHistoryRecord', { count: userResultHistory.stats.total }), userResultHistory.stats.total],
+                           [t('gameHistoryWins'), userResultHistory.stats.wins],
+                           [t('gameHistoryLosses'), userResultHistory.stats.losses],
+                           [t('gameHistoryDraws'), userResultHistory.stats.draws],
+                       ].map(([label, value]) => (
+                           <div key={label} className="rounded-xl border border-m3-outline-variant/30 bg-m3-surface-container/70 px-3 py-2">
+                               <div className="text-lg font-semibold leading-tight text-m3-on-surface">{value}</div>
+                               <div className="text-xs text-m3-on-surface-variant">{label}</div>
+                           </div>
+                       ))}
+                   </div>
+               </div>
+
+               <div className="min-w-0 lg:w-[min(100%,26rem)]">
+                   <div className="mb-2 text-xs font-medium uppercase tracking-wide text-m3-on-surface-variant">{t('gameHistoryRecent')}</div>
+                   {userResultHistory.recent.length === 0 ? (
+                       <div className="rounded-xl border border-dashed border-m3-outline-variant/40 px-3 py-4 text-sm text-m3-on-surface-variant">
+                           {t('gameHistoryEmpty')}
+                       </div>
+                   ) : (
+                       <div className="grid gap-2">
+                           {userResultHistory.recent.map((entry) => {
+                               return (
+                                   <button
+                                     type="button"
+                                     key={entry.id}
+                                     onClick={() => setActiveRoomId(entry.id)}
+                                     className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-m3-outline-variant/20 bg-m3-surface-container/50 px-3 py-2 text-left transition-colors hover:border-google-blue/30 hover:bg-m3-surface-container-high"
+                                   >
+                                       <div className="min-w-0">
+                                           <div className="truncate text-sm font-medium text-m3-on-surface">{entry.roomName}</div>
+                                           <div className="text-xs text-m3-on-surface-variant">{t('gameScoreLine', { score: entry.scoreLine || '-' })}</div>
+                                       </div>
+                                       <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+                                           entry.result === 'win'
+                                               ? 'bg-google-green/10 text-google-green'
+                                               : entry.result === 'loss'
+                                                   ? 'bg-google-red/10 text-google-red'
+                                           : 'bg-m3-surface-container-high text-m3-on-surface-variant'
+                                       }`}>
+                                           {gameHistoryResultLabels[entry.result] || gameHistoryResultLabels.draw}
+                                       </span>
+                                   </button>
+                               );
+                           })}
+                       </div>
+                   )}
+               </div>
+           </div>
+       </section>
        
        {showCreate && canInteract && (
            <div className="app-card mb-8 animate-slide-down p-5 sm:p-6">

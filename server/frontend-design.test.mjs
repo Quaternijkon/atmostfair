@@ -212,6 +212,16 @@ test('game hub exposes localized active and finished room summaries', async () =
     'activeRooms',
     'finishedRooms',
     'noFinishedRooms',
+    'gameMyHistory',
+    'gameHistoryEmpty',
+    'gameHistoryRecord',
+    'gameHistoryRecent',
+    'gameHistoryWins',
+    'gameHistoryLosses',
+    'gameHistoryDraws',
+    'gameHistoryWin',
+    'gameHistoryLoss',
+    'gameHistoryDraw',
     'gameResult',
     'gameWinner',
     'gameRoundsPlayed',
@@ -224,6 +234,8 @@ test('game hub exposes localized active and finished room summaries', async () =
   }
 
   assert.match(files.gameHub, /createGameRoomSummary/, 'Game hub should derive list summaries through the domain helper');
+  assert.match(files.gameHub, /createUserGameResultHistory/, 'Game hub should derive per-user result history through the domain helper');
+  assert.match(files.gameHub, /userResultHistory/, 'Game hub should expose a current-user result history panel');
   assert.match(files.gameHub, /createRpsNextRoundPatch/, 'RPS room transitions should use the domain helper');
   assert.match(files.gameHub, /createMineRoomProgressPatch/, 'Minesweeper progress should use the domain helper for terminal room summaries');
   assert.match(files.gameHub, /setActiveTab\('finished'\)/, 'Game hub should expose finished rooms');

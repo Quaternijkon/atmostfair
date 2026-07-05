@@ -403,6 +403,59 @@ export function createGameRoomSummary(room) {
   };
 }
 
+export function createUserGameResultHistory(rooms, uid, limit = 3) {
+  const cleanUid = String(uid || '').trim();
+  const emptyHistory = {
+    stats: { total: 0, wins: 0, losses: 0, draws: 0 },
+    recent: [],
+  };
+  if (!cleanUid) return emptyHistory;
+
+  const parsedLimit = Number.parseInt(limit, 10);
+  const recentLimit = Number.isFinite(parsedLimit) ? Math.max(0, parsedLimit) : 3;
+  const entries = (Array.isArray(rooms) ? rooms : [])
+    .filter((room) => (
+      room?.status === 'finished'
+      && Array.isArray(room.players)
+      && room.players.some((player) => player.uid === cleanUid)
+    ))
+    .map((room) => {
+      const summary = createGameRoomSummary(room) || {};
+      const players = Array.isArray(room.players) ? room.players : [];
+      const winner = room.winnerId
+        ? players.find((player) => player.uid === room.winnerId) || null
+        : null;
+      const result = !room.winnerId ? 'draw' : room.winnerId === cleanUid ? 'win' : 'loss';
+
+      return {
+        id: room.id,
+        roomName: room.name || '',
+        game: room.game || summary.game || '',
+        finishedAt: room.finishedAt || room.createdAt || 0,
+        result,
+        winnerId: room.winnerId || null,
+        winnerName: summary.winnerName || winner?.name || '',
+        scoreLine: summary.scoreLine || '',
+        roundsPlayed: summary.roundsPlayed || 0,
+        playerCount: summary.playerCount || players.length,
+      };
+    })
+    .sort((a, b) => (Number(b.finishedAt) || 0) - (Number(a.finishedAt) || 0));
+
+  const stats = entries.reduce((result, entry) => {
+    result.total += 1;
+    if (entry.result === 'win') result.wins += 1;
+    else if (entry.result === 'loss') result.losses += 1;
+    else result.draws += 1;
+    return result;
+  }, { total: 0, wins: 0, losses: 0, draws: 0 });
+
+  return {
+    stats,
+    recent: entries.slice(0, recentLimit),
+  };
+}
+
 export function createMineRoomProgressPatch(room, user, progress, status, transitionAt) {
   if (!room?.id || room.game !== 'mine' || room.status === 'finished' || !user?.uid) return null;
   const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];

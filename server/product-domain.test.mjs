@@ -9,6 +9,7 @@ import {
   createBookingReleasePatch,
   createBookingWaitlistPatch,
   createGameRoomCreateData,
+  createUserGameResultHistory,
   createProjectCascadeDeleteOperations,
   createProjectCreateData,
   createGatherFieldData,
@@ -474,6 +475,84 @@ test('RPS room transition persists a reusable match result summary', () => {
       { uid: 'u1', name: 'Ana', score: 1, lastMove: 'rock', move: null },
       { uid: 'u2', name: 'Bo', score: 0, lastMove: 'scissors', move: null },
     ],
+  });
+});
+
+test('user game result history summarizes finished rooms for one player', () => {
+  assert.equal(typeof createUserGameResultHistory, 'function');
+
+  const history = createUserGameResultHistory([
+    {
+      id: 'active',
+      name: 'Still playing',
+      game: 'rps',
+      status: 'playing',
+      players: [{ uid: 'u1', name: 'Ana', score: 0, move: null }],
+      createdAt: 9000,
+    },
+    {
+      id: 'win',
+      name: 'Final table',
+      game: 'rps',
+      status: 'finished',
+      winnerId: 'u1',
+      finishedAt: 5000,
+      players: [
+        { uid: 'u1', name: 'Ana', score: 2, move: null },
+        { uid: 'u2', name: 'Bo', score: 1, move: null },
+      ],
+      history: [{ round: 1 }, { round: 2 }, { round: 3 }],
+    },
+    {
+      id: 'loss',
+      name: 'Mine sprint',
+      game: 'mine',
+      status: 'finished',
+      winnerId: 'u3',
+      finishedAt: 7000,
+      players: [
+        { uid: 'u1', name: 'Ana', progress: 80, status: 'dead' },
+        { uid: 'u3', name: 'Cy', progress: 100, status: 'won' },
+      ],
+    },
+    {
+      id: 'draw',
+      name: 'All busted',
+      game: 'mine',
+      status: 'finished',
+      winnerId: null,
+      finishedAt: 6000,
+      players: [
+        { uid: 'u1', name: 'Ana', progress: 60, status: 'dead' },
+        { uid: 'u4', name: 'Dee', progress: 62, status: 'dead' },
+      ],
+    },
+    {
+      id: 'other-user',
+      name: 'Hidden for Ana',
+      game: 'rps',
+      status: 'finished',
+      winnerId: 'u2',
+      finishedAt: 8000,
+      players: [{ uid: 'u2', name: 'Bo', score: 1 }],
+    },
+  ], 'u1', 2);
+
+  assert.deepEqual(history.stats, {
+    total: 3,
+    wins: 1,
+    losses: 1,
+    draws: 1,
+  });
+  assert.deepEqual(history.recent.map((entry) => [entry.id, entry.result, entry.roomName]), [
+    ['loss', 'loss', 'Mine sprint'],
+    ['draw', 'draw', 'All busted'],
+  ]);
+  assert.equal(history.recent[0].scoreLine, '100%');
+  assert.equal(history.recent[1].scoreLine, '62%');
+  assert.deepEqual(createUserGameResultHistory([], 'u1'), {
+    stats: { total: 0, wins: 0, losses: 0, draws: 0 },
+    recent: [],
   });
 });
 
