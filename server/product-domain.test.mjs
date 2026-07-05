@@ -872,6 +872,56 @@ test('project cascade deletion covers every project-owned collection', () => {
   assert.equal(PROJECT_CASCADE_COLLECTIONS.some((collection) => collection.name === 'project_activities'), true);
 });
 
+test('project orphan cleanup covers every project-owned child collection', () => {
+  assert.equal(typeof projectDomain.createProjectOrphanCleanupPlan, 'function');
+
+  const docsByCollection = {
+    projects: [{ id: 'project-1' }],
+    voting_items: [{ id: 'vote-1', projectId: 'missing' }, { id: 'vote-2', projectId: 'project-1' }],
+    rooms: [{ id: 'room-1', projectId: 'missing' }],
+    roulette_participants: [{ id: 'roulette-1', projectId: 'missing' }],
+    queue_participants: [{ id: 'queue-1', projectId: 'missing' }],
+    gather_fields: [{ id: 'field-1', projectId: 'missing' }],
+    gather_submissions: [{ id: 'submission-1', projectId: 'missing' }],
+    schedule_submissions: [{ id: 'schedule-1', projectId: 'missing' }],
+    booking_slots: [{ id: 'booking-1', projectId: 'missing' }],
+    claim_items: [{ id: 'claim-1', projectId: 'missing' }],
+    project_chats: [{ id: 'chat-1', projectId: 'missing' }],
+    game_rooms: [{ id: 'game-1', projectId: 'missing' }],
+    notifications: [{ id: 'notice-1', projectId: 'missing' }, { id: 'notice-2' }],
+    project_activities: [{ id: 'activity-1', projectId: 'missing' }],
+  };
+
+  const plan = projectDomain.createProjectOrphanCleanupPlan(docsByCollection.projects, docsByCollection);
+
+  assert.deepEqual(
+    plan.operations.map((operation) => `${operation.collection}/${operation.id}`).sort(),
+    [
+      'booking_slots/booking-1',
+      'claim_items/claim-1',
+      'game_rooms/game-1',
+      'gather_fields/field-1',
+      'gather_submissions/submission-1',
+      'notifications/notice-1',
+      'notifications/notice-2',
+      'project_activities/activity-1',
+      'project_chats/chat-1',
+      'queue_participants/queue-1',
+      'rooms/room-1',
+      'roulette_participants/roulette-1',
+      'schedule_submissions/schedule-1',
+      'voting_items/vote-1',
+    ].sort(),
+  );
+  assert.deepEqual(
+    PROJECT_CASCADE_COLLECTIONS
+      .filter((collection) => collection.name !== 'projects')
+      .map((collection) => collection.name)
+      .sort(),
+    Object.keys(plan.collections).sort(),
+  );
+});
+
 test('app action handlers use domain guards for high-risk writes', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
   const admin = await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8');
@@ -906,6 +956,9 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(admin, /onDeleteProject/, 'AdminDashboard should accept the shared cascade delete action');
   assert.match(admin, /await onDeleteProject\(project\.id\);/, 'Admin project deletion should call the shared cascade delete action');
   assert.doesNotMatch(admin, /deleteDoc\(doc\(db,\s*'projects',\s*project\.id\)\)/, 'Admin project deletion should not delete only the project shell');
+  assert.match(admin, /createProjectOrphanCleanupPlan/, 'Admin orphan cleanup should use the shared project-owned collection plan');
+  assert.doesNotMatch(admin, /deleteDoc\(doc\(db,\s*'voting_items'/, 'Admin orphan cleanup should not hardcode a partial project-owned collection list');
+  assert.match(admin, /setRemoteProjectDocs\(\(current\) =>/, 'Admin orphan cleanup should refresh one-shot remote orphan counts after deletion');
   assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
   assert.match(app, /createQueueResultData/, 'Queue generation should derive result and audit steps through the domain helper');
   assert.match(app, /queueResult/, 'Queue generation should persist replayable result data on the project');

@@ -1,48 +1,94 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Shield, Database, Trash2 } from './Icons';
-import { deleteDoc, doc, db } from '../lib/localData';
+import { collection, deleteDoc, doc, getDocs, db } from '../lib/localData';
+import { createProjectOrphanCleanupPlan } from '../lib/projectDomain';
 import { formatDate } from '../lib/locale';
 import { useUI } from './UIContext';
 
+const ADMIN_ORPHAN_REMOTE_COLLECTIONS = ['project_chats', 'game_rooms', 'notifications', 'project_activities'];
+
 export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, onDeleteProject, onClose, t }) {
   const { confirm, showToast } = useUI();
-  // Logic to find orphans
-  const projectIds = new Set(projects.map(p => p.id));
+  const [remoteProjectDocs, setRemoteProjectDocs] = useState({});
+
+  useEffect(() => {
+    let active = true;
+    const loadAdminOnlyOrphanCollections = async () => {
+      try {
+        const entries = await Promise.all(ADMIN_ORPHAN_REMOTE_COLLECTIONS.map(async (collectionName) => {
+          const snapshot = await getDocs(collection(db, collectionName));
+          return [collectionName, snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))];
+        }));
+        if (active) setRemoteProjectDocs(Object.fromEntries(entries));
+      } catch (error) {
+        console.error('Error loading admin orphan collections', error);
+      }
+    };
+
+    void loadAdminOnlyOrphanCollections();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const docsByCollection = {
+    projects,
+    voting_items: items,
+    rooms,
+    roulette_participants: rouletteParticipants,
+    queue_participants: queueParticipants || [],
+    gather_fields: gatherFields || [],
+    gather_submissions: gatherSubmissions || [],
+    schedule_submissions: scheduleSubmissions || [],
+    booking_slots: bookingSlots || [],
+    claim_items: claimItems || [],
+    ...remoteProjectDocs,
+  };
+  const orphanPlan = createProjectOrphanCleanupPlan(projects, docsByCollection);
   const orphans = {
-    items: items.filter(i => !projectIds.has(i.projectId)),
-    rooms: rooms.filter(r => !projectIds.has(r.projectId)),
-    participants: rouletteParticipants.filter(p => !projectIds.has(p.projectId)),
-    queue: (queueParticipants || []).filter(p => !projectIds.has(p.projectId)),
-    fields: (gatherFields || []).filter(f => !projectIds.has(f.projectId)),
-    submissions: (gatherSubmissions || []).filter(s => !projectIds.has(s.projectId)),
-    schedules: (scheduleSubmissions || []).filter(s => !projectIds.has(s.projectId)),
-    booking: (bookingSlots || []).filter(b => !projectIds.has(b.projectId)),
-    claims: (claimItems || []).filter(c => !projectIds.has(c.projectId))
+    items: orphanPlan.collections.voting_items || [],
+    rooms: orphanPlan.collections.rooms || [],
+    participants: orphanPlan.collections.roulette_participants || [],
+    queue: orphanPlan.collections.queue_participants || [],
+    fields: orphanPlan.collections.gather_fields || [],
+    submissions: orphanPlan.collections.gather_submissions || [],
+    schedules: orphanPlan.collections.schedule_submissions || [],
+    booking: orphanPlan.collections.booking_slots || [],
+    claims: orphanPlan.collections.claim_items || [],
+    chats: orphanPlan.collections.project_chats || [],
+    games: orphanPlan.collections.game_rooms || [],
+    notifications: orphanPlan.collections.notifications || [],
+    activities: orphanPlan.collections.project_activities || [],
   };
 
-  const hasOrphans = Object.values(orphans).some(arr => arr.length > 0);
+  const hasOrphans = orphanPlan.operations.length > 0;
 
   const cleanOrphans = async () => {
     confirm({
       title: t('cleanOrphans'),
-      message: `${t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length })}\n${t('orphanExtraCounts', { fields: orphans.fields.length, submissions: orphans.submissions.length, schedules: orphans.schedules.length, booking: orphans.booking.length, claims: orphans.claims.length, queue: orphans.queue.length })}`,
+      message: `${t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length })}\n${t('orphanExtraCounts', { fields: orphans.fields.length, submissions: orphans.submissions.length, schedules: orphans.schedules.length, booking: orphans.booking.length, claims: orphans.claims.length, queue: orphans.queue.length })}\n${t('orphanSystemCounts', { chats: orphans.chats.length, games: orphans.games.length, notifications: orphans.notifications.length, activities: orphans.activities.length })}`,
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
       onConfirm: async () => {
         try {
-          const promises = [
-              ...orphans.items.map(item => deleteDoc(doc(db, 'voting_items', item.id))),
-              ...orphans.rooms.map(room => deleteDoc(doc(db, 'rooms', room.id))),
-              ...orphans.participants.map(p => deleteDoc(doc(db, 'roulette_participants', p.id))),
-              ...orphans.queue.map(p => deleteDoc(doc(db, 'queue_participants', p.id))),
-              ...orphans.fields.map(f => deleteDoc(doc(db, 'gather_fields', f.id))),
-              ...orphans.submissions.map(s => deleteDoc(doc(db, 'gather_submissions', s.id))),
-              ...orphans.schedules.map(s => deleteDoc(doc(db, 'schedule_submissions', s.id))),
-              ...orphans.booking.map(b => deleteDoc(doc(db, 'booking_slots', b.id))),
-              ...orphans.claims.map(c => deleteDoc(doc(db, 'claim_items', c.id)))
-          ];
+          const promises = orphanPlan.operations.map((operation) => deleteDoc(doc(db, operation.collection, operation.id)));
           await Promise.all(promises);
+          setRemoteProjectDocs((current) => {
+            const deletedRemoteIds = new Map();
+            orphanPlan.operations
+              .filter((operation) => ADMIN_ORPHAN_REMOTE_COLLECTIONS.includes(operation.collection))
+              .forEach((operation) => {
+                const ids = deletedRemoteIds.get(operation.collection) || new Set();
+                ids.add(operation.id);
+                deletedRemoteIds.set(operation.collection, ids);
+              });
+
+            return Object.fromEntries(Object.entries(current).map(([collectionName, docs]) => [
+              collectionName,
+              (docs || []).filter((entry) => !deletedRemoteIds.get(collectionName)?.has(entry.id)),
+            ]));
+          });
           showToast(t('orphanSuccess'), 'success');
         } catch (e) {
           showToast(t('orphanError') + e.message, 'error');
@@ -105,6 +151,8 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
             </h2>
             <p className="text-sm text-m3-on-surface-variant mt-1">
               {t('orphanDetected', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length })}
+              <br /><span className="text-xs opacity-70">{t('orphanExtraCounts', { fields: orphans.fields.length, submissions: orphans.submissions.length, schedules: orphans.schedules.length, booking: orphans.booking.length, claims: orphans.claims.length, queue: orphans.queue.length })}</span>
+              <br /><span className="text-xs opacity-70">{t('orphanSystemCounts', { chats: orphans.chats.length, games: orphans.games.length, notifications: orphans.notifications.length, activities: orphans.activities.length })}</span>
               <br /><span className="text-xs opacity-70">{t('orphanNote')}</span>
             </p>
           </div>

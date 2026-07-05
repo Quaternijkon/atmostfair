@@ -704,6 +704,27 @@ export function createProjectCascadeDeleteOperations(projectId, docsByCollection
   return operations;
 }
 
+export function createProjectOrphanCleanupPlan(projects, docsByCollection) {
+  const projectIds = new Set((Array.isArray(projects) ? projects : []).map((project) => project?.id).filter(Boolean));
+  const collections = {};
+  const operations = [];
+
+  for (const { name, field } of PROJECT_CASCADE_COLLECTIONS) {
+    if (name === 'projects') continue;
+
+    const orphanDocs = normalizedCollection(docsByCollection, name).filter((entry) => (
+      entry?.id && !projectIds.has(entry[field])
+    ));
+
+    collections[name] = orphanDocs;
+    orphanDocs.forEach((entry) => {
+      operations.push({ type: 'delete', collection: name, id: entry.id });
+    });
+  }
+
+  return { collections, operations };
+}
+
 function cleanName(userName, user) {
   const explicit = String(userName || '').trim();
   if (explicit) return explicit;
