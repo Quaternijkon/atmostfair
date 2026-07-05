@@ -7,6 +7,7 @@ import { TRANSLATIONS } from '../src/constants/translations.js';
 import {
   createBookingPatch,
   createProjectCascadeDeleteOperations,
+  createGatherFieldData,
   createQueueJoinData,
   createTeamJoinMember,
   createVoteToggleOperations,
@@ -104,6 +105,72 @@ test('gather submission guard creates one response per project and user', () => 
     createGatherSubmissionData([...existing, { id: 's3', projectId: 'project-1', uid: 'u2' }], 'project-1', user, 'Katherine Johnson', data, 3501),
     null,
     'same user should not submit the same gather form twice',
+  );
+});
+
+test('gather field data normalizes supported field types and option lists', () => {
+  const user = { uid: 'u2', displayName: 'Katherine' };
+
+  assert.deepEqual(createGatherFieldData('project-1', user, '  RSVP  ', 'option', 'Yes, No, Yes,  ', 3900), {
+    projectId: 'project-1',
+    label: 'RSVP',
+    type: 'option',
+    options: ['Yes', 'No'],
+    creatorId: 'u2',
+    createdAt: 3900,
+  });
+
+  assert.deepEqual(createGatherFieldData('project-1', user, 'Budget', 'currency', '', 3901), {
+    projectId: 'project-1',
+    label: 'Budget',
+    type: 'text',
+    creatorId: 'u2',
+    createdAt: 3901,
+  });
+
+  assert.equal(createGatherFieldData('project-1', user, 'Choice', 'option', '  ', 3902), null);
+  assert.equal(createGatherFieldData('project-1', user, '  ', 'text', '', 3903), null);
+});
+
+test('gather submission data is normalized against typed field definitions', () => {
+  const createGatherSubmissionData = projectDomain.createGatherSubmissionData;
+  const user = { uid: 'u2', displayName: 'Katherine' };
+  const fields = [
+    { id: 'note', label: 'Note', type: 'text' },
+    { id: 'count', label: 'Count', type: 'number' },
+    { id: 'date', label: 'Date', type: 'date' },
+    { id: 'choice', label: 'Choice', type: 'option', options: ['Yes', 'No'] },
+    { id: 'badChoice', label: 'Bad Choice', type: 'option', options: ['Yes', 'No'] },
+    { id: 'badNumber', label: 'Bad Number', type: 'number' },
+    { id: 'badDate', label: 'Bad Date', type: 'date' },
+  ];
+
+  assert.deepEqual(
+    createGatherSubmissionData([], 'project-1', user, 'Katherine Johnson', {
+      note: '  keep this  ',
+      count: ' 3.5 ',
+      date: '2026-07-05',
+      choice: 'Yes',
+      badChoice: 'Maybe',
+      badNumber: 'abc',
+      badDate: '07/05/2026',
+      extra: 'drop me',
+    }, 3904, fields),
+    {
+      projectId: 'project-1',
+      uid: 'u2',
+      name: 'Katherine Johnson',
+      data: {
+        note: 'keep this',
+        count: '3.5',
+        date: '2026-07-05',
+        choice: 'Yes',
+        badChoice: '',
+        badNumber: '',
+        badDate: '',
+      },
+      submittedAt: 3904,
+    },
   );
 });
 
@@ -372,6 +439,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createTeamJoinMember',
     'createQueueJoinData',
     'createBookingPatch',
+    'createGatherFieldData',
     'createGatherSubmissionData',
     'createRouletteJoinData',
     'createScheduleSubmissionWrite',
@@ -390,6 +458,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.doesNotMatch(app, /handleDeleteProject:\s*async\s*\(projectId\)\s*=>\s*\{\s*await deleteDoc\(doc\(db,\s*'projects'/, 'Project deletion should not delete only the project shell');
   assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
+  assert.match(app, /const projectFields = gatherFields\.filter/, 'Gather submissions should load project field definitions before writing');
+  assert.match(app, /createGatherSubmissionData\([\s\S]{0,500}projectFields/, 'Gather submissions should validate against field definitions before writing');
 });
 
 test('project detail exposes localized project duplication', async () => {

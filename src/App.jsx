@@ -12,6 +12,7 @@ import {
 import { createProjectArchivePatch } from './lib/dashboardDomain';
 import {
   createBookingPatch,
+  createGatherFieldData,
   createGatherSubmissionData,
   createProjectCascadeDeleteOperations,
   createProjectDuplicateChildOperations,
@@ -328,10 +329,12 @@ function AppContent() {
           subject: project.title,
         });
       },
-      handleCreateGatherField: async (projectId, label) => {
-        if (!user || !label.trim()) return;
-        await addDoc(collection(db, 'gather_fields'), { projectId, label, type: 'text', creatorId: user.uid, createdAt: nowMs() });
-        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherFieldCreated, subject: label });
+      handleCreateGatherField: async (projectId, label, type, options) => {
+        if (!user) return;
+        const field = createGatherFieldData(projectId, user, label, type, options, nowMs());
+        if (!field) return;
+        await addDoc(collection(db, 'gather_fields'), field);
+        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherFieldCreated, subject: field.label });
       },
       handleDeleteGatherField: async (fieldId) => {
         if (!user) return;
@@ -339,7 +342,8 @@ function AppContent() {
       },
       handleSubmitGather: async (projectId, data, submitterName) => {
         if (!user) return;
-        const submission = createGatherSubmissionData(gatherSubmissions, projectId, user, submitterName || currentUserName(), data, nowMs());
+        const projectFields = gatherFields.filter((field) => field.projectId === projectId);
+        const submission = createGatherSubmissionData(gatherSubmissions, projectId, user, submitterName || currentUserName(), data, nowMs(), projectFields);
         if (!submission) return;
         await addDoc(collection(db, 'gather_submissions'), submission);
         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherSubmitted, subject: submission.name, actorName: submission.name });

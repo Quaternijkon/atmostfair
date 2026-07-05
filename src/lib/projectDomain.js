@@ -15,6 +15,8 @@ export const PROJECT_CASCADE_COLLECTIONS = [
   { name: 'project_activities', field: 'projectId' },
 ];
 
+const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
+
 export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
   const members = Array.isArray(room.members) ? room.members : [];
@@ -53,7 +55,7 @@ export function createBookingPatch(slot, user, userName, bookingData, bookedAt) 
   };
 }
 
-export function createGatherSubmissionData(existingSubmissions, projectId, user, userName, data, submittedAt) {
+export function createGatherSubmissionData(existingSubmissions, projectId, user, userName, data, submittedAt, fields = []) {
   if (!projectId || !user?.uid) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
   if (submissions.some((submission) => submission.projectId === projectId && submission.uid === user.uid)) return null;
@@ -61,9 +63,31 @@ export function createGatherSubmissionData(existingSubmissions, projectId, user,
     projectId,
     uid: user.uid,
     name: cleanName(userName, user),
-    data: data || {},
+    data: normalizeGatherSubmissionData(data, fields),
     submittedAt,
   };
+}
+
+export function createGatherFieldData(projectId, user, label, type = 'text', options = '', createdAt) {
+  if (!projectId || !user?.uid) return null;
+  const cleanLabel = String(label || '').trim();
+  if (!cleanLabel) return null;
+  const fieldType = normalizeGatherFieldType(type);
+  const field = {
+    projectId,
+    label: cleanLabel,
+    type: fieldType,
+    creatorId: user.uid,
+    createdAt,
+  };
+
+  if (fieldType === 'option') {
+    const normalizedOptions = normalizeGatherOptions(options);
+    if (normalizedOptions.length === 0) return null;
+    field.options = normalizedOptions;
+  }
+
+  return field;
 }
 
 export function createRouletteJoinData(existingParticipants, projectId, user, userName, value, joinedAt) {
@@ -229,6 +253,7 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
         projectId: newProjectId,
         label: field.label || '',
         type: field.type || 'text',
+        ...(Array.isArray(field.options) ? { options: clonePlainValue(field.options) } : {}),
         creatorId: user.uid,
         createdAt,
       },
@@ -298,6 +323,52 @@ function cleanName(userName, user) {
 
 function normalizedCollection(docsByCollection, collectionName) {
   return Array.isArray(docsByCollection?.[collectionName]) ? docsByCollection[collectionName] : [];
+}
+
+function normalizeGatherSubmissionData(data, fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return data || {};
+  const source = data && typeof data === 'object' ? data : {};
+  return fields.reduce((result, field) => {
+    if (!field?.id) return result;
+    result[field.id] = normalizeGatherSubmissionValue(field, source[field.id]);
+    return result;
+  }, {});
+}
+
+function normalizeGatherSubmissionValue(field, value) {
+  const text = String(value ?? '').trim();
+  const fieldType = normalizeGatherFieldType(field.type);
+  if (fieldType === 'number') return text !== '' && Number.isFinite(Number(text)) ? text : '';
+  if (fieldType === 'date') return isValidDateOnly(text) ? text : '';
+  if (fieldType === 'option') return normalizeGatherOptions(field.options).includes(text) ? text : '';
+  return text;
+}
+
+function normalizeGatherFieldType(type) {
+  return GATHER_FIELD_TYPES.has(type) ? type : 'text';
+}
+
+function normalizeGatherOptions(options) {
+  const rawOptions = Array.isArray(options) ? options : String(options || '').split(/[,\n，]/);
+  const seen = new Set();
+  const normalized = [];
+  for (const option of rawOptions) {
+    const value = String(option || '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function isValidDateOnly(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return date.getUTCFullYear() === Number(year)
+    && date.getUTCMonth() === Number(month) - 1
+    && date.getUTCDate() === Number(day);
 }
 
 function createVoteOperation(id, action, uid) {

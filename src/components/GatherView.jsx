@@ -6,6 +6,8 @@ import { useUI } from './UIContext';
 export default function GatherView({ user, isAdmin, project, fields = [], submissions = [], isStopped, isOwner, actions, t }) {
   const { showToast, confirm } = useUI();
   const [newField, setNewField] = useState('');
+  const [newFieldType, setNewFieldType] = useState('text');
+  const [newFieldOptions, setNewFieldOptions] = useState('');
   
   // Submission Form State
   const [formData, setFormData] = useState({});
@@ -13,12 +15,78 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
 
   const mySubmission = submissions.find(s => s.uid === user?.uid);
   const hasSubmitted = !!mySubmission;
+  const fieldTypeOptions = [
+    { value: 'text', label: t('fieldTypeText') },
+    { value: 'number', label: t('fieldTypeNumber') },
+    { value: 'date', label: t('fieldTypeDate') },
+    { value: 'option', label: t('fieldTypeOption') },
+  ];
+  const hasOptionValues = newFieldOptions.split(/[,\n，]/).some((option) => option.trim());
+  const canCreateField = newField.trim() && (newFieldType !== 'option' || hasOptionValues);
 
   const handleAddField = (e) => {
     e.preventDefault();
-    if (!newField.trim()) return;
-    actions.handleCreateGatherField(project.id, newField.trim());
+    if (!canCreateField) return;
+    actions.handleCreateGatherField(project.id, newField.trim(), newFieldType, newFieldOptions);
     setNewField('');
+    setNewFieldOptions('');
+  };
+
+  const getFieldTypeLabel = (type) => fieldTypeOptions.find((option) => option.value === type)?.label || t('fieldTypeText');
+  const setFieldValue = (fieldId, value) => setFormData((current) => ({ ...current, [fieldId]: value }));
+  const renderFieldInput = (field) => {
+    const fieldType = ['number', 'date', 'option'].includes(field.type) ? field.type : 'text';
+    const value = formData[field.id] || '';
+    if (fieldType === 'option') {
+      return (
+        <select
+          value={value}
+          onChange={e => setFieldValue(field.id, e.target.value)}
+          className="app-input"
+          aria-label={field.label}
+        >
+          <option value="">{t('selectOption')}</option>
+          {(field.options || []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (fieldType === 'number') {
+      return (
+        <input
+          type="number"
+          inputMode="decimal"
+          value={value}
+          onChange={e => setFieldValue(field.id, e.target.value)}
+          className="app-input"
+          placeholder={t('enterField', { field: field.label })}
+        />
+      );
+    }
+
+    if (fieldType === 'date') {
+      return (
+        <input
+          type="date"
+          value={value}
+          onChange={e => setFieldValue(field.id, e.target.value)}
+          className="app-input"
+          placeholder={t('enterField', { field: field.label })}
+        />
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={e => setFieldValue(field.id, e.target.value)}
+        className="app-input"
+        placeholder={t('enterField', { field: field.label })}
+      />
+    );
   };
 
   const handleSubmit = (e) => {
@@ -69,7 +137,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
             <ClipboardList className="w-5 h-5 text-google-blue" />
             {t('addField')}
           </h3>
-          <form onSubmit={handleAddField} className="flex gap-4 mb-4">
+          <form onSubmit={handleAddField} className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
              <input 
                 type="text" 
                 value={newField} 
@@ -77,15 +145,36 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                 placeholder={t('fieldLabel')}
                 className="app-input flex-1"
              />
-             <button type="submit" className="app-button-primary">
+             <select
+                value={newFieldType}
+                onChange={(e) => setNewFieldType(e.target.value)}
+                className="app-input"
+                aria-label={t('fieldType')}
+             >
+                {fieldTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+             </select>
+             <button type="submit" disabled={!canCreateField} className="app-button-primary">
                 <Plus className="w-4 h-4" /> {t('create')}
              </button>
+             {newFieldType === 'option' && (
+               <input
+                 type="text"
+                 value={newFieldOptions}
+                 onChange={(e) => setNewFieldOptions(e.target.value)}
+                 placeholder={t('fieldOptionsPlaceholder')}
+                 aria-label={t('fieldOptions')}
+                 className="app-input md:col-span-2"
+               />
+             )}
           </form>
            {/* List of Fields */}
           <div className="flex flex-wrap gap-2">
               {fields.map(field => (
                   <div key={field.id} className="app-chip group">
                       <span className="font-medium text-m3-on-surface">{field.label}</span>
+                      <span className="rounded-full bg-m3-surface-container-high px-2 py-0.5 text-[11px] text-m3-on-surface-variant">{getFieldTypeLabel(field.type)}</span>
                       {/* Allow delete */}
                       <button 
                         onClick={() => actions.handleDeleteGatherField(field.id)}
@@ -207,13 +296,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                         {fields.map(field => (
                             <div key={field.id}>
                                  <label className="app-label">{field.label}</label>
-                                 <input 
-                                    type="text"
-                                    value={formData[field.id] || ''}
-                                    onChange={e => setFormData({ ...formData, [field.id]: e.target.value })}
-                                    className="app-input"
-                                    placeholder={t('enterField', { field: field.label })}
-                                 />
+                                 {renderFieldInput(field)}
                             </div>
                         ))}
 

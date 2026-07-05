@@ -191,6 +191,33 @@ test('collaboration workspaces avoid fallback copy and clickable divs', async ()
   assert.doesNotMatch(files.gather, new RegExp('>Name<|>Time<|Name / Nickname|Submitted on|`Enter \\\\$\\\\{field\\\\.label\\\\}`'), 'Gather should avoid hardcoded visible English');
 });
 
+test('gather workspace supports localized typed fields', async () => {
+  const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
+
+  for (const key of [
+    'fieldType',
+    'fieldTypeText',
+    'fieldTypeNumber',
+    'fieldTypeDate',
+    'fieldTypeOption',
+    'fieldOptions',
+    'fieldOptionsPlaceholder',
+    'selectOption',
+  ]) {
+    assert.match(gather, new RegExp(`t\\('${key}'(?:,|\\))`), `Gather should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(gather, /newFieldType/, 'Gather creator controls should track the selected field type');
+  assert.match(gather, /newFieldOptions/, 'Gather option fields should collect option choices');
+  assert.match(gather, /<select[\s\S]{0,300}fieldType/, 'Gather field type should use a semantic select');
+  assert.match(gather, /type="number"/, 'Gather number fields should render a numeric input');
+  assert.match(gather, /type="date"/, 'Gather date fields should render a date input');
+  assert.match(gather, /<select[\s\S]{0,500}selectOption/, 'Gather option fields should render a semantic select');
+  assert.doesNotMatch(gather, />Text<|>Number<|>Date<|>Option<|placeholder="Yes, No/, 'Gather typed field visible copy should be localized');
+});
+
 test('voting workspace exposes localized admin vote-mode controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
