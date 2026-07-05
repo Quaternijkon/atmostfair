@@ -93,6 +93,9 @@ export const TRANSLATIONS = {
     sortRecent: "Recent",
     sortTitle: "Title",
     sortStatus: "Status",
+    pinProject: "Pin {title}",
+    unpinProject: "Unpin {title}",
+    pinnedProject: "Pinned project",
     // Voting Module
     voting: "Collect",
     votingDesc: "Real-time polls & ranked choices",
@@ -604,6 +607,9 @@ export const TRANSLATIONS = {
     sortRecent: "最近",
     sortTitle: "标题",
     sortStatus: "状态",
+    pinProject: "置顶 {title}",
+    unpinProject: "取消置顶 {title}",
+    pinnedProject: "已置顶项目",
     // Voting Module
     voting: "Collect",
     votingDesc: "实时投票与排序选择",

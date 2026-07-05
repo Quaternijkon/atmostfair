@@ -9,7 +9,7 @@ import {
   createProjectActivityData,
   PROJECT_ACTIVITY_TYPES,
 } from './lib/activityDomain';
-import { createProjectArchivePatch } from './lib/dashboardDomain';
+import { createProjectArchivePatch, normalizePinnedProjectIds } from './lib/dashboardDomain';
 import {
   createBookingPatch,
   createBookingConfigData,
@@ -101,6 +101,7 @@ function AppContent() {
 
   const [projects, setProjects] = useState([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
   const [items, setItems] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
@@ -116,6 +117,7 @@ function AppContent() {
 
   const [showFriends, setShowFriends] = useState(false);
   const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
+  const pinnedProjectIds = normalizePinnedProjectIds(userProfile?.pinnedProjectIds);
   const isProjectWritable = (projectId) => {
     const project = projects.find((entry) => entry.id === projectId);
     return Boolean(project && !project.archived && !LOCKED_PROJECT_STATUSES.has(project.status));
@@ -141,6 +143,7 @@ function AppContent() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      setUserProfile(null);
       setProjectsLoaded(false);
       setAuthChecking(false);
       if (u) {
@@ -161,6 +164,9 @@ function AppContent() {
   // Data Sync
   useEffect(() => {
     if (!user) return;
+    const unsubUserProfile = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      setUserProfile(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+    });
     const unsubProjects = onSnapshot(collection(db, 'projects'), (s) => {
       setProjects(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
       setProjectsLoaded(true);
@@ -176,7 +182,7 @@ function AppContent() {
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt)));
     const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubNotifications(); unsubProjectActivities(); };
+    return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubNotifications(); unsubProjectActivities(); };
   }, [user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
@@ -533,6 +539,21 @@ function AppContent() {
            subject: item.title,
            actorName: userName || currentUserName(),
          });
+      },
+      handleToggleProjectPin: async (projectId) => {
+        const cleanProjectId = String(projectId || '').trim();
+        if (!user || !cleanProjectId || !projects.some((project) => project.id === cleanProjectId)) return;
+        const nextPinnedProjectIds = pinnedProjectIds.includes(cleanProjectId)
+          ? pinnedProjectIds.filter((entry) => entry !== cleanProjectId)
+          : [cleanProjectId, ...pinnedProjectIds].slice(0, 100);
+        const previousPinnedProjectIds = pinnedProjectIds;
+        setUserProfile((current) => ({ ...(current || {}), pinnedProjectIds: nextPinnedProjectIds }));
+        try {
+          await setDoc(doc(db, 'users', user.uid), { pinnedProjectIds: nextPinnedProjectIds }, { merge: true });
+        } catch (error) {
+          setUserProfile((current) => ({ ...(current || {}), pinnedProjectIds: previousPinnedProjectIds }));
+          console.error('Error updating project pins', error);
+        }
       }
   };
 
@@ -662,7 +683,7 @@ function AppContent() {
                 ) : (
                   <AnimatePresence mode="wait">
                     <Routes location={location} key={location.pathname}>
-                        <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
+                        <Route path="/" element={<PageTransition><Dashboard projects={projects} pinnedProjectIds={pinnedProjectIds} onToggleProjectPin={actions.handleToggleProjectPin} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
                         <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />

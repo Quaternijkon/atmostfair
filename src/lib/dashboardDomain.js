@@ -35,16 +35,18 @@ export function filterAndSortDashboardProjects(projects, options = {}) {
     searchTerm = '',
     statusFilter = 'all',
     sortKey = 'recent',
+    pinnedProjectIds = [],
   } = options;
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const categorySet = new Set(categoryTypes);
+  const pinnedSet = new Set(normalizePinnedProjectIds(pinnedProjectIds));
 
   return normalizedProjects(projects)
     .filter((project) => categorySet.size === 0 || categorySet.has(project.type))
     .filter((project) => matchesArchiveFilter(project, statusFilter))
     .filter((project) => matchesStatusFilter(project, statusFilter))
     .filter((project) => matchesSearch(project, normalizedSearch))
-    .sort((a, b) => compareProjects(a, b, sortKey));
+    .sort((a, b) => comparePinned(a, b, pinnedSet) || compareProjects(a, b, sortKey));
 }
 
 export function createProjectArchivePatch(project, archived, archivedAt) {
@@ -57,6 +59,20 @@ export function createProjectArchivePatch(project, archived, archivedAt) {
 
 function normalizedProjects(projects) {
   return Array.isArray(projects) ? [...projects] : [];
+}
+
+export function normalizePinnedProjectIds(projectIds) {
+  if (!Array.isArray(projectIds)) return [];
+  const seen = new Set();
+  const normalized = [];
+  for (const projectId of projectIds) {
+    if (typeof projectId !== 'string') continue;
+    const cleanProjectId = projectId.trim();
+    if (!cleanProjectId || seen.has(cleanProjectId)) continue;
+    seen.add(cleanProjectId);
+    normalized.push(cleanProjectId);
+  }
+  return normalized;
 }
 
 function matchesArchiveFilter(project, statusFilter) {
@@ -80,6 +96,13 @@ function compareProjects(a, b, sortKey) {
   if (sortKey === 'title') return compareStrings(a.title, b.title) || compareRecent(a, b);
   if (sortKey === 'status') return compareStatus(a, b) || compareRecent(a, b);
   return compareRecent(a, b);
+}
+
+function comparePinned(a, b, pinnedSet) {
+  const aPinned = pinnedSet.has(a.id);
+  const bPinned = pinnedSet.has(b.id);
+  if (aPinned === bPinned) return 0;
+  return aPinned ? -1 : 1;
 }
 
 function compareRecent(a, b) {

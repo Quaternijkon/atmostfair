@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createAuthService } from './auth-service.mjs';
 import { createDataStore } from './data-store.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
+import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
 import {
   createGameRoomJoinPatch,
   createRpsNextRoundPatch,
@@ -380,12 +381,23 @@ async function authorizeUserOperation({ store, user, type, id, data }) {
 
   if (type === 'set') {
     return {
-      ...(data || {}),
+      ...normalizeUserData(data),
       ...identity,
     };
   }
 
-  return data || {};
+  return normalizeUserData(data);
+}
+
+function normalizeUserData(data) {
+  const normalized = { ...(data || {}) };
+  if (Object.hasOwn(normalized, 'pinnedProjectIds')) {
+    if (!Array.isArray(normalized.pinnedProjectIds)) {
+      throwDataError(400, 'data/invalid-user-settings', 'Pinned projects must be a list.');
+    }
+    normalized.pinnedProjectIds = normalizePinnedProjectIds(normalized.pinnedProjectIds).slice(0, 100);
+  }
+  return normalized;
 }
 
 async function authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField }) {

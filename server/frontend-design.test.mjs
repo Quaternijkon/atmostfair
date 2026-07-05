@@ -93,8 +93,8 @@ test('project surfaces stay compact and keyboard ergonomic', async () => {
     infoCard: await readFile(path.join(root, 'src/components/InfoCard.jsx'), 'utf8'),
   };
 
-  assert.match(files.dashboard, /<motion\.button/, 'Dashboard project cards should be semantic buttons');
-  assert.doesNotMatch(files.dashboard, /<motion\.div[\s\S]{0,500}onClick=\{\(\) => handleProjectClick\(project\)\}/, 'Dashboard project cards should not use clickable divs');
+  assert.match(files.dashboard, /<button[\s\S]{0,260}onClick=\{\(\) => handleProjectClick\(project\)\}/, 'Dashboard project cards should open through semantic buttons');
+  assert.doesNotMatch(files.dashboard, /<motion\.div[^>]*onClick=/, 'Dashboard motion containers should not be clickable divs');
 
   assert.match(files.detail, /shortProjectId/, 'Project detail should derive a short scannable ID');
   assert.match(files.detail, /project\.id\.slice\(0,\s*8\)/, 'Project detail should show a compact project ID');

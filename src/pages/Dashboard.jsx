@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2 } from '../components/Icons';
+import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2, Pin as PinIcon } from '../components/Icons';
 import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
+  normalizePinnedProjectIds,
 } from '../lib/dashboardDomain';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
 import { PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
@@ -28,7 +29,7 @@ const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
 const DASHBOARD_TAB_IDS = ['collect', 'connect', 'select', 'project'];
 const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
 
-export default function Dashboard({ projects, onCreateProject, defaultName, t }) {
+export default function Dashboard({ projects, pinnedProjectIds = [], onToggleProjectPin = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
   // Navigation State: 'collect' | 'connect' | 'select' | 'play'
   const [activeTab, setActiveTab] = useState('collect');
@@ -101,6 +102,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
   };
 
   const currentCategory = CATEGORIES[activeTab];
+  const normalizedPinnedProjectIds = useMemo(() => normalizePinnedProjectIds(pinnedProjectIds), [pinnedProjectIds]);
 
   const filteredProjects = useMemo(() => {
     return filterAndSortDashboardProjects(projects, {
@@ -108,8 +110,9 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
       searchTerm,
       statusFilter,
       sortKey,
+      pinnedProjectIds: normalizedPinnedProjectIds,
     });
-  }, [projects, searchTerm, statusFilter, sortKey, currentCategory]);
+  }, [projects, searchTerm, statusFilter, sortKey, currentCategory, normalizedPinnedProjectIds]);
 
   const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
 
@@ -327,13 +330,13 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
         </div>
       )}
 
-      {loadingGrid(filteredProjects, handleProjectClick, styles, t)}
+      {loadingGrid(filteredProjects, handleProjectClick, styles, t, normalizedPinnedProjectIds, onToggleProjectPin)}
     </div>
   );
 }
 
 // Helper to render grid to keep main component clean
-const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
+const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProjectIds, onToggleProjectPin) => (
   <div className="workspace-grid min-h-[50vh] content-start">
     <AnimatePresence mode="popLayout">
       {filteredProjects.map((project) => {
@@ -346,21 +349,25 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
         const statusColor = isActive ? activeStyle.activeColor : 'text-m3-on-surface-variant'; 
         const statusBg = isActive ? activeStyle.activeBg : 'bg-m3-on-surface/5';
         const statusIconBg = isActive ? activeStyle.bgParams : 'bg-m3-on-surface/10'; // Circle Bg
+        const isPinned = pinnedProjectIds.includes(project.id);
         
         return (
-        <motion.button
-          type="button"
+        <motion.div
           layout
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.96 }}
           transition={{ duration: 0.2 }}
           key={project.id} 
-          onClick={() => handleProjectClick(project)} 
-          aria-label={`${project.title}, ID ${project.id.slice(0, 6)}`}
-          className={`app-card group relative min-h-[152px] w-full cursor-pointer overflow-hidden p-0 text-left active:scale-[0.99] ${statusBg}`}
+          className="relative min-h-[152px]"
         >
-          <div className="flex h-full flex-col p-5">
+          <button
+            type="button"
+            onClick={() => handleProjectClick(project)}
+            aria-label={`${project.title}, ID ${project.id.slice(0, 6)}`}
+            className={`app-card group h-full min-h-[152px] w-full cursor-pointer overflow-hidden p-0 text-left active:scale-[0.99] ${statusBg}`}
+          >
+          <div className="flex h-full flex-col p-5 pr-14">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${statusIconBg}`}>
                 {project.type === 'vote' ? <Vote className={`w-5 h-5 ${statusColor}`} /> :
@@ -379,7 +386,22 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
               <span className="max-w-[52%] truncate opacity-70">{project.creatorName}</span>
             </div>
           </div>
-        </motion.button>
+          </button>
+          <button
+            type="button"
+            aria-pressed={isPinned}
+            aria-label={t(isPinned ? 'unpinProject' : 'pinProject', { title: project.title })}
+            title={t(isPinned ? 'unpinProject' : 'pinProject', { title: project.title })}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleProjectPin(project.id);
+            }}
+            className={`app-icon-button absolute right-3 top-3 z-10 h-11 min-h-11 w-11 ${isPinned ? 'border-google-yellow/40 bg-google-yellow/20 text-[#8a5a00]' : 'bg-white/80 text-m3-on-surface-variant hover:text-google-blue'}`}
+          >
+            <PinIcon className="w-4 h-4" />
+            {isPinned && <span className="sr-only">{t('pinnedProject')}</span>}
+          </button>
+        </motion.div>
       );
       })}
     </AnimatePresence>

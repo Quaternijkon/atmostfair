@@ -75,6 +75,41 @@ test('dashboard filters support status, search, and stable sorting', () => {
   );
 });
 
+test('dashboard pinned projects stay first within the current filters', () => {
+  assert.deepEqual(
+    filterAndSortDashboardProjects(sampleProjects, {
+      categoryTypes: ['vote', 'gather', 'schedule', 'book'],
+      searchTerm: '',
+      statusFilter: 'all',
+      sortKey: 'recent',
+      pinnedProjectIds: ['vote-a'],
+    }).map((project) => project.id),
+    ['vote-a', 'book-c'],
+  );
+
+  assert.deepEqual(
+    filterAndSortDashboardProjects(sampleProjects, {
+      categoryTypes: ['vote', 'gather', 'schedule', 'book'],
+      searchTerm: '',
+      statusFilter: 'all',
+      sortKey: 'title',
+      pinnedProjectIds: ['book-c', 'vote-a'],
+    }).map((project) => project.id),
+    ['vote-a', 'book-c'],
+  );
+
+  assert.deepEqual(
+    filterAndSortDashboardProjects(sampleProjects, {
+      categoryTypes: ['vote', 'gather', 'schedule', 'book'],
+      searchTerm: '',
+      statusFilter: 'archived',
+      sortKey: 'recent',
+      pinnedProjectIds: ['book-d', 'vote-a'],
+    }).map((project) => project.id),
+    ['book-d'],
+  );
+});
+
 test('project archive patch records reversible archive state', () => {
   assert.deepEqual(createProjectArchivePatch({ id: 'project-1' }, true, 8000), {
     archived: true,
@@ -185,4 +220,30 @@ test('dashboard create form blocks whitespace and overlong project titles before
   assert.match(dashboard, /if \(!canCreateProject\) return;/, 'Dashboard should keep the create form open when input is invalid');
   assert.match(dashboard, /maxLength=\{PROJECT_TITLE_MAX_LENGTH\}/, 'Dashboard title input should enforce the same max length in the UI');
   assert.match(dashboard, /disabled=\{!canCreateProject\}/, 'Dashboard create button should be disabled until the project shell is valid');
+});
+
+test('dashboard exposes accessible user-scoped project pinning', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+  };
+
+  for (const key of ['pinProject', 'unpinProject', 'pinnedProject']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.app, /\[userProfile,\s*setUserProfile\]\s*=\s*useState\(null\)/, 'App should keep the current user document separately from auth identity');
+  assert.match(files.app, /onSnapshot\(doc\(db,\s*'users',\s*user\.uid\)/, 'App should subscribe to the current user document for per-user dashboard preferences');
+  assert.match(files.app, /const pinnedProjectIds = normalizePinnedProjectIds\(userProfile\?\.pinnedProjectIds\)/, 'App should normalize pinned project ids before rendering');
+  assert.match(files.app, /handleToggleProjectPin/, 'App should expose a user-scoped project pin action');
+  assert.match(files.app, /pinnedProjectIds=\{pinnedProjectIds\}/, 'Dashboard should receive current user pins');
+  assert.match(files.app, /onToggleProjectPin=\{actions\.handleToggleProjectPin\}/, 'Dashboard should receive the shared pin action');
+
+  assert.match(files.dashboard, /PinIcon/, 'Dashboard should use a vector pin icon rather than emoji');
+  assert.match(files.dashboard, /aria-pressed=\{isPinned\}/, 'Pin control should expose pressed state');
+  assert.match(files.dashboard, /aria-label=\{t\(isPinned \? 'unpinProject' : 'pinProject'/, 'Pin control should use localized accessible labels');
+  assert.match(files.dashboard, /event\.stopPropagation\(\)/, 'Pin control should not trigger project navigation');
+  assert.match(files.dashboard, /pinnedProjectIds/, 'Dashboard filtering should receive user pins');
+  assert.match(files.dashboard, /filterAndSortDashboardProjects\([^)]*pinnedProjectIds/s, 'Dashboard sort should include pinned ids');
 });
