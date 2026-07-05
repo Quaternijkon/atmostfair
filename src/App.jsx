@@ -18,6 +18,7 @@ import {
   createGatherFieldData,
   createGatherSubmissionData,
   createProjectCascadeDeleteOperations,
+  createProjectBriefPatch,
   createProjectCreateData,
   createProjectDuplicateChildOperations,
   createProjectDuplicateData,
@@ -370,6 +371,17 @@ function AppContent() {
           type: archived ? PROJECT_ACTIVITY_TYPES.projectArchived : PROJECT_ACTIVITY_TYPES.projectRestored,
           subject: project.title,
         });
+      },
+      handleUpdateProjectBrief: async (project, brief) => {
+        const patch = createProjectBriefPatch(project, user, isAdmin, brief, nowMs());
+        if (!patch) return false;
+        await updateDoc(doc(db, 'projects', project.id), patch);
+        void recordProjectActivity({
+          projectId: project.id,
+          type: 'project_brief_updated',
+          subject: t('projectBrief'),
+        });
+        return true;
       },
       handleCreateGatherField: async (projectId, label, type, options) => {
         if (!user || !isProjectWritable(projectId)) return;

@@ -852,6 +852,32 @@ test('project status toggle guard allows owner and admin but blocks other users'
   assert.equal(createProjectStatusPatch({ ...project, status: 'finished' }, { uid: 'owner-1' }, false), null);
 });
 
+test('project brief patch is permissioned, bounded, and reusable', () => {
+  const createProjectBriefPatch = projectDomain.createProjectBriefPatch;
+  assert.equal(typeof createProjectBriefPatch, 'function');
+
+  const project = { id: 'project-1', creatorId: 'owner-1', status: 'active' };
+  const owner = { uid: 'owner-1', displayName: 'Ada' };
+  const admin = { uid: 'admin-1', displayName: 'Grace' };
+
+  assert.deepEqual(createProjectBriefPatch(project, owner, false, '  Bring lunch\nand badges.  ', 7000), {
+    brief: 'Bring lunch\nand badges.',
+    briefUpdatedAt: 7000,
+    briefUpdatedBy: 'owner-1',
+    briefUpdatedByName: 'Ada',
+  });
+  assert.deepEqual(createProjectBriefPatch(project, admin, true, '', 7001), {
+    brief: '',
+    briefUpdatedAt: 7001,
+    briefUpdatedBy: 'admin-1',
+    briefUpdatedByName: 'Grace',
+  });
+  assert.equal(createProjectBriefPatch(project, { uid: 'viewer-1' }, false, 'nope', 7002), null);
+  assert.equal(createProjectBriefPatch({ ...project, status: 'stopped' }, owner, false, 'paused', 7003), null);
+  assert.equal(createProjectBriefPatch({ ...project, status: 'finished' }, owner, false, 'done', 7004), null);
+  assert.equal(createProjectBriefPatch(project, owner, false, 'A'.repeat(501), 7005), null);
+});
+
 test('project duplication keeps reusable configuration and resets runtime state', () => {
   const createProjectDuplicateData = projectDomain.createProjectDuplicateData;
   const createProjectDuplicateChildOperations = projectDomain.createProjectDuplicateChildOperations;
@@ -869,6 +895,9 @@ test('project duplication keeps reusable configuration and resets runtime state'
     status: 'finished',
     createdAt: 100,
     winners: [{ uid: 'winner' }],
+    brief: 'Reusable project context',
+    briefUpdatedAt: 200,
+    briefUpdatedBy: 'owner-1',
     rouletteResult: { winner: 'winner' },
     bookingConfig: { mode: 'date', requiredFields: 'Name' },
     scheduleConfig: { start: '2026-07-05', end: '2026-07-07' },
@@ -885,6 +914,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
     status: 'active',
     createdAt: 5000,
     winners: [],
+    brief: 'Reusable project context',
     bookingConfig: { mode: 'date', requiredFields: 'Name' },
     scheduleConfig: { start: '2026-07-05', end: '2026-07-07' },
     votingConfig: { mode: 'single' },
@@ -1128,6 +1158,33 @@ test('project detail exposes localized project duplication', async () => {
   assert.match(detail, /handleDuplicateProject/, 'Project detail should expose a duplicate project action');
   for (const key of ['duplicateProject', 'duplicateProjectConfirm', 'duplicate', 'copySuffix']) {
     assert.match(detail, new RegExp(`t\\('${key}'\\)`), `Project detail should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+});
+
+test('project detail exposes an owner-editable project brief', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.match(detail, /ProjectBriefCard/, 'Project detail should render a reusable project brief card');
+  assert.match(detail, /project\.brief/, 'Project brief should read from the project document');
+  assert.match(detail, /canEditBrief/, 'Project brief editing should be derived from owner/admin and writable state');
+  assert.match(detail, /isSavingBrief/, 'Project brief saves should expose async submit feedback');
+  assert.match(detail, /disabled=\{briefTooLong \|\| isSavingBrief\}/, 'Project brief save should prevent duplicate submissions while saving');
+  assert.match(detail, /actions\.handleUpdateProjectBrief/, 'Project brief saves should route through app actions');
+  assert.match(app, /createProjectBriefPatch/, 'App should use the domain helper before writing project brief data');
+  assert.match(app, /handleUpdateProjectBrief/, 'App should expose a project brief update action');
+  assert.match(app, /updateDoc\(doc\(db,\s*'projects',\s*project\.id\),\s*patch\)/, 'Project brief should update the owning project document');
+
+  for (const key of [
+    'projectBrief',
+    'projectBriefEmpty',
+    'editBrief',
+    'saveBrief',
+    'briefTooLong',
+    'briefUpdated',
+  ]) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }

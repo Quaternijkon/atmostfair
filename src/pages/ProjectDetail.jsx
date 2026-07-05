@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
+import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { getActivityMessageKey } from '../lib/activityDomain';
 import { getProjectRoutePrefix } from '../lib/dashboardDomain';
 import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
+import { PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
@@ -46,6 +47,84 @@ function ActivityTimeline({ activities, t }) {
               </p>
             </div>
           ))}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function ProjectBriefCard({ project, canEditBrief, onSave, t }) {
+  const [isEditingBrief, setIsEditingBrief] = useState(false);
+  const [briefDraft, setBriefDraft] = useState(project.brief || '');
+  const [isSavingBrief, setIsSavingBrief] = useState(false);
+  const briefText = String(project.brief || '').trim();
+  const briefTooLong = briefDraft.length > PROJECT_BRIEF_MAX_LENGTH;
+
+  useEffect(() => {
+    setBriefDraft(project.brief || '');
+    setIsEditingBrief(false);
+    setIsSavingBrief(false);
+  }, [project.id, project.brief]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canEditBrief || briefTooLong || isSavingBrief) return;
+    setIsSavingBrief(true);
+    try {
+      const saved = await onSave(briefDraft);
+      if (saved) setIsEditingBrief(false);
+    } finally {
+      setIsSavingBrief(false);
+    }
+  };
+
+  return (
+    <aside className="app-card p-4" aria-label={t('projectBrief')}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+          <FileText className="h-4 w-4 text-google-green" />
+          <span>{t('projectBrief')}</span>
+        </div>
+        {canEditBrief && !isEditingBrief && (
+          <button type="button" onClick={() => setIsEditingBrief(true)} className="app-button-quiet px-3 py-1 text-xs">
+            {t('editBrief')}
+          </button>
+        )}
+      </div>
+
+      {isEditingBrief ? (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <textarea
+            value={briefDraft}
+            onChange={(event) => setBriefDraft(event.target.value)}
+            className="app-input min-h-[132px] resize-y text-sm"
+            aria-label={t('projectBrief')}
+            aria-invalid={briefTooLong}
+            disabled={isSavingBrief}
+            maxLength={PROJECT_BRIEF_MAX_LENGTH + 1}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className={`text-xs ${briefTooLong ? 'text-google-red' : 'text-m3-on-surface-variant'}`}>
+              {briefDraft.length}/{PROJECT_BRIEF_MAX_LENGTH}
+            </span>
+            <div className="flex gap-2">
+              <button type="button" disabled={isSavingBrief} onClick={() => { setBriefDraft(project.brief || ''); setIsEditingBrief(false); }} className="app-button-quiet px-3 py-1 text-xs">
+                {t('cancel')}
+              </button>
+              <button type="submit" disabled={briefTooLong || isSavingBrief} className="app-button-tonal px-3 py-1 text-xs">
+                {isSavingBrief ? t('processing') : t('saveBrief')}
+              </button>
+            </div>
+          </div>
+          {briefTooLong && (
+            <p role="alert" className="text-xs font-medium text-google-red">{t('briefTooLong')}</p>
+          )}
+        </form>
+      ) : briefText ? (
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-m3-on-surface">{briefText}</p>
+      ) : (
+        <div className="rounded-lg border border-dashed border-m3-outline-variant/40 px-3 py-4 text-center text-xs text-m3-on-surface-variant">
+          {t('projectBriefEmpty')}
         </div>
       )}
     </aside>
@@ -132,6 +211,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const isArchived = Boolean(project.archived);
   const isStopped = project.status === 'stopped';
   const isFinished = project.status === 'finished';
+  const canEditBrief = hasAdminRights && !isStopped && !isFinished;
   const canExportParticipants = hasAdminRights && supportsParticipantExport(project.type);
   const shortProjectId = project.id.slice(0, 8);
   const projectTypeLabel = {
@@ -304,6 +384,16 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
         </div>
         
         <div className="w-full space-y-4 xl:sticky xl:top-24 xl:w-96 self-start">
+          <ProjectBriefCard
+            project={project}
+            canEditBrief={canEditBrief}
+            onSave={async (brief) => {
+              const saved = await actions.handleUpdateProjectBrief(project, brief);
+              if (saved) showToast(t('briefUpdated'), 'success');
+              return saved;
+            }}
+            t={t}
+          />
           <ActivityTimeline activities={projectActivityItems} t={t} />
           {showChat && (
              <div className="animate-fade-in">

@@ -16,6 +16,7 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 ];
 
 export const PROJECT_TITLE_MAX_LENGTH = 120;
+export const PROJECT_BRIEF_MAX_LENGTH = 500;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
@@ -602,6 +603,20 @@ export function createProjectStatusPatch(project, user, isAdmin) {
   };
 }
 
+export function createProjectBriefPatch(project, user, isAdmin, brief, updatedAt) {
+  if (!project?.id || !user?.uid || !updatedAt) return null;
+  if (project.creatorId !== user.uid && !isAdmin) return null;
+  if (project.status === 'stopped' || project.status === 'finished') return null;
+  const cleanBrief = String(brief || '').trim();
+  if (cleanBrief.length > PROJECT_BRIEF_MAX_LENGTH) return null;
+  return {
+    brief: cleanBrief,
+    briefUpdatedAt: updatedAt,
+    briefUpdatedBy: user.uid,
+    briefUpdatedByName: cleanName('', user),
+  };
+}
+
 export function createProjectCreateData(title, type, user, creatorName, password, createdAt) {
   if (!user?.uid || !PROJECT_TYPES.has(type)) return null;
   const cleanTitle = String(title || '').trim();
@@ -634,6 +649,7 @@ export function createProjectDuplicateData(sourceProject, user, creatorName, cre
   for (const key of ['rouletteConfig', 'scheduleConfig', 'bookingConfig', 'votingConfig']) {
     if (sourceProject[key] !== undefined) duplicate[key] = clonePlainValue(sourceProject[key]);
   }
+  if (sourceProject.brief) duplicate.brief = String(sourceProject.brief).trim();
 
   return duplicate;
 }
