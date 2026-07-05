@@ -254,6 +254,61 @@ test('HTTP data API rejects invalid batch operations without partial writes', as
   });
 });
 
+test('HTTP data API rejects missing document ids without partial writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const session = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+
+      for (const [pathName, body] of [
+        ['/api/data/get', { collection: 'projects' }],
+        ['/api/data/set', { collection: 'projects', data: { title: 'Missing id' } }],
+        ['/api/data/update', { collection: 'projects', id: '', data: { title: 'Empty id' } }],
+        ['/api/data/delete', { collection: 'projects', id: '   ' }],
+      ]) {
+        const response = await fetchJsonResponse(`${baseUrl}${pathName}`, {
+          method: 'POST',
+          token: session.token,
+          body,
+        });
+        assert.equal(response.status, 400, `${pathName} should reject missing ids`);
+        assert.equal(response.body.error.code, 'data/invalid-id');
+      }
+
+      assert.equal(store.state.collections.projects, undefined);
+
+      const batch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: session.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'projects', data: { title: 'Should not persist' } },
+            { type: 'set', collection: 'projects', data: { title: 'Missing id' } },
+          ],
+        },
+      });
+      assert.equal(batch.status, 400);
+      assert.equal(batch.body.error.code, 'data/invalid-id');
+      assert.equal(store.state.collections.projects, undefined);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP backend translates auth failures into HTTP responses', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

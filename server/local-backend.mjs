@@ -136,7 +136,8 @@ async function handleDataApi({ request, response, url, store, body }) {
 
   if (url.pathname === '/api/data/get') {
     const collection = validateDataCollection(body.collection);
-    const doc = await store.get(collection, body.id);
+    const id = validateDataId(body.id);
+    const doc = await store.get(collection, id);
     return sendJson(response, 200, { doc });
   }
 
@@ -148,19 +149,22 @@ async function handleDataApi({ request, response, url, store, body }) {
 
   if (url.pathname === '/api/data/set') {
     const collection = validateDataCollection(body.collection);
-    const doc = await store.set(collection, body.id, body.data || {}, body.options || {});
+    const id = validateDataId(body.id);
+    const doc = await store.set(collection, id, body.data || {}, body.options || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/update') {
     const collection = validateDataCollection(body.collection);
-    const doc = await store.update(collection, body.id, body.data || {});
+    const id = validateDataId(body.id);
+    const doc = await store.update(collection, id, body.data || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/delete') {
     const collection = validateDataCollection(body.collection);
-    await store.delete(collection, body.id);
+    const id = validateDataId(body.id);
+    await store.delete(collection, id);
     return sendJson(response, 200, { ok: true });
   }
 
@@ -183,6 +187,16 @@ function validateDataCollection(collection) {
   return collection;
 }
 
+function validateDataId(id) {
+  if (typeof id !== 'string' || id.trim() === '') {
+    const error = new Error('Invalid document id.');
+    error.status = 400;
+    error.code = 'data/invalid-id';
+    throw error;
+  }
+  return id;
+}
+
 function validateDataBatchOperations(operations) {
   if (!Array.isArray(operations)) {
     const error = new Error('Invalid data batch.');
@@ -199,6 +213,7 @@ function validateDataBatchOperations(operations) {
       throw error;
     }
     validateDataCollection(operation.collection);
+    if (operation.type !== 'add') validateDataId(operation.id);
   }
 
   return operations;
