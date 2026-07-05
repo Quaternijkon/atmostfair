@@ -4,11 +4,13 @@ import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, 
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
+import { createFriendRequestData } from '../lib/friendDomain';
 import { nowMs } from '../lib/time';
 
 export default function FriendSystem({ user, onClose, t }) {
     const { showToast } = useUI();
     const [view, setView] = useState('list'); // list, add, chat
+    const [relationships, setRelationships] = useState([]);
     const [friends, setFriends] = useState([]);
     const [requests, setRequests] = useState([]); 
     const [searchTerm, setSearchTerm] = useState('');
@@ -31,6 +33,7 @@ export default function FriendSystem({ user, onClose, t }) {
         
         const unsub = onSnapshot(q, (snapshot) => {
             const all = snapshot.docs.map(d => ({id:d.id, ...d.data()}));
+            setRelationships(all);
             
             const confirmed = [];
             const pendingRecv = [];
@@ -121,18 +124,13 @@ export default function FriendSystem({ user, onClose, t }) {
     };
 
     const sendRequest = async (targetUser) => {
-        // Check existing
-        // ... (Skipped for brevity, assume check done)
-        await addDoc(collection(db, 'friendships'), {
-            members: [user.uid, targetUser.uid],
-            names: {
-                [user.uid]: user.displayName || t('userLabel'),
-                [targetUser.uid]: targetUser.displayName || t('userLabel')
-            },
-            status: 'pending',
-            initiator: user.uid,
-            createdAt: nowMs()
-        });
+        const requestData = createFriendRequestData(relationships, user, targetUser, nowMs());
+        if (!requestData) {
+            showToast(t('friendRequestUnavailable'), 'info');
+            return;
+        }
+
+        await addDoc(collection(db, 'friendships'), requestData);
         showToast(t('friendRequestSent'), 'success');
         setView('list');
         setSearchResults([]);
