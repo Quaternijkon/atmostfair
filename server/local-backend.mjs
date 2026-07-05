@@ -288,7 +288,7 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   }
 
   if (collection === 'friendships') {
-    return authorizeFriendshipOperation({ store, user, type, id, data });
+    return authorizeFriendshipOperation({ store, user, context, type, id, data });
   }
 
   if (collection === 'friend_messages') {
@@ -1497,12 +1497,12 @@ async function findPendingFriendRequest(store, initiatorId, recipientId) {
   )) || null;
 }
 
-async function authorizeFriendshipOperation({ store, user, type, id, data }) {
-  if (type === 'add') return normalizeFriendshipCreateData(data, user);
+async function authorizeFriendshipOperation({ store, user, context, type, id, data }) {
+  if (type === 'add') return normalizeFriendshipCreateData({ store, context, data, user });
 
   const existing = await store.get('friendships', id);
   if (!existing) {
-    if (type === 'set') return normalizeFriendshipCreateData(data, user);
+    if (type === 'set') return normalizeFriendshipCreateData({ store, context, data, user });
     throwDataError(404, 'data/not-found', 'Friendship not found.');
   }
 
@@ -1534,17 +1534,21 @@ async function authorizeFriendMessageOperation({ store, user, type, id, data }) 
     throwDataError(404, 'data/not-found', 'Friend message not found.');
   }
 
-  if (isAdminUser(user)) return type === 'delete' ? undefined : data || {};
+  if (isAdminUser(user)) {
+    if (type === 'delete') return undefined;
+    forbidden();
+  }
   if (existing.senderId !== user.uid) forbidden();
   if (type === 'delete') return undefined;
-  return preserveImmutableField(preserveImmutableField(data, existing, 'chatId', type), existing, 'senderId', type);
+  forbidden();
 }
 
-function normalizeFriendshipCreateData(data, user) {
+async function normalizeFriendshipCreateData({ store, context, data, user }) {
   const members = Array.isArray(data?.members) ? [...new Set(data.members)] : [];
   if (members.length !== 2 || !members.includes(user.uid)) forbidden();
   if (data?.initiator !== undefined && data.initiator !== user.uid) forbidden();
   if (data?.status !== undefined && data.status !== 'pending') forbidden();
+  await assertNoDuplicateFriendship({ store, context, members });
   return {
     ...(data || {}),
     members,
@@ -1554,12 +1558,37 @@ function normalizeFriendshipCreateData(data, user) {
 }
 
 async function normalizeFriendMessageCreateData(store, data, user) {
+  const text = typeof data?.text === 'string' ? data.text.trim() : '';
+  if (!text) throwDataError(400, 'data/invalid-message', 'Message text is required.');
   const relationship = await store.get('friendships', data?.chatId);
   if (relationship?.status !== 'confirmed' || !hasMember(relationship, user.uid)) forbidden();
   return {
     ...(data || {}),
+    text,
     senderId: user.uid,
   };
+}
+
+async function assertNoDuplicateFriendship({ store, context, members }) {
+  const key = friendshipMembersKey(members);
+  if (context?.friendshipCreateKeys?.has(key)) {
+    throwDataError(409, 'data/duplicate-friendship', 'Friendship already exists.');
+  }
+
+  const relationships = await store.list('friendships', {
+    filters: [{ field: 'members', op: 'array-contains', value: members[0] }],
+  });
+  const duplicate = relationships.some((relationship) => (
+    ['pending', 'confirmed'].includes(relationship.status)
+    && hasMember(relationship, members[1])
+  ));
+  if (duplicate) throwDataError(409, 'data/duplicate-friendship', 'Friendship already exists.');
+
+  context?.friendshipCreateKeys?.add(key);
+}
+
+function friendshipMembersKey(members) {
+  return [...members].sort().join('\0');
 }
 
 function canWriteNotification(notification, user) {
@@ -1593,7 +1622,7 @@ function hasMember(record, uid) {
 }
 
 function createAuthorizationContext() {
-  return { projectedDocs: new Map() };
+  return { projectedDocs: new Map(), friendshipCreateKeys: new Set() };
 }
 
 function projectionKey(collection, id) {

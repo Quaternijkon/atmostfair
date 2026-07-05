@@ -3049,6 +3049,156 @@ test('HTTP data API filters private notifications and friend records by current 
   });
 });
 
+test('HTTP data API rejects duplicate friendships and keeps friend messages append-only', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+      const charlie = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'charlie@example.com', password: 'secret123', displayName: 'Charlie' },
+      });
+
+      const request = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, bob.user.uid],
+            names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 1,
+          },
+        },
+      });
+      const confirmed = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'friendships', id: request.doc.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(confirmed.doc.status, 'confirmed');
+
+      const duplicateForward = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, bob.user.uid],
+            names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(duplicateForward.status, 409);
+      assert.equal(duplicateForward.body.error.code, 'data/duplicate-friendship');
+
+      const duplicateReverse = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [bob.user.uid, alice.user.uid],
+            names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
+            status: 'pending',
+            initiator: bob.user.uid,
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(duplicateReverse.status, 409);
+      assert.equal(duplicateReverse.body.error.code, 'data/duplicate-friendship');
+      assert.equal((await store.list('friendships')).length, 1);
+
+      const strangerMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: charlie.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: request.doc.id, senderId: charlie.user.uid, text: 'forged', createdAt: 4 },
+        },
+      });
+      assert.equal(strangerMessage.status, 403);
+      assert.equal(strangerMessage.body.error.code, 'data/forbidden');
+
+      const blankMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: request.doc.id, senderId: alice.user.uid, text: '   ', createdAt: 5 },
+        },
+      });
+      assert.equal(blankMessage.status, 400);
+      assert.equal(blankMessage.body.error.code, 'data/invalid-message');
+
+      const sentMessage = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: request.doc.id, senderId: bob.user.uid, text: '  hello Bob  ', createdAt: 6 },
+        },
+      });
+      assert.equal(sentMessage.doc.senderId, alice.user.uid);
+      assert.equal(sentMessage.doc.text, 'hello Bob');
+
+      const editMessage = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          id: sentMessage.doc.id,
+          data: { text: 'rewritten', createdAt: 7 },
+        },
+      });
+      assert.equal(editMessage.status, 403);
+      assert.equal(editMessage.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('friend_messages', sentMessage.doc.id)).text, 'hello Bob');
+
+      await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friendships', id: request.doc.id },
+      });
+      const staleChatMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: request.doc.id, senderId: alice.user.uid, text: 'after delete', createdAt: 8 },
+        },
+      });
+      assert.equal(staleChatMessage.status, 403);
+      assert.equal(staleChatMessage.body.error.code, 'data/forbidden');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP backend translates auth failures into HTTP responses', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
