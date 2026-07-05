@@ -27,9 +27,11 @@ test('GitHub Pages workflow uses Node 24 compatible action majors', async () => 
 test('GitHub Pages workflow ignores backend-only changes', async () => {
   const workflow = await readFile(path.join(root, '.github/workflows/deploy.yml'), 'utf8');
 
+  assert.match(workflow, /workflow_dispatch:/, 'workflow should support manual deployment retries');
   assert.match(workflow, /paths:\s*\n(?:\s+- .+\n)+/, 'workflow should constrain Pages deploy triggers by path');
 
   for (const expectedPath of [
+    '.github/workflows/deploy.yml',
     'src/**',
     'index.html',
     'package.json',
