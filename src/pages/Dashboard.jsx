@@ -8,6 +8,7 @@ import {
   createRecentDashboardProjects,
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
+  hasActiveDashboardFilters,
   normalizePinnedProjectIds,
   normalizeRecentProjectIds,
 } from '../lib/dashboardDomain';
@@ -122,8 +123,18 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
       pinnedProjectIds: normalizedPinnedProjectIds,
     });
   }, [projects, searchTerm, statusFilter, sortKey, currentCategory, normalizedPinnedProjectIds]);
+  const hasActiveFilters = hasActiveDashboardFilters({
+    searchTerm,
+    statusFilter,
+    sortKey,
+  });
 
   const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setSortKey('recent');
+  };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
@@ -420,13 +431,13 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
         </div>
       )}
 
-      {loadingGrid(filteredProjects, handleProjectClick, styles, t, normalizedPinnedProjectIds, onToggleProjectPin)}
+      {loadingGrid(filteredProjects, handleProjectClick, styles, t, normalizedPinnedProjectIds, onToggleProjectPin, hasActiveFilters, handleClearFilters)}
     </div>
   );
 }
 
 // Helper to render grid to keep main component clean
-const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProjectIds, onToggleProjectPin) => (
+const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProjectIds, onToggleProjectPin, hasActiveFilters, onClearFilters) => (
   <div className="workspace-grid min-h-[50vh] content-start">
     <AnimatePresence mode="popLayout">
       {filteredProjects.map((project) => {
@@ -496,9 +507,14 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProj
       })}
     </AnimatePresence>
     {filteredProjects.length === 0 && (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="app-card-quiet col-span-full flex flex-col items-center justify-center border-dashed py-16 text-m3-on-surface-variant/60">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} aria-live="polite" className="app-card-quiet col-span-full flex flex-col items-center justify-center border-dashed py-16 text-m3-on-surface-variant/60">
         <FolderPlus className="w-12 h-12 mb-3 opacity-20" />
-        <p>{t('noProjects')}</p>
+        <p>{hasActiveFilters ? t('noProjectsFiltered') : t('noProjects')}</p>
+        {hasActiveFilters && (
+          <button type="button" onClick={onClearFilters} className="app-button-tonal mt-4 px-4 py-2 text-sm">
+            {t('clearDashboardFilters')}
+          </button>
+        )}
       </motion.div>
     )}
   </div>

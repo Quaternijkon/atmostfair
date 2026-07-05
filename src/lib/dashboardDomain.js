@@ -69,6 +69,10 @@ export function filterAndSortDashboardProjects(projects, options = {}) {
     .sort((a, b) => comparePinned(a, b, pinnedSet) || compareProjects(a, b, sortKey));
 }
 
+export function hasActiveDashboardFilters({ searchTerm = '', statusFilter = 'all', sortKey = 'recent' } = {}) {
+  return Boolean(String(searchTerm || '').trim() || statusFilter !== 'all' || sortKey !== 'recent');
+}
+
 export function createProjectArchivePatch(project, archived, archivedAt) {
   if (!project?.id) return null;
   return {

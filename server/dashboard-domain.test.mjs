@@ -13,6 +13,7 @@ import {
   createRecentProjectIdsPatch,
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
+  hasActiveDashboardFilters,
   normalizeRecentProjectIds,
 } from '../src/lib/dashboardDomain.js';
 
@@ -77,6 +78,14 @@ test('dashboard filters support status, search, and stable sorting', () => {
     }).map((project) => project.id),
     ['vote-a', 'book-c'],
   );
+});
+
+test('dashboard filter activity ignores default and whitespace-only controls', () => {
+  assert.equal(hasActiveDashboardFilters({ searchTerm: '', statusFilter: 'all', sortKey: 'recent' }), false);
+  assert.equal(hasActiveDashboardFilters({ searchTerm: '   ', statusFilter: 'all', sortKey: 'recent' }), false);
+  assert.equal(hasActiveDashboardFilters({ searchTerm: 'booking', statusFilter: 'all', sortKey: 'recent' }), true);
+  assert.equal(hasActiveDashboardFilters({ searchTerm: '', statusFilter: 'paused', sortKey: 'recent' }), true);
+  assert.equal(hasActiveDashboardFilters({ searchTerm: '', statusFilter: 'all', sortKey: 'title' }), true);
 });
 
 test('dashboard pinned projects stay first within the current filters', () => {
@@ -364,4 +373,22 @@ test('dashboard exposes durable recent-project continuation', async () => {
   assert.match(files.dashboard, /Clock/, 'Continue-work surface should use a vector icon');
   assert.match(files.dashboard, /onRecordProjectOpen\(project\.id\)/, 'Project navigation should record a recent project only when opening');
   assert.match(files.dashboard, /onClick=\{\(\) => handleProjectClick\(project\)\}/, 'Recent project buttons should reuse the normal project open path');
+});
+
+test('dashboard empty filtered results expose a localized reset path', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  for (const key of ['noProjectsFiltered', 'clearDashboardFilters']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(dashboard, /hasActiveDashboardFilters/, 'Dashboard should use the shared active-filter helper');
+  assert.match(dashboard, /const hasActiveFilters = hasActiveDashboardFilters\(\{\s*searchTerm,\s*statusFilter,\s*sortKey,\s*\}\)/, 'Dashboard should derive active filter state from search, status, and sort controls');
+  assert.match(dashboard, /const handleClearFilters = \(\) => \{[\s\S]{0,180}setSearchTerm\(''\)[\s\S]{0,180}setStatusFilter\('all'\)[\s\S]{0,180}setSortKey\('recent'\)/, 'Dashboard should reset search, status, and sort together');
+  assert.match(dashboard, /aria-live="polite"/, 'Empty results should announce recovery copy politely');
+  assert.match(dashboard, /hasActiveFilters \? t\('noProjectsFiltered'\) : t\('noProjects'\)/, 'Empty state should distinguish filtered results from truly empty categories');
+  assert.match(dashboard, /hasActiveFilters && \([\s\S]{0,220}t\('clearDashboardFilters'\)/, 'Filtered empty state should expose a localized clear-filters action');
+  assert.doesNotMatch(dashboard, /alert\(/, 'Dashboard reset flow should not use native alerts');
+  assert.doesNotMatch(dashboard, /prompt\(/, 'Dashboard reset flow should not use native prompts');
 });
