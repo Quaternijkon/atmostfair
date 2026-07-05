@@ -391,7 +391,55 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
     });
   }
 
+  if (
+    collection === 'gather_fields'
+    || collection === 'booking_slots'
+    || collection === 'claim_items'
+  ) {
+    return authorizeManagedProjectChildOperation({ user, type, collection, data, existing, project });
+  }
+
   return existing ? preserveImmutableField(data, existing, projectField, type) : data || {};
+}
+
+function authorizeManagedProjectChildOperation({ user, type, collection, data, existing, project }) {
+  if (!existing) {
+    if (!canWriteProject(project, user)) forbidden();
+    return normalizeManagedProjectChildCreateData({ user, collection, data });
+  }
+
+  return preserveImmutableField(data, existing, 'projectId', type);
+}
+
+function normalizeManagedProjectChildCreateData({ user, collection, data }) {
+  if (collection === 'gather_fields') {
+    return {
+      ...(data || {}),
+      creatorId: user.uid,
+    };
+  }
+
+  if (collection === 'booking_slots') {
+    return {
+      ...(data || {}),
+      bookedBy: null,
+      bookerName: null,
+      bookingData: null,
+      bookedAt: null,
+      waitlist: [],
+    };
+  }
+
+  if (collection === 'claim_items') {
+    return {
+      ...(data || {}),
+      creatorId: user.uid,
+      creatorName: cleanUserProvidedName('', user),
+      claimants: [],
+    };
+  }
+
+  return data || {};
 }
 
 async function authorizeProjectUserEntryOperation({

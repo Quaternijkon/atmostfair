@@ -1336,6 +1336,161 @@ test('HTTP data API rejects unauthorized active project child deletes', async ()
   });
 });
 
+test('HTTP data API restricts managed child creation to project owners and normalizes runtime fields', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const member = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'member@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Managed children', type: 'gather', status: 'active', createdAt: 1 } },
+      });
+
+      for (const body of [
+        {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Injected field', type: 'text', creatorId: member.user.uid },
+        },
+        {
+          collection: 'booking_slots',
+          data: {
+            projectId: project.doc.id,
+            start: '2026-07-05',
+            end: '2026-07-05',
+            label: 'Injected slot',
+            bookedBy: member.user.uid,
+            waitlist: [{ uid: member.user.uid }],
+          },
+        },
+        {
+          collection: 'claim_items',
+          data: {
+            projectId: project.doc.id,
+            title: 'Injected claim',
+            maxClaims: 3,
+            creatorId: member.user.uid,
+            claimants: [{ uid: member.user.uid }],
+          },
+        },
+      ]) {
+        const response = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+          method: 'POST',
+          token: member.token,
+          body,
+        });
+        assert.equal(response.status, 403);
+        assert.equal(response.body.error.code, 'data/forbidden');
+      }
+
+      assert.deepEqual(await store.list('gather_fields'), []);
+      assert.deepEqual(await store.list('booking_slots'), []);
+      assert.deepEqual(await store.list('claim_items'), []);
+
+      const field = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Owner field', type: 'text', creatorId: member.user.uid, createdAt: 2 },
+        },
+      });
+      assert.equal(field.doc.creatorId, owner.user.uid);
+
+      const slot = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          data: {
+            projectId: project.doc.id,
+            start: '2026-07-05',
+            end: '2026-07-05',
+            label: 'Owner slot',
+            bookedBy: member.user.uid,
+            bookerName: 'Member',
+            bookingData: { phone: '123' },
+            bookedAt: 3,
+            waitlist: [{ uid: member.user.uid }],
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(slot.doc.bookedBy, null);
+      assert.equal(slot.doc.bookerName, null);
+      assert.equal(slot.doc.bookingData, null);
+      assert.equal(slot.doc.bookedAt, null);
+      assert.deepEqual(slot.doc.waitlist, []);
+
+      const memberBooking = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: member.user.uid,
+            bookerName: 'Member',
+            bookingData: { phone: '123' },
+            bookedAt: 5,
+          },
+        },
+      });
+      assert.equal(memberBooking.doc.bookedBy, member.user.uid);
+
+      const claim = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'claim_items',
+          data: {
+            projectId: project.doc.id,
+            title: 'Owner claim',
+            maxClaims: 2,
+            creatorId: member.user.uid,
+            creatorName: 'Member',
+            claimants: [{ uid: member.user.uid }],
+            createdAt: 4,
+          },
+        },
+      });
+      assert.equal(claim.doc.creatorId, owner.user.uid);
+      assert.equal(claim.doc.creatorName, 'owner');
+      assert.deepEqual(claim.doc.claimants, []);
+
+      const memberClaim = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayUnion({ uid: member.user.uid, name: 'Member', at: 6 }) },
+        },
+      });
+      assert.deepEqual(memberClaim.doc.claimants, [{ uid: member.user.uid, name: 'Member', at: 6 }]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API filters private notifications and friend records by current user', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
