@@ -6,10 +6,14 @@ const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
   const { showToast } = useUI();
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(url).then(() => {
+  const copyToClipboard = async () => {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
+      await navigator.clipboard.writeText(url);
       showToast(t('linkCopied'), 'success');
-    });
+    } catch {
+      showToast(t('shareUnavailable'), 'error');
+    }
   };
 
   return (

@@ -32,6 +32,23 @@ export function getProjectRoutePrefix(projectType) {
   return PROJECT_ROUTE_PREFIXES[projectType] || 'projects';
 }
 
+export function createProjectShareUrl(href, project) {
+  const source = String(href || '').trim();
+  const cleanProjectId = typeof project?.id === 'string' ? project.id.trim() : '';
+  if (!source || !cleanProjectId) return '';
+
+  const isAbsoluteUrl = /^[a-z][a-z\d+.-]*:/i.test(source);
+  try {
+    const url = new URL(source, isAbsoluteUrl ? undefined : 'https://atmostfair.local');
+    url.pathname = `/${getProjectRoutePrefix(project?.type)}/${encodeURIComponent(cleanProjectId)}`;
+    url.search = '';
+    url.hash = '';
+    return isAbsoluteUrl ? url.toString() : url.pathname;
+  } catch {
+    return '';
+  }
+}
+
 export function filterAndSortDashboardProjects(projects, options = {}) {
   const {
     categoryTypes = [],

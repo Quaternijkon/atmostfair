@@ -364,8 +364,8 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   };
 
   for (const [fileKey, keys] of Object.entries({
-    detail: ['copyFullProjectId', 'projectView', 'share', 'chat'],
-    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt'],
+    detail: ['copyFullProjectId', 'projectIdCopied', 'projectView', 'share', 'chat', 'shareUnavailable'],
+    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable'],
     announcements: ['announcements'],
     chat: ['chatRoom', 'noMessagesYet', 'messageSendFailed', 'anonymousUser', 'typeMessage'],
     queue: ['noParticipantsYet', 'currentUserBadge'],
@@ -386,6 +386,13 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
 
   assert.doesNotMatch(files.detail, /Copy full ID|Copy full project ID|>Project View</, 'Project detail utility copy should be localized');
   assert.doesNotMatch(files.qr, /Link copied!|Share Project|Copy Link|alt="QR Code"/, 'QR share modal should localize all visible and accessible copy');
+  assert.match(files.detail, /createProjectShareUrl/, 'Project detail should build canonical share links through the shared route helper');
+  assert.match(files.detail, /const projectShareUrl = createProjectShareUrl/, 'Project detail should derive one canonical share URL per project');
+  assert.match(files.detail, /<QRCodeShare url=\{projectShareUrl\}/, 'Project QR modal should share the canonical project URL instead of transient browser state');
+  assert.match(files.detail, /showToast\(t\('projectIdCopied'\), 'success'\)/, 'Project ID copy should provide localized success feedback');
+  assert.match(files.detail, /showToast\(t\('shareUnavailable'\), 'error'\)/, 'Project ID copy failure should provide localized recovery feedback');
+  assert.match(files.qr, /navigator\.clipboard\?\.writeText/, 'QR share copy should guard clipboard availability');
+  assert.match(files.qr, /catch[\s\S]{0,180}shareUnavailable/, 'QR share copy failures should use localized recovery feedback');
   assert.doesNotMatch(files.announcements, />Announcements<|title=["']Announcements|\|\|\s*['"]Announcements/, 'Announcement launcher and dialog should localize labels');
   assert.doesNotMatch(files.chat, /Chat Room|No messages yet|Type a message|Failed to send message|Anonymous/, 'Chat room should localize visible states and fallbacks');
   assert.match(files.queue, /app-card-quiet[\s\S]{0,300}noParticipantsYet/, 'Queue empty state should use a designed surface');

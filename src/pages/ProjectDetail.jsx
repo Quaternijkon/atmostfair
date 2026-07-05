@@ -4,7 +4,7 @@ import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCc
 import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
-import { getProjectRoutePrefix } from '../lib/dashboardDomain';
+import { createProjectShareUrl, getProjectRoutePrefix } from '../lib/dashboardDomain';
 import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
@@ -235,8 +235,17 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     project: t('project'),
   }[project.type] || t('project');
   const projectRoutePrefix = getProjectRoutePrefix(project.type);
+  const projectShareUrl = createProjectShareUrl(typeof window === 'undefined' ? '' : window.location.href, project);
   
-  const copyId = () => { navigator.clipboard.writeText(project.id); };
+  const copyId = async () => {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
+      await navigator.clipboard.writeText(project.id);
+      showToast(t('projectIdCopied'), 'success');
+    } catch {
+      showToast(t('shareUnavailable'), 'error');
+    }
+  };
   const handleDuplicateProject = () => {
     confirm({
       title: t('duplicateProject'),
@@ -335,10 +344,10 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
         
         <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center md:mt-0">
            <div className="flex gap-2">
-             <button onClick={() => setShowQR(true)} className="app-icon-button border-m3-outline-variant/45" title={t('share')}>
+             <button onClick={() => setShowQR(true)} className="app-icon-button border-m3-outline-variant/45" title={t('share')} aria-label={t('share')}>
                 <QrCode className="w-5 h-5" />
              </button>
-             <button onClick={() => setShowChat(!showChat)} className={`app-icon-button ${showChat ? 'border-transparent bg-m3-primary-container text-m3-on-primary-container hover:bg-m3-primary-container hover:text-m3-on-primary-container' : 'border-m3-outline-variant/45'}`} title={t('chat')}>
+             <button onClick={() => setShowChat(!showChat)} className={`app-icon-button ${showChat ? 'border-transparent bg-m3-primary-container text-m3-on-primary-container hover:bg-m3-primary-container hover:text-m3-on-primary-container' : 'border-m3-outline-variant/45'}`} title={t('chat')} aria-label={t('chat')}>
                 <MessageSquare className="w-5 h-5" />
              </button>
            </div>
@@ -378,7 +387,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
         </div>
       </div>
 
-      {showQR && <QRCodeShare url={window.location.href} title={project.title} onClose={() => setShowQR(false)} t={t} />}
+      {showQR && <QRCodeShare url={projectShareUrl} title={project.title} onClose={() => setShowQR(false)} t={t} />}
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         <div className="flex-1 w-full min-w-0 space-y-6">

@@ -8,6 +8,7 @@ import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
   createProjectArchivePatch,
+  createProjectShareUrl,
   createRecentDashboardProjects,
   createRecentProjectIdsPatch,
   filterAndSortDashboardProjects,
@@ -175,6 +176,29 @@ test('project route prefixes cover every dashboard module consistently', () => {
       unknown: 'projects',
     },
   );
+});
+
+test('project share URLs use canonical module routes without transient page state', () => {
+  assert.equal(typeof createProjectShareUrl, 'function');
+
+  assert.equal(
+    createProjectShareUrl('https://atmostfair.example/projects/vote-1?room=stale#panel', { id: ' vote-1 ', type: 'vote' }),
+    'https://atmostfair.example/collect/vote-1',
+  );
+  assert.equal(
+    createProjectShareUrl('https://atmostfair.example/games/game-1?room=room-a', { id: 'game-1', type: 'game_hub' }),
+    'https://atmostfair.example/games/game-1',
+  );
+  assert.equal(
+    createProjectShareUrl('/projects/raw?tab=old#section', { id: 'queue/with space', type: 'queue' }),
+    '/select/queue%2Fwith%20space',
+  );
+  assert.equal(
+    createProjectShareUrl('https://atmostfair.example/anything', { id: 'legacy-1', type: 'unknown' }),
+    'https://atmostfair.example/projects/legacy-1',
+  );
+  assert.equal(createProjectShareUrl('', { id: 'vote-1', type: 'vote' }), '');
+  assert.equal(createProjectShareUrl('https://atmostfair.example/projects/vote-1', { id: '   ', type: 'vote' }), '');
 });
 
 test('dashboard and project detail expose localized archive filter controls', async () => {
