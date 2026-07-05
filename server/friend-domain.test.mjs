@@ -121,6 +121,11 @@ test('friend relationship guards reject stale or unauthorized actions', async ()
     null,
     'blank messages should not be written',
   );
+  assert.equal(
+    friendDomain.createFriendMessageData(relationships, { id: 'rel-confirmed' }, currentUser, 'x'.repeat(1001), 2005),
+    null,
+    'overlong messages should not be written',
+  );
 });
 
 test('friend system routes requests through the domain guard', async () => {

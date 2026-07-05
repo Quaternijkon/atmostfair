@@ -582,6 +582,20 @@ test('paused and finished game and chat workspaces keep direct writes read-only'
   assert.match(files.chat, /disabled=\{isStopped \|\| !inputText\.trim\(\)\}/, 'Chat send control should be disabled for stopped or finished projects');
 });
 
+test('chat inputs expose a shared message length limit', async () => {
+  const files = {
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+    friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
+    backend: await readFile(path.join(root, 'server/local-backend.mjs'), 'utf8'),
+  };
+
+  assert.match(files.chat, /MESSAGE_TEXT_MAX_LENGTH/, 'Project chat should import the shared message length limit');
+  assert.match(files.chat, /maxLength=\{MESSAGE_TEXT_MAX_LENGTH\}/, 'Project chat input should cap message length before submit');
+  assert.match(files.friends, /MESSAGE_TEXT_MAX_LENGTH/, 'Friend chat should import the shared message length limit');
+  assert.match(files.friends, /maxLength=\{MESSAGE_TEXT_MAX_LENGTH\}/, 'Friend chat input should cap message length before submit');
+  assert.match(files.backend, /MESSAGE_TEXT_MAX_LENGTH/, 'Backend message guards should enforce the same shared limit');
+});
+
 test('read-only project write attempts show localized app feedback', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

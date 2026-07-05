@@ -9,6 +9,7 @@ import { createAuthService } from './auth-service.mjs';
 import { createDataStore } from './data-store.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
+import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
 import {
   createBookingConfigData,
   createGameRoomJoinPatch,
@@ -609,8 +610,8 @@ function authorizeProjectChatOperation({ user, data, existing }) {
 }
 
 function normalizeProjectChatCreateData(data, user) {
-  const text = typeof data?.text === 'string' ? data.text.trim() : '';
-  if (!text) throwDataError(400, 'data/invalid-message', 'Message text is required.');
+  const text = normalizeMessageText(data?.text);
+  if (!text) throwInvalidMessageText();
 
   return {
     ...(data || {}),
@@ -1739,8 +1740,8 @@ async function normalizeFriendMessageNotificationData({ store, user, notificatio
     forbidden();
   }
 
-  const message = typeof notification.message === 'string' ? notification.message.trim() : '';
-  if (!message) throwDataError(400, 'data/invalid-message', 'Message text is required.');
+  const message = normalizeMessageText(notification.message);
+  if (!message) throwInvalidMessageText();
   return {
     ...notification,
     recipientId,
@@ -1836,8 +1837,8 @@ async function normalizeFriendshipCreateData({ store, context, data, user }) {
 }
 
 async function normalizeFriendMessageCreateData(store, data, user) {
-  const text = typeof data?.text === 'string' ? data.text.trim() : '';
-  if (!text) throwDataError(400, 'data/invalid-message', 'Message text is required.');
+  const text = normalizeMessageText(data?.text);
+  if (!text) throwInvalidMessageText();
   const relationship = await store.get('friendships', data?.chatId);
   if (relationship?.status !== 'confirmed' || !hasMember(relationship, user.uid)) forbidden();
   return {
@@ -1845,6 +1846,10 @@ async function normalizeFriendMessageCreateData(store, data, user) {
     text,
     senderId: user.uid,
   };
+}
+
+function throwInvalidMessageText() {
+  throwDataError(400, 'data/invalid-message', `Message text must be 1-${MESSAGE_TEXT_MAX_LENGTH} characters.`);
 }
 
 async function assertNoDuplicateFriendship({ store, context, members }) {

@@ -1045,6 +1045,25 @@ test('HTTP data API restricts notification creation to verified app events', asy
       assert.equal(blankFriendMessageNotification.status, 400);
       assert.equal(blankFriendMessageNotification.body.error.code, 'data/invalid-message');
 
+      const longFriendMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_message',
+            title: 'Long message',
+            message: 'x'.repeat(1001),
+            chatId: friendship.doc.id,
+            read: false,
+            createdAt: 10,
+          },
+        },
+      });
+      assert.equal(longFriendMessageNotification.status, 400);
+      assert.equal(longFriendMessageNotification.body.error.code, 'data/invalid-message');
+
       const validFriendMessageNotification = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
@@ -1058,7 +1077,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
             chatId: friendship.doc.id,
             senderId: charlie.user.uid,
             read: true,
-            createdAt: 10,
+            createdAt: 11,
           },
         },
       });
@@ -1071,7 +1090,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
       const project = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
-        body: { collection: 'projects', data: { title: 'Booking', status: 'active', createdAt: 11 } },
+        body: { collection: 'projects', data: { title: 'Booking', status: 'active', createdAt: 12 } },
       });
       const stoppedProject = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
@@ -1452,6 +1471,18 @@ test('HTTP data API normalizes project chat messages and keeps them append-only'
       assert.equal(blankMessage.body.error.code, 'data/invalid-message');
       assert.equal((await store.list('project_chats')).length, 1);
 
+      const longMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'project_chats',
+          data: { projectId: project.doc.id, uid: bob.user.uid, name: 'Bob', text: 'x'.repeat(1001), createdAt: 4 },
+        },
+      });
+      assert.equal(longMessage.status, 400);
+      assert.equal(longMessage.body.error.code, 'data/invalid-message');
+      assert.equal((await store.list('project_chats')).length, 1);
+
       const bobDeletesAlice = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
         method: 'POST',
         token: bob.token,
@@ -1480,7 +1511,7 @@ test('HTTP data API normalizes project chat messages and keeps them append-only'
         body: {
           collection: 'project_chats',
           id: aliceMessage.doc.id,
-          data: { projectId: project.doc.id, uid: owner.user.uid, name: 'Owner', text: 'Moderated', createdAt: 4 },
+          data: { projectId: project.doc.id, uid: owner.user.uid, name: 'Owner', text: 'Moderated', createdAt: 5 },
         },
       });
       assert.equal(ownerSet.status, 403);
@@ -1492,7 +1523,7 @@ test('HTTP data API normalizes project chat messages and keeps them append-only'
         token: bob.token,
         body: {
           collection: 'project_chats',
-          data: { projectId: project.doc.id, uid: alice.user.uid, name: 'Alice', text: 'Hi Alice', createdAt: 5 },
+          data: { projectId: project.doc.id, uid: alice.user.uid, name: 'Alice', text: 'Hi Alice', createdAt: 6 },
         },
       });
       assert.equal(bobMessage.doc.uid, bob.user.uid);
@@ -3998,12 +4029,24 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       assert.equal(blankMessage.status, 400);
       assert.equal(blankMessage.body.error.code, 'data/invalid-message');
 
+      const longMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: request.doc.id, senderId: alice.user.uid, text: 'x'.repeat(1001), createdAt: 6 },
+        },
+      });
+      assert.equal(longMessage.status, 400);
+      assert.equal(longMessage.body.error.code, 'data/invalid-message');
+      assert.deepEqual(await store.list('friend_messages'), []);
+
       const sentMessage = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
         body: {
           collection: 'friend_messages',
-          data: { chatId: request.doc.id, senderId: bob.user.uid, text: '  hello Bob  ', createdAt: 6 },
+          data: { chatId: request.doc.id, senderId: bob.user.uid, text: '  hello Bob  ', createdAt: 7 },
         },
       });
       assert.equal(sentMessage.doc.senderId, alice.user.uid);
@@ -4015,7 +4058,7 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
         body: {
           collection: 'friend_messages',
           id: sentMessage.doc.id,
-          data: { text: 'rewritten', createdAt: 7 },
+          data: { text: 'rewritten', createdAt: 8 },
         },
       });
       assert.equal(editMessage.status, 403);
@@ -4032,7 +4075,7 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
         token: alice.token,
         body: {
           collection: 'friend_messages',
-          data: { chatId: request.doc.id, senderId: alice.user.uid, text: 'after delete', createdAt: 8 },
+          data: { chatId: request.doc.id, senderId: alice.user.uid, text: 'after delete', createdAt: 9 },
         },
       });
       assert.equal(staleChatMessage.status, 403);

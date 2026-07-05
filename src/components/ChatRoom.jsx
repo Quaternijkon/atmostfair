@@ -5,6 +5,7 @@ import { Send } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
 import { nowMs } from '../lib/time';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../lib/messageDomain';
 
 export default function ChatRoom({ projectId, user, currentUser, isStopped = false, t }) {
     const activeUser = user || currentUser;
@@ -114,6 +115,7 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder={t('typeMessage')}
                     disabled={isStopped}
+                    maxLength={MESSAGE_TEXT_MAX_LENGTH}
                     className="app-input flex-1 rounded-full"
                 />
                 <button 

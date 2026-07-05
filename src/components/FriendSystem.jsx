@@ -5,6 +5,7 @@ import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './I
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
 import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId } from '../lib/friendDomain';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../lib/messageDomain';
 import { nowMs } from '../lib/time';
 
 export default function FriendSystem({ user, onClose, t }) {
@@ -356,6 +357,7 @@ export default function FriendSystem({ user, onClose, t }) {
                                     onChange={e=>setChatInput(e.target.value)} 
                                     className="app-input flex-1 rounded-full"
                                     placeholder={t('typeMessage')}
+                                    maxLength={MESSAGE_TEXT_MAX_LENGTH}
                                 />
                                 <button disabled={!chatInput.trim()} className="app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1">
                                     <Send className="w-5 h-5"/>

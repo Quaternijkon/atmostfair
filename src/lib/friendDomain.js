@@ -1,3 +1,5 @@
+import { normalizeMessageText } from './messageDomain.js';
+
 export function createFriendRequestData(existingRelationships, user, targetUser, createdAt) {
   if (!user?.uid || !targetUser?.uid || user.uid === targetUser.uid) return null;
   const relationships = Array.isArray(existingRelationships) ? existingRelationships : [];
@@ -33,7 +35,7 @@ export function getRejectableFriendRequestId(relationship, user) {
 export function createFriendMessageData(existingRelationships, activeChatFriend, user, text, createdAt) {
   const senderId = user?.uid;
   const chatId = activeChatFriend?.id;
-  const cleanText = String(text || '').trim();
+  const cleanText = normalizeMessageText(text);
   if (!senderId || !chatId || !cleanText) return null;
 
   const relationships = Array.isArray(existingRelationships) ? existingRelationships : [];
