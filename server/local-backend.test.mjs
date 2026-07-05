@@ -50,6 +50,19 @@ test('local auth supports email password accounts and guest sessions only', asyn
     assert.equal(guest.user.displayName, 'Visitor');
     assert.equal(guest.user.isAnonymous, true);
     assert.ok(guest.token);
+
+    await assert.rejects(
+      () => auth.updateProfile(created.user.uid, { email: 'not-an-email' }),
+      /auth\/invalid-email/,
+    );
+    await assert.rejects(
+      () => auth.registerEmail('not-an-email', 'secret123'),
+      /auth\/invalid-email/,
+    );
+    await assert.rejects(
+      () => auth.loginEmail('not-an-email', 'secret123'),
+      /auth\/invalid-email/,
+    );
   });
 });
 
@@ -262,6 +275,14 @@ test('HTTP backend translates auth failures into HTTP responses', async () => {
       });
       assert.equal(missingUser.status, 401);
       assert.equal((await missingUser.json()).error.code, 'auth/user-not-found');
+
+      const invalidEmail = await fetch(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'not-an-email', password: 'secret123' }),
+      });
+      assert.equal(invalidEmail.status, 400);
+      assert.equal((await invalidEmail.json()).error.code, 'auth/invalid-email');
 
       await fetchJson(`${baseUrl}/api/auth/email/register`, {
         method: 'POST',
