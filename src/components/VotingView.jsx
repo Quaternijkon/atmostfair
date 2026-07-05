@@ -56,7 +56,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
       <div className="space-y-3">
         {sortedItems.map((item, index) => {
           const isVoted = item.votes?.includes(user.uid);
-          const canDelete = isAdmin || ((item.creatorId === user.uid || isProjectOwner) && !isStopped);
+          const canDelete = !isStopped && (isAdmin || item.creatorId === user.uid || isProjectOwner);
           return (
             <div key={item.id} className={`app-card relative flex items-center justify-between overflow-hidden p-4 ${isVoted ? 'border-google-blue/30 bg-m3-primary-container/30' : ''}`}>
               <div className="flex items-center gap-5 flex-1 z-10">

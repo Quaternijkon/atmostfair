@@ -441,6 +441,29 @@ test('booking workspace exposes localized waitlist states for full slots', async
   assert.doesNotMatch(files.booking, />Join waitlist<|>Leave waitlist<|>Waitlisted<|waitlist:/i, 'Booking waitlist visible copy should be localized');
 });
 
+test('paused and finished collaboration workspaces hide item deletion controls', async () => {
+  const files = {
+    voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
+    claim: await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8'),
+  };
+
+  assert.match(
+    files.voting,
+    /const canDelete = !isStopped && \([^;\n]*isAdmin[^;\n]*item\.creatorId === user\.uid[^;\n]*isProjectOwner[^;\n]*\);/,
+    'Voting item deletion should be gated by stopped/finished state before role checks',
+  );
+  assert.doesNotMatch(
+    files.voting,
+    /const canDelete = isAdmin \|\|/,
+    'Voting admins should not bypass the stopped/finished deletion guard',
+  );
+  assert.match(
+    files.claim,
+    /\(isOwner \|\| isAdmin\) && !isStopped && \([\s\S]{0,320}handleDeleteClaimItem/,
+    'Claim item deletion should be hidden when the project is stopped or finished',
+  );
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

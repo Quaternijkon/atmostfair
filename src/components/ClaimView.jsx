@@ -141,7 +141,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
 
                           <div className="flex items-center gap-3">
                               {/* Edit Actions for Admin */}
-                              {(isOwner || isAdmin) && (
+                              {(isOwner || isAdmin) && !isStopped && (
                                   <button onClick={() => confirm({ type: 'destructive', title: t('delete'), message: t('confirmDelete'), onConfirm: () => actions.handleDeleteClaimItem(item.id) })} className="app-icon-button opacity-0 hover:bg-google-red/10 hover:text-google-red group-hover:opacity-100">
                                       <Trash2 className="w-4 h-4" />
                                   </button>
