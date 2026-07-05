@@ -361,6 +361,8 @@ function AppContent() {
       },
       handleSubmitGather: async (projectId, data, submitterName) => {
         if (!user) return;
+        const gatherProject = projects.find((project) => project.id === projectId);
+        if (!gatherProject || ['stopped', 'finished'].includes(gatherProject.status)) return;
         const projectFields = gatherFields.filter((field) => field.projectId === projectId);
         const submission = createGatherSubmissionData(gatherSubmissions, projectId, user, submitterName || currentUserName(), data, nowMs(), projectFields);
         if (!submission) return;

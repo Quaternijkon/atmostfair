@@ -494,6 +494,31 @@ test('paused and finished team workspaces hide membership mutation controls', as
   );
 });
 
+test('paused and finished gather workspaces keep submissions read-only', async () => {
+  const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
+
+  assert.match(
+    gather,
+    /const canShowSubmissionCard = !isStopped \|\| hasSubmitted;/,
+    'Gather should only show the submission card while active or for an existing read-only submission',
+  );
+  assert.match(
+    gather,
+    /\{canShowSubmissionCard && \(/,
+    'Gather should render the submission card through the stopped-state guard',
+  );
+  assert.doesNotMatch(
+    gather,
+    /\(!isStopped \|\| isOwner \|\| isAdmin\)/,
+    'Gather owners and admins should not bypass stopped/finished submission locking',
+  );
+  assert.match(
+    gather,
+    /\(isOwner \|\| isAdmin\) && \(/,
+    'Gather owners and admins should retain the read-only response table',
+  );
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

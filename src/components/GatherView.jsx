@@ -15,6 +15,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
 
   const mySubmission = submissions.find(s => s.uid === user?.uid);
   const hasSubmitted = !!mySubmission;
+  const canShowSubmissionCard = !isStopped || hasSubmitted;
   const fieldTypeOptions = [
     { value: 'text', label: t('fieldTypeText') },
     { value: 'number', label: t('fieldTypeNumber') },
@@ -235,7 +236,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
       )}
 
       {/* User Submission View */}
-      {isStopped && !isOwner && !isAdmin && (
+      {isStopped && !hasSubmitted && !isOwner && !isAdmin && (
           <div className="app-card-quiet flex flex-col items-center p-12 text-center opacity-80">
               <ClipboardList className="w-12 h-12 mb-4 opacity-50" />
               <h3 className="text-xl font-medium">{t('paused')}</h3>
@@ -243,7 +244,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
           </div>
       )}
 
-      {(!isStopped || isOwner || isAdmin) && (
+      {canShowSubmissionCard && (
           <div className="app-card animate-fade-in-up p-6 md:p-8" style={{ animationDelay: '0.2s' }}>
               {hasSubmitted ? (
                   <div className="text-center py-8">
