@@ -4,7 +4,7 @@ import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, 
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
-import { createFriendRequestData } from '../lib/friendDomain';
+import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId } from '../lib/friendDomain';
 import { nowMs } from '../lib/time';
 
 export default function FriendSystem({ user, onClose, t }) {
@@ -148,24 +148,34 @@ export default function FriendSystem({ user, onClose, t }) {
     };
 
     const acceptRequest = async (rel) => {
-        await updateDoc(doc(db, 'friendships', rel.id), { status: 'confirmed' });
+        const acceptPatch = createFriendAcceptPatch(rel, user);
+        if (!acceptPatch) {
+            showToast(t('friendActionUnavailable'), 'info');
+            return;
+        }
+        await updateDoc(doc(db, 'friendships', rel.id), acceptPatch);
         showToast(t('friendAdded'), 'success');
     };
     
-    const rejectRequest = async (id) => deleteDoc(doc(db, 'friendships', id));
+    const rejectRequest = async (rel) => {
+        const rejectableId = getRejectableFriendRequestId(rel, user);
+        if (!rejectableId) {
+            showToast(t('friendActionUnavailable'), 'info');
+            return;
+        }
+        await deleteDoc(doc(db, 'friendships', rejectableId));
+    };
 
     const sendMessage = async (e) => {
         e.preventDefault();
-        if (!chatInput.trim()) return;
-        const txt = chatInput.trim();
+        const messageData = createFriendMessageData(relationships, activeChatFriend, user, chatInput, nowMs());
+        if (!messageData) {
+            showToast(t('friendActionUnavailable'), 'info');
+            return;
+        }
         setChatInput('');
         
-        await addDoc(collection(db, 'friend_messages'), {
-            chatId: activeChatFriend.id,
-            text: txt,
-            senderId: user.uid,
-            createdAt: nowMs()
-        });
+        await addDoc(collection(db, 'friend_messages'), messageData);
         
         // Notify if offline? (Optional)
     };
@@ -227,7 +237,7 @@ export default function FriendSystem({ user, onClose, t }) {
                                         </div>
                                         <div className="flex gap-2">
                                             <button onClick={() => acceptRequest(req)} className="app-button flex-1 bg-google-blue/10 px-3 text-xs text-google-blue hover:bg-google-blue/20">{t('accept')}</button>
-                                            <button onClick={() => rejectRequest(req.id)} className="app-button flex-1 bg-m3-surface-container-highest px-3 text-xs text-m3-on-surface-variant hover:bg-m3-outline-variant">{t('ignore')}</button>
+                                            <button onClick={() => rejectRequest(req)} className="app-button flex-1 bg-m3-surface-container-highest px-3 text-xs text-m3-on-surface-variant hover:bg-m3-outline-variant">{t('ignore')}</button>
                                         </div>
                                     </div>
                                 ))}
