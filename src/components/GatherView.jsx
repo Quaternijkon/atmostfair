@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Download, ClipboardList, CheckCircle, FileText, X } from './Icons';
 import { formatDate, formatDateTime } from '../lib/locale';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function GatherView({ user, isAdmin, project, fields = [], submissions = [], isStopped, isOwner, actions, t }) {
@@ -145,6 +146,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                 onChange={(e) => setNewField(e.target.value)}
                 placeholder={t('fieldLabel')}
                 className="app-input flex-1"
+                maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH}
              />
              <select
                 value={newFieldType}

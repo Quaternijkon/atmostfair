@@ -11,9 +11,11 @@ import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
 import {
+  PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
   createGameRoomJoinPatch,
   createScheduleConfigData,
+  normalizeProjectChildText,
   createRpsNextRoundPatch,
 } from '../src/lib/projectDomain.js';
 
@@ -50,6 +52,13 @@ const GAME_TYPES = new Set(['rps', 'mine']);
 const RPS_MOVES = new Set(['rock', 'paper', 'scissors']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
+const PROJECT_CHILD_TEXT_FIELDS = new Map([
+  ['voting_items', 'title'],
+  ['rooms', 'name'],
+  ['gather_fields', 'label'],
+  ['booking_slots', 'label'],
+  ['claim_items', 'title'],
+]);
 const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['voting_items', 'projectId'],
   ['rooms', 'projectId'],
@@ -496,25 +505,27 @@ async function authorizeVotingItemOperation({ store, user, context, type, data, 
   }
 
   if (!canWriteProject(project, user)) forbidden();
-  assertImmutableField(protectedData, existing, 'creatorId');
-  assertImmutableField(protectedData, existing, 'creatorName');
+  const metadataData = normalizeProjectChildDisplayText(protectedData, 'voting_items', type === 'set');
+  assertImmutableField(metadataData, existing, 'creatorId');
+  assertImmutableField(metadataData, existing, 'creatorName');
   if (type === 'set') {
     return {
-      ...(protectedData || {}),
+      ...(metadataData || {}),
       projectId: existing.projectId,
       creatorId: existing.creatorId,
       creatorName: existing.creatorName,
       votes: Array.isArray(existing.votes) ? existing.votes : [],
     };
   }
-  return protectedData || {};
+  return metadataData || {};
 }
 
 function normalizeVotingItemCreateData({ user, data }) {
+  const normalized = normalizeProjectChildDisplayText(data, 'voting_items', true);
   return {
-    ...(data || {}),
+    ...normalized,
     creatorId: user.uid,
-    creatorName: cleanUserProvidedName(data?.creatorName, user),
+    creatorName: cleanUserProvidedName(normalized.creatorName, user),
     votes: [],
   };
 }
@@ -567,20 +578,25 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
     return authorizeClaimItemOperation({ user, type, data, existing, project });
   }
 
-  return preserveImmutableField(data, existing, 'projectId', type);
+  return normalizeProjectChildDisplayText(
+    preserveImmutableField(data, existing, 'projectId', type),
+    collection,
+    type === 'set',
+  );
 }
 
 function normalizeManagedProjectChildCreateData({ user, collection, data }) {
+  const normalized = normalizeProjectChildDisplayText(data, collection, true);
   if (collection === 'gather_fields') {
     return {
-      ...(data || {}),
+      ...normalized,
       creatorId: user.uid,
     };
   }
 
   if (collection === 'booking_slots') {
     return {
-      ...(data || {}),
+      ...normalized,
       bookedBy: null,
       bookerName: null,
       bookingData: null,
@@ -591,14 +607,39 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
 
   if (collection === 'claim_items') {
     return {
-      ...(data || {}),
+      ...normalized,
       creatorId: user.uid,
       creatorName: cleanUserProvidedName('', user),
       claimants: [],
     };
   }
 
-  return data || {};
+  return normalized;
+}
+
+function normalizeProjectChildDisplayText(data, collection, required = false) {
+  const normalized = { ...(data || {}) };
+  const field = PROJECT_CHILD_TEXT_FIELDS.get(collection);
+  if (!field) return normalized;
+
+  if (!Object.hasOwn(normalized, field)) {
+    if (required) throwInvalidProjectChildText();
+    return normalized;
+  }
+
+  const text = normalizeProjectChildText(normalized[field]);
+  if (!text) throwInvalidProjectChildText();
+
+  normalized[field] = text;
+  return normalized;
+}
+
+function throwInvalidProjectChildText() {
+  throwDataError(
+    400,
+    'data/invalid-project-child-text',
+    `Project item text must be 1-${PROJECT_CHILD_TEXT_MAX_LENGTH} characters.`,
+  );
 }
 
 function authorizeProjectChatOperation({ user, data, existing }) {
@@ -1002,7 +1043,7 @@ function authorizeRoomOperation({ user, type, data, existing, project }) {
   }
 
   if (!canManageRoom(project, existing, user)) forbidden();
-  const metadataPatch = normalizeRoomMetadataPatch(protectedData, existing);
+  const metadataPatch = normalizeRoomMetadataPatch(protectedData, existing, type);
 
   if (type === 'set') {
     return {
@@ -1017,18 +1058,19 @@ function authorizeRoomOperation({ user, type, data, existing, project }) {
 }
 
 function normalizeRoomCreateData({ user, data }) {
+  const normalized = normalizeProjectChildDisplayText(data, 'rooms', true);
   const requestedMembers = Array.isArray(data?.members) ? data.members : [];
   const requestedMember = requestedMembers.find((member) => member?.uid === user.uid) || { joinedAt: data?.createdAt };
   return {
-    ...(data || {}),
+    ...normalized,
     ownerId: user.uid,
-    maxMembers: normalizeRoomMaxMembers(data?.maxMembers),
+    maxMembers: normalizeRoomMaxMembers(normalized.maxMembers),
     members: [normalizeRoomMember(requestedMember, user)],
   };
 }
 
-function normalizeRoomMetadataPatch(data, existing) {
-  const patch = data || {};
+function normalizeRoomMetadataPatch(data, existing, type) {
+  const patch = normalizeProjectChildDisplayText(data, 'rooms', type === 'set');
   if (!Object.hasOwn(patch, 'maxMembers')) return patch;
 
   const maxMembers = normalizeRoomMaxMembers(patch.maxMembers);
@@ -1137,9 +1179,10 @@ function authorizeBookingSlotOperation({ user, type, data, existing, project }) 
   }
 
   if (!canWriteProject(project, user)) forbidden();
+  const metadataData = normalizeProjectChildDisplayText(protectedData, 'booking_slots', type === 'set');
   if (type === 'set') {
     return {
-      ...(protectedData || {}),
+      ...(metadataData || {}),
       projectId: existing.projectId,
       bookedBy: existing.bookedBy ?? null,
       bookerName: existing.bookerName ?? null,
@@ -1148,7 +1191,7 @@ function authorizeBookingSlotOperation({ user, type, data, existing, project }) 
       waitlist: normalizeBookingWaitlistData(existing.waitlist),
     };
   }
-  return protectedData || {};
+  return metadataData || {};
 }
 
 function hasBookingRuntimeField(data) {
@@ -1289,18 +1332,19 @@ function authorizeClaimItemOperation({ user, type, data, existing, project }) {
   }
 
   if (!canWriteProject(project, user)) forbidden();
-  assertImmutableField(protectedData, existing, 'creatorId');
-  assertImmutableField(protectedData, existing, 'creatorName');
+  const metadataData = normalizeProjectChildDisplayText(protectedData, 'claim_items', type === 'set');
+  assertImmutableField(metadataData, existing, 'creatorId');
+  assertImmutableField(metadataData, existing, 'creatorName');
   if (type === 'set') {
     return {
-      ...(protectedData || {}),
+      ...(metadataData || {}),
       projectId: existing.projectId,
       creatorId: existing.creatorId,
       creatorName: existing.creatorName,
       claimants: Array.isArray(existing.claimants) ? existing.claimants : [],
     };
   }
-  return protectedData || {};
+  return metadataData || {};
 }
 
 function authorizeClaimantsPatch({ user, type, data, existing }) {

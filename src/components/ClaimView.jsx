@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, CheckSquare, MinusCircle, UserCheck, Trash2 } from './Icons';
 import { formatDateTime } from '../lib/locale';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function ClaimView({ user, isAdmin, project, items = [], isStopped, isOwner, actions, t }) {
@@ -53,6 +54,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     onChange={(e) => setNewItem(e.target.value)}
                     placeholder={t('taskTitle')}
                     className="app-input"
+                    maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH}
                 />
              </div>
              <div className="flex items-center gap-2">

@@ -2747,6 +2747,131 @@ test('HTTP data API restricts managed child creation to project owners and norma
   });
 });
 
+test('HTTP data API rejects invalid project child display text without partial writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Display text rules', type: 'vote', status: 'active', createdAt: 1 } },
+      });
+      const longText = 'x'.repeat(121);
+
+      for (const body of [
+        { collection: 'voting_items', data: { projectId: project.doc.id, title: '   ', createdAt: 2 } },
+        { collection: 'voting_items', data: { projectId: project.doc.id, title: longText, createdAt: 3 } },
+        { collection: 'rooms', data: { projectId: project.doc.id, name: '', maxMembers: 4, createdAt: 4 } },
+        { collection: 'rooms', data: { projectId: project.doc.id, name: longText, maxMembers: 4, createdAt: 5 } },
+        { collection: 'gather_fields', data: { projectId: project.doc.id, label: '', type: 'text', createdAt: 6 } },
+        { collection: 'gather_fields', data: { projectId: project.doc.id, label: longText, type: 'text', createdAt: 7 } },
+        { collection: 'booking_slots', data: { projectId: project.doc.id, start: '2026-07-05', end: '2026-07-05', label: '', createdAt: 8 } },
+        { collection: 'booking_slots', data: { projectId: project.doc.id, start: '2026-07-06', end: '2026-07-06', label: longText, createdAt: 9 } },
+        { collection: 'claim_items', data: { projectId: project.doc.id, title: '', maxClaims: 1, createdAt: 10 } },
+        { collection: 'claim_items', data: { projectId: project.doc.id, title: longText, maxClaims: 1, createdAt: 11 } },
+      ]) {
+        const response = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+          method: 'POST',
+          token: owner.token,
+          body,
+        });
+        assert.equal(response.status, 400);
+        assert.equal(response.body.error.code, 'data/invalid-project-child-text');
+      }
+
+      assert.deepEqual(await store.list('voting_items'), []);
+      assert.deepEqual(await store.list('rooms'), []);
+      assert.deepEqual(await store.list('gather_fields'), []);
+      assert.deepEqual(await store.list('booking_slots'), []);
+      assert.deepEqual(await store.list('claim_items'), []);
+
+      const vote = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'voting_items', data: { projectId: project.doc.id, title: '  Valid vote  ', createdAt: 12 } },
+      });
+      assert.equal(vote.doc.title, 'Valid vote');
+
+      const room = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'rooms', data: { projectId: project.doc.id, name: '  Valid room  ', maxMembers: 4, createdAt: 13 } },
+      });
+      assert.equal(room.doc.name, 'Valid room');
+
+      const slot = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          data: { projectId: project.doc.id, start: '2026-07-07', end: '2026-07-07', label: '  Valid slot  ', createdAt: 14 },
+        },
+      });
+      assert.equal(slot.doc.label, 'Valid slot');
+
+      for (const body of [
+        { collection: 'voting_items', id: vote.doc.id, data: { title: longText } },
+        { collection: 'rooms', id: room.doc.id, data: { name: longText } },
+        { collection: 'booking_slots', id: slot.doc.id, data: { label: longText } },
+      ]) {
+        const response = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+          method: 'POST',
+          token: owner.token,
+          body,
+        });
+        assert.equal(response.status, 400);
+        assert.equal(response.body.error.code, 'data/invalid-project-child-text');
+      }
+
+      assert.equal((await store.get('voting_items', vote.doc.id)).title, 'Valid vote');
+      assert.equal((await store.get('rooms', room.doc.id)).name, 'Valid room');
+      assert.equal((await store.get('booking_slots', slot.doc.id)).label, 'Valid slot');
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            {
+              type: 'add',
+              collection: 'voting_items',
+              data: { projectId: project.doc.id, title: 'Should not persist', createdAt: 15 },
+            },
+            {
+              type: 'add',
+              collection: 'claim_items',
+              data: { projectId: project.doc.id, title: longText, maxClaims: 1, createdAt: 16 },
+            },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 400);
+      assert.equal(blockedBatch.body.error.code, 'data/invalid-project-child-text');
+      assert.deepEqual(
+        (await store.list('voting_items', { filters: [{ field: 'projectId', op: '==', value: project.doc.id }] }))
+          .map((item) => item.title),
+        ['Valid vote'],
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts booking slot updates to booking and waitlist guards', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

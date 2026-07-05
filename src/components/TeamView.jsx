@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X } from './Icons';
 import { InfoCard } from './InfoCard';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 
 export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, onJoin, onKick, onDelete, projectId, t }) {
   const [newRoomName, setNewRoomName] = useState('');
@@ -38,7 +39,7 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
     <div>
       {!isStopped && (
         <div className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
-          <input type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder={t('teamNamePlaceholder')} className="app-input flex-1" />
+          <input type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder={t('teamNamePlaceholder')} className="app-input flex-1" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} />
           <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNicknamePlaceholder')} className="app-input w-full sm:w-48" />
           <button onClick={() => { if (newRoomName.trim()) { onCreate(newRoomName, 4, myName); setNewRoomName(''); } }} className="app-button bg-google-red px-8 text-white hover:shadow-elevation-1">{t('createTeam')}</button>
         </div>

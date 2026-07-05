@@ -16,6 +16,7 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 ];
 
 export const PROJECT_TITLE_MAX_LENGTH = 120;
+export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
@@ -167,7 +168,7 @@ export function createGatherSubmissionData(existingSubmissions, projectId, user,
 
 export function createGatherFieldData(projectId, user, label, type = 'text', options = '', createdAt) {
   if (!projectId || !user?.uid) return null;
-  const cleanLabel = String(label || '').trim();
+  const cleanLabel = normalizeProjectChildText(label);
   if (!cleanLabel) return null;
   const fieldType = normalizeGatherFieldType(type);
   const field = {
@@ -185,6 +186,12 @@ export function createGatherFieldData(projectId, user, label, type = 'text', opt
   }
 
   return field;
+}
+
+export function normalizeProjectChildText(value) {
+  const cleanText = String(value ?? '').trim();
+  if (!cleanText || cleanText.length > PROJECT_CHILD_TEXT_MAX_LENGTH) return null;
+  return cleanText;
 }
 
 export function createRouletteJoinData(existingParticipants, projectId, user, userName, value, joinedAt) {

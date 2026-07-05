@@ -257,6 +257,7 @@ test('gather field data normalizes supported field types and option lists', () =
 
   assert.equal(createGatherFieldData('project-1', user, 'Choice', 'option', '  ', 3902), null);
   assert.equal(createGatherFieldData('project-1', user, '  ', 'text', '', 3903), null);
+  assert.equal(createGatherFieldData('project-1', user, 'x'.repeat(121), 'text', '', 3904), null);
 });
 
 test('gather submission data is normalized against typed field definitions', () => {

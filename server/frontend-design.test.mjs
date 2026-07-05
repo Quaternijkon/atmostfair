@@ -596,6 +596,28 @@ test('chat inputs expose a shared message length limit', async () => {
   assert.match(files.backend, /MESSAGE_TEXT_MAX_LENGTH/, 'Backend message guards should enforce the same shared limit');
 });
 
+test('project child text inputs expose a shared display length limit', async () => {
+  const files = {
+    voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
+    team: await readFile(path.join(root, 'src/components/TeamView.jsx'), 'utf8'),
+    gather: await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8'),
+    claim: await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8'),
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    backend: await readFile(path.join(root, 'server/local-backend.mjs'), 'utf8'),
+  };
+
+  for (const [name, source] of Object.entries(files)) {
+    if (name === 'app') continue;
+    assert.match(source, /PROJECT_CHILD_TEXT_MAX_LENGTH/, `${name} should use the shared project-child display text limit`);
+  }
+
+  assert.match(files.app, /normalizeProjectChildText/, 'App write handlers should use the shared project-child display text guard');
+  assert.match(files.voting, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Voting item input should cap text before submit');
+  assert.match(files.team, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Team room input should cap text before submit');
+  assert.match(files.gather, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Gather field input should cap text before submit');
+  assert.match(files.claim, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Claim item input should cap text before submit');
+});
+
 test('read-only project write attempts show localized app feedback', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

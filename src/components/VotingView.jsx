@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trophy, Trash2 } from './Icons';
 import { InfoCard } from './InfoCard';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 
 export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onDelete, onVote, votingConfig, onUpdateVotingConfig, isProjectOwner, projectId, t }) {
   const [newItem, setNewItem] = useState('');
@@ -48,7 +49,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
       )}
       {!isStopped && (
         <div className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
-          <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={t('addItemPlaceholder')} className="app-input flex-[2]" />
+          <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={t('addItemPlaceholder')} className="app-input flex-[2]" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} />
           <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNamePlaceholder')} className="app-input flex-1" />
           <button onClick={() => { if (newItem.trim()) { onAdd(newItem, myName); setNewItem(''); } }} className="app-button-primary px-8">{t('add')}</button>
         </div>

@@ -33,6 +33,7 @@ import {
   createVoteToggleOperations,
   createClaimToggleData,
   createProjectStatusPatch,
+  normalizeProjectChildText,
   PROJECT_CASCADE_COLLECTIONS,
 } from './lib/projectDomain';
 import {
@@ -211,9 +212,10 @@ function AppContent() {
   // Actions
   const createActions = (showToast) => ({
       handleAddItem: async (title, projectId, creatorName) => {
-        if (!title.trim() || !user || !requireProjectWritable(projectId, showToast)) return;
-        await addDoc(collection(db, 'voting_items'), { title, projectId, creatorId: user.uid, creatorName: creatorName || currentUserName(), votes: [], createdAt: nowMs() });
-        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.voteItemAdded, subject: title, actorName: creatorName });
+        const cleanTitle = normalizeProjectChildText(title);
+        if (!cleanTitle || !user || !requireProjectWritable(projectId, showToast)) return;
+        await addDoc(collection(db, 'voting_items'), { title: cleanTitle, projectId, creatorId: user.uid, creatorName: creatorName || currentUserName(), votes: [], createdAt: nowMs() });
+        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.voteItemAdded, subject: cleanTitle, actorName: creatorName });
       },
       handleDeleteItem: async (itemId) => {
         const item = items.find((entry) => entry.id === itemId);
@@ -240,9 +242,10 @@ function AppContent() {
          await updateDoc(doc(db, 'projects', projectId), { votingConfig: config });
       },
       handleCreateRoom: async (name, maxMembers, projectId, creatorName) => {
-         if (!user || !name.trim() || !requireProjectWritable(projectId, showToast)) return;
-         await addDoc(collection(db, 'rooms'), { name, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.teamCreated, subject: name, actorName: creatorName });
+         const cleanName = normalizeProjectChildText(name);
+         if (!user || !cleanName || !requireProjectWritable(projectId, showToast)) return;
+         await addDoc(collection(db, 'rooms'), { name: cleanName, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.teamCreated, subject: cleanName, actorName: creatorName });
       },
       handleJoinRoom: async (roomId, userName) => {
          if (!user) return;
@@ -444,11 +447,13 @@ function AppContent() {
          await updateDoc(doc(db, 'projects', projectId), { bookingConfig });
       },
       handleCreateBookingSlot: async (projectId, start, end, label) => {
+         const cleanLabel = normalizeProjectChildText(label);
+         if (!cleanLabel) return;
          if (!requireProjectWritable(projectId, showToast)) return;
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
-         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, waitlist: [], createdAt: nowMs() });
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: label || `${start} - ${end}` });
+         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label: cleanLabel, bookedBy: null, waitlist: [], createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: cleanLabel });
       },
       handleDeleteBookingSlot: async (slotId) => {
          const slot = bookingSlots.find((entry) => entry.id === slotId);
@@ -519,9 +524,10 @@ function AppContent() {
         await batch.commit();
       },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
-         if (!user || !title.trim() || !requireProjectWritable(projectId, showToast)) return;
-         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.claimCreated, subject: title });
+         const cleanTitle = normalizeProjectChildText(title);
+         if (!user || !cleanTitle || !requireProjectWritable(projectId, showToast)) return;
+         await addDoc(collection(db, 'claim_items'), { projectId, title: cleanTitle, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.claimCreated, subject: cleanTitle });
       },
       handleDeleteClaimItem: async (itemId) => {
          const item = claimItems.find((entry) => entry.id === itemId);
