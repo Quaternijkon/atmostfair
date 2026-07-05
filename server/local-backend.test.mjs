@@ -407,6 +407,178 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
+test('HTTP data API rejects child writes against stopped and finished projects without partial writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const member = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'member@example.com', password: 'secret123' },
+      });
+
+      const activeProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Active', status: 'active', createdAt: 1 } },
+      });
+      const stoppedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Stopped', status: 'stopped', createdAt: 2 } },
+      });
+      const finishedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Finished', status: 'finished', createdAt: 3 } },
+      });
+
+      const activeItem = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'voting_items',
+          data: { projectId: activeProject.doc.id, title: 'Allowed while active', creatorId: member.user.uid },
+        },
+      });
+      assert.equal(activeItem.doc.projectId, activeProject.doc.id);
+
+      const stoppedAdd = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'voting_items',
+          data: { projectId: stoppedProject.doc.id, title: 'Should not persist', creatorId: member.user.uid },
+        },
+      });
+      assert.equal(stoppedAdd.status, 409);
+      assert.equal(stoppedAdd.body.error.code, 'data/project-locked');
+      assert.deepEqual(await store.list('voting_items', {
+        filters: [{ field: 'projectId', op: '==', value: stoppedProject.doc.id }],
+      }), []);
+
+      const finishedAdd = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'project_chats',
+          data: { projectId: finishedProject.doc.id, userId: member.user.uid, text: 'Should not persist' },
+        },
+      });
+      assert.equal(finishedAdd.status, 409);
+      assert.equal(finishedAdd.body.error.code, 'data/project-locked');
+      assert.deepEqual(await store.list('project_chats'), []);
+
+      const stoppedQueueEntry = await store.add('queue_participants', {
+        projectId: stoppedProject.doc.id,
+        userId: member.user.uid,
+        name: 'Member',
+      });
+      const stoppedUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'queue_participants',
+          id: stoppedQueueEntry.id,
+          data: { name: 'Mutated' },
+        },
+      });
+      assert.equal(stoppedUpdate.status, 409);
+      assert.equal(stoppedUpdate.body.error.code, 'data/project-locked');
+      assert.equal((await store.get('queue_participants', stoppedQueueEntry.id)).name, 'Member');
+
+      const activeMove = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'voting_items',
+          id: activeItem.doc.id,
+          data: { projectId: stoppedProject.doc.id },
+        },
+      });
+      assert.equal(activeMove.status, 403);
+      assert.equal(activeMove.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('voting_items', activeItem.doc.id)).projectId, activeProject.doc.id);
+
+      const stoppedDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'queue_participants',
+          id: stoppedQueueEntry.id,
+        },
+      });
+      assert.equal(stoppedDelete.status, 403);
+      assert.equal(stoppedDelete.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('queue_participants', stoppedQueueEntry.id), null);
+
+      const ownerCleanup = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'queue_participants',
+          id: stoppedQueueEntry.id,
+        },
+      });
+      assert.equal(ownerCleanup.ok, true);
+      assert.equal(await store.get('queue_participants', stoppedQueueEntry.id), null);
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          operations: [
+            {
+              type: 'add',
+              collection: 'voting_items',
+              data: { projectId: activeProject.doc.id, title: 'Batch partial', creatorId: member.user.uid },
+            },
+            {
+              type: 'add',
+              collection: 'booking_slots',
+              data: { projectId: stoppedProject.doc.id, label: 'Locked slot' },
+            },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 409);
+      assert.equal(blockedBatch.body.error.code, 'data/project-locked');
+      assert.deepEqual(await store.list('booking_slots'), []);
+      assert.deepEqual(
+        (await store.list('voting_items', {
+          filters: [{ field: 'title', op: '==', value: 'Batch partial' }],
+        })),
+        [],
+      );
+
+      const auditActivity = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'project_activities',
+          data: { projectId: stoppedProject.doc.id, subject: 'pause audit' },
+        },
+      });
+      assert.equal(auditActivity.doc.projectId, stoppedProject.doc.id);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API filters private notifications and friend records by current user', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

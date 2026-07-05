@@ -32,6 +32,20 @@ const DATA_API_COLLECTIONS = new Set([
 ]);
 const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
+const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
+const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
+  ['voting_items', 'projectId'],
+  ['rooms', 'projectId'],
+  ['roulette_participants', 'projectId'],
+  ['queue_participants', 'projectId'],
+  ['gather_fields', 'projectId'],
+  ['gather_submissions', 'projectId'],
+  ['schedule_submissions', 'projectId'],
+  ['booking_slots', 'projectId'],
+  ['claim_items', 'projectId'],
+  ['project_chats', 'projectId'],
+  ['game_rooms', 'projectId'],
+]);
 
 export function createLocalBackendServer({
   store,
@@ -256,6 +270,11 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
     return authorizeFriendMessageOperation({ store, user, type, id, data });
   }
 
+  const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
+  if (projectField) {
+    return authorizeProjectChildOperation({ store, user, type, collection, id, data, projectField });
+  }
+
   if (collection !== 'projects') return data;
 
   if (type === 'add') {
@@ -274,6 +293,36 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
 
   if (type === 'delete') return undefined;
   return preserveProjectOwner(data, existing, type);
+}
+
+async function authorizeProjectChildOperation({ store, user, type, collection, id, data, projectField }) {
+  const existing = type === 'add' ? null : await store.get(collection, id);
+  if (!existing && type !== 'add') {
+    if (type !== 'set') throwDataError(404, 'data/not-found', 'Record not found.');
+  }
+
+  const projectId = existing?.[projectField] ?? data?.[projectField];
+  if (typeof projectId !== 'string' || projectId.trim() === '') {
+    throwDataError(400, 'data/invalid-project', 'Project id is required.');
+  }
+
+  const project = await store.get('projects', projectId);
+  if (!project) {
+    if (type === 'delete' && isAdminUser(user)) return undefined;
+    throwDataError(404, 'data/project-not-found', 'Project not found.');
+  }
+
+  if (type === 'delete') {
+    if (!isProjectLocked(project)) return undefined;
+    if (canWriteProject(project, user)) return undefined;
+    forbidden();
+  }
+
+  if (isProjectLocked(project)) {
+    throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
+  }
+
+  return existing ? preserveImmutableField(data, existing, projectField, type) : data || {};
 }
 
 async function filterReadableDocs({ store, user, collection, docs }) {
@@ -421,6 +470,10 @@ function preserveProjectOwner(data, existing, type) {
 
 function canWriteProject(project, user) {
   return project.creatorId === user.uid || isAdminUser(user);
+}
+
+function isProjectLocked(project) {
+  return LOCKED_PROJECT_STATUSES.has(project?.status);
 }
 
 function isAdminUser(user) {
