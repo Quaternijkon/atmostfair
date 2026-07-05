@@ -550,6 +550,23 @@ test('React refresh and animated tab hooks keep stable module boundaries', async
   assert.doesNotMatch(files.dashboard, /\[projects,\s*searchTerm,\s*activeTab,\s*currentCategory\]/, 'Dashboard filtered projects should not carry an unnecessary activeTab dependency');
 });
 
+test('application routes lazy-load heavy pages behind a localized fallback', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.match(app, /lazy\(\(\)\s*=>\s*import\(['"]\.\/pages\/Dashboard['"]\)\)/, 'Dashboard should be lazy-loaded at the route boundary');
+  assert.match(app, /lazy\(\(\)\s*=>\s*import\(['"]\.\/pages\/ProjectDetail['"]\)\)/, 'Project detail should be lazy-loaded at the route boundary');
+  assert.match(app, /lazy\(\(\)\s*=>\s*import\(['"]\.\/pages\/Login['"]\)\)/, 'Login should be lazy-loaded at the route boundary');
+  assert.match(app, /lazy\(\(\)\s*=>\s*import\(['"]\.\/components\/AdminDashboard['"]\)\)/, 'Admin console should be lazy-loaded at the route boundary');
+
+  assert.doesNotMatch(app, /import\s+Dashboard\s+from\s+['"]\.\/pages\/Dashboard['"]/, 'Dashboard should not be statically imported into the app shell');
+  assert.doesNotMatch(app, /import\s+ProjectDetail\s+from\s+['"]\.\/pages\/ProjectDetail['"]/, 'Project detail should not be statically imported into the app shell');
+  assert.doesNotMatch(app, /import\s+Login\s+from\s+['"]\.\/pages\/Login['"]/, 'Login should not be statically imported into the app shell');
+  assert.doesNotMatch(app, /import\s+AdminDashboard\s+from\s+['"]\.\/components\/AdminDashboard['"]/, 'Admin console should not be statically imported into the app shell');
+
+  assert.match(app, /<Suspense[\s\S]{0,180}fallback=/, 'Lazy routes should render inside Suspense');
+  assert.match(app, /t\('loading'\)/, 'Route fallback should use localized loading copy');
+});
+
 test('visible workspaces avoid legacy decorative UI fragments', async () => {
   const sources = await readVisualSources([
     path.join(root, 'src/components'),

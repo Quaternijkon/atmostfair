@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, signOut, auth } from './lib/localAuth';
@@ -41,10 +41,16 @@ import { UIProvider } from './components/UIComponents';
 import AnnouncementSystem from './components/AnnouncementSystem';
 import FriendSystem from './components/FriendSystem';
 
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import ProjectDetail from './pages/ProjectDetail';
-import AdminDashboard from './components/AdminDashboard';
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+
+const RouteLoadingFallback = ({ label }) => (
+  <div className="flex min-h-[320px] w-full items-center justify-center px-4">
+    <div className="app-card px-6 py-4 text-sm font-medium text-m3-on-surface-variant">{label}</div>
+  </div>
+);
 
 // Page Transition Wrapper
 const PageTransition = ({ children }) => (
@@ -482,7 +488,9 @@ function AppContent() {
   return (
       <UIProvider t={t}>
         {!user ? (
-          <Login lang={lang} setLang={setLang} t={t} />
+          <Suspense fallback={<RouteLoadingFallback label={t('loading')} />}>
+            <Login lang={lang} setLang={setLang} t={t} />
+          </Suspense>
         ) : (
           <div className="app-shell">
             <a href="#main-content" className="skip-link">{t('skipToContent')}</a>
@@ -566,32 +574,34 @@ function AppContent() {
             </nav>
 
             <main id="main-content" tabIndex={-1} className="app-main">
-              {showAdmin && isAdmin ? (
-                <AdminDashboard
-                    projects={projects}
-                    items={items}
-                    rooms={rooms}
-                    rouletteParticipants={rouletteParticipants}
-                    queueParticipants={queueParticipants}
-                    gatherFields={gatherFields}
-                    gatherSubmissions={gatherSubmissions}
-                    scheduleSubmissions={scheduleSubmissions}
-                    bookingSlots={bookingSlots}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
-                    t={t}
-                />
-              ) : (
-                <AnimatePresence mode="wait">
-                  <Routes location={location} key={location.pathname}>
-                      <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
-                      <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="*" element={<Navigate to="/" />} />
-                  </Routes>
-                </AnimatePresence>
-              )}
+              <Suspense fallback={<RouteLoadingFallback label={t('loading')} />}>
+                {showAdmin && isAdmin ? (
+                  <AdminDashboard
+                      projects={projects}
+                      items={items}
+                      rooms={rooms}
+                      rouletteParticipants={rouletteParticipants}
+                      queueParticipants={queueParticipants}
+                      gatherFields={gatherFields}
+                      gatherSubmissions={gatherSubmissions}
+                      scheduleSubmissions={scheduleSubmissions}
+                      bookingSlots={bookingSlots}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
+                      t={t}
+                  />
+                ) : (
+                  <AnimatePresence mode="wait">
+                    <Routes location={location} key={location.pathname}>
+                        <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
+                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                  </AnimatePresence>
+                )}
+              </Suspense>
             </main>
           </div>
         )}
