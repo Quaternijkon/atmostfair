@@ -1456,6 +1456,10 @@ async function normalizeNotificationCreateData({ store, user, data }) {
     };
   }
 
+  if (notification.type === 'friend_message') {
+    return normalizeFriendMessageNotificationData({ store, user, notification, recipientId });
+  }
+
   if (PROJECT_NOTIFICATION_TYPES.has(notification.type)) {
     const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : '';
     if (!projectId) throwDataError(400, 'data/invalid-project', 'Project id is required.');
@@ -1472,6 +1476,31 @@ async function normalizeNotificationCreateData({ store, user, data }) {
   }
 
   forbidden();
+}
+
+async function normalizeFriendMessageNotificationData({ store, user, notification, recipientId }) {
+  const chatId = typeof notification.chatId === 'string' ? notification.chatId.trim() : '';
+  if (!chatId || recipientId === user.uid) forbidden();
+  const relationship = await store.get('friendships', chatId);
+  if (
+    relationship?.status !== 'confirmed'
+    || !hasMember(relationship, user.uid)
+    || !hasMember(relationship, recipientId)
+  ) {
+    forbidden();
+  }
+
+  const message = typeof notification.message === 'string' ? notification.message.trim() : '';
+  if (!message) throwDataError(400, 'data/invalid-message', 'Message text is required.');
+  return {
+    ...notification,
+    recipientId,
+    type: 'friend_message',
+    chatId,
+    senderId: user.uid,
+    message,
+    read: false,
+  };
 }
 
 async function hasDuplicateFriendRequestNotification(store, senderId, recipientId) {

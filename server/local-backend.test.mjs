@@ -754,6 +754,25 @@ test('HTTP data API restricts notification creation to verified app events', asy
       assert.equal(validFriendNotification.doc.senderId, alice.user.uid);
       assert.equal(validFriendNotification.doc.read, false);
 
+      const unconfirmedMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_message',
+            title: 'New message',
+            message: 'pending chat',
+            chatId: friendship.doc.id,
+            read: true,
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(unconfirmedMessageNotification.status, 403);
+      assert.equal(unconfirmedMessageNotification.body.error.code, 'data/forbidden');
+
       const duplicateFriendNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
@@ -764,22 +783,109 @@ test('HTTP data API restricts notification creation to verified app events', asy
             type: 'friend_req',
             title: 'Duplicate friend request',
             read: false,
-            createdAt: 5,
+            createdAt: 6,
           },
         },
       });
       assert.equal(duplicateFriendNotification.status, 409);
       assert.equal(duplicateFriendNotification.body.error.code, 'data/duplicate-notification');
 
+      const confirmedFriendship = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'friendships', id: friendship.doc.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(confirmedFriendship.doc.status, 'confirmed');
+
+      const forgedFriendMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: charlie.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_message',
+            title: 'Forged message',
+            message: 'not a friend',
+            chatId: friendship.doc.id,
+            read: false,
+            createdAt: 7,
+          },
+        },
+      });
+      assert.equal(forgedFriendMessageNotification.status, 403);
+      assert.equal(forgedFriendMessageNotification.body.error.code, 'data/forbidden');
+
+      const selfFriendMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: alice.user.uid,
+            type: 'friend_message',
+            title: 'Self message',
+            message: 'self',
+            chatId: friendship.doc.id,
+            read: false,
+            createdAt: 8,
+          },
+        },
+      });
+      assert.equal(selfFriendMessageNotification.status, 403);
+      assert.equal(selfFriendMessageNotification.body.error.code, 'data/forbidden');
+
+      const blankFriendMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_message',
+            title: 'Blank message',
+            message: '   ',
+            chatId: friendship.doc.id,
+            read: false,
+            createdAt: 9,
+          },
+        },
+      });
+      assert.equal(blankFriendMessageNotification.status, 400);
+      assert.equal(blankFriendMessageNotification.body.error.code, 'data/invalid-message');
+
+      const validFriendMessageNotification = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_message',
+            title: 'New message',
+            message: '  Hello Bob  ',
+            chatId: friendship.doc.id,
+            senderId: charlie.user.uid,
+            read: true,
+            createdAt: 10,
+          },
+        },
+      });
+      assert.equal(validFriendMessageNotification.doc.recipientId, bob.user.uid);
+      assert.equal(validFriendMessageNotification.doc.chatId, friendship.doc.id);
+      assert.equal(validFriendMessageNotification.doc.senderId, alice.user.uid);
+      assert.equal(validFriendMessageNotification.doc.read, false);
+      assert.equal(validFriendMessageNotification.doc.message, 'Hello Bob');
+
       const project = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
-        body: { collection: 'projects', data: { title: 'Booking', status: 'active', createdAt: 6 } },
+        body: { collection: 'projects', data: { title: 'Booking', status: 'active', createdAt: 11 } },
       });
       const stoppedProject = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
-        body: { collection: 'projects', data: { title: 'Stopped Booking', status: 'stopped', createdAt: 7 } },
+        body: { collection: 'projects', data: { title: 'Stopped Booking', status: 'stopped', createdAt: 12 } },
       });
 
       const projectNotification = await fetchJson(`${baseUrl}/api/data/add`, {
@@ -793,7 +899,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
             title: 'Booking cancelled',
             projectId: project.doc.id,
             read: true,
-            createdAt: 8,
+            createdAt: 13,
           },
         },
       });
@@ -811,7 +917,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
             title: 'Forged booking',
             projectId: project.doc.id,
             read: false,
-            createdAt: 9,
+            createdAt: 14,
           },
         },
       });
@@ -829,7 +935,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
             title: 'Locked booking',
             projectId: stoppedProject.doc.id,
             read: false,
-            createdAt: 10,
+            createdAt: 15,
           },
         },
       });

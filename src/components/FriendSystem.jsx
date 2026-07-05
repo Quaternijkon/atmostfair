@@ -18,6 +18,7 @@ export default function FriendSystem({ user, onClose, t }) {
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const currentUserName = () => user.displayName || user.email?.split('@')[0] || t('userLabel');
 
     // 1. Fetch Friends & Requests
     useEffect(() => {
@@ -176,8 +177,15 @@ export default function FriendSystem({ user, onClose, t }) {
         setChatInput('');
         
         await addDoc(collection(db, 'friend_messages'), messageData);
-        
-        // Notify if offline? (Optional)
+        await addDoc(collection(db, 'notifications'), {
+            recipientId: activeChatFriend.otherId,
+            type: 'friend_message',
+            title: t('friendMessageTitle', { name: currentUserName() }),
+            message: messageData.text,
+            chatId: messageData.chatId,
+            read: false,
+            createdAt: nowMs()
+        });
     };
 
     // --- Render ---

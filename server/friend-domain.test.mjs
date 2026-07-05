@@ -179,8 +179,23 @@ test('friend system routes relationship writes through authorization guards', as
     /await addDoc\(collection\(db, 'friend_messages'\), messageData\);/,
     'sendMessage should write only the guarded message payload',
   );
+  assert.match(
+    friendSystem,
+    /await addDoc\(collection\(db, 'notifications'\),[\s\S]{0,500}type:\s*'friend_message'/,
+    'sendMessage should create a notification for the recipient',
+  );
+  assert.match(
+    friendSystem,
+    /recipientId:\s*activeChatFriend\.otherId/,
+    'friend message notifications should target the active chat recipient',
+  );
+  assert.match(
+    friendSystem,
+    /title:\s*t\('friendMessageTitle'[\s\S]{0,120}currentUserName\(\)/,
+    'friend message notifications should use localized sender-aware titles',
+  );
 
-  for (const key of ['friendActionUnavailable']) {
+  for (const key of ['friendActionUnavailable', 'friendMessageTitle']) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }

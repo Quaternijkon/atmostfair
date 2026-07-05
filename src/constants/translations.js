@@ -450,6 +450,7 @@ export const TRANSLATIONS = {
     friendSearchIndexPending: "Search index is building. Try email search for now.",
     friendRequestTitle: "New friend request",
     friendRequestMessage: "{name} wants to be friends.",
+    friendMessageTitle: "{name} sent a message",
     adminCancelled: "Admin cancelled",
     // Games
     gameHub: "Game Hub",
@@ -960,6 +961,7 @@ export const TRANSLATIONS = {
     friendSearchIndexPending: "搜索索引正在建立，请先尝试邮箱搜索。",
     friendRequestTitle: "新的好友请求",
     friendRequestMessage: "{name} 想添加你为好友。",
+    friendMessageTitle: "{name} 发来一条消息",
     adminCancelled: "管理员取消",
     // Games
     gameHub: "小游戏大厅",
