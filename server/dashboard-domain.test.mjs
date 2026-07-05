@@ -176,3 +176,13 @@ test('dashboard and project detail expose localized archive filter controls', as
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
 });
+
+test('dashboard create form blocks whitespace and overlong project titles before submitting', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.match(dashboard, /PROJECT_TITLE_MAX_LENGTH/, 'Dashboard should share the project title limit with the domain helper');
+  assert.match(dashboard, /const canCreateProject = Boolean\(selectedModule && newTitle\.trim\(\) && newTitle\.length <= PROJECT_TITLE_MAX_LENGTH\);/, 'Dashboard should derive a stable create-enabled state');
+  assert.match(dashboard, /if \(!canCreateProject\) return;/, 'Dashboard should keep the create form open when input is invalid');
+  assert.match(dashboard, /maxLength=\{PROJECT_TITLE_MAX_LENGTH\}/, 'Dashboard title input should enforce the same max length in the UI');
+  assert.match(dashboard, /disabled=\{!canCreateProject\}/, 'Dashboard create button should be disabled until the project shell is valid');
+});

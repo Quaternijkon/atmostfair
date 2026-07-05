@@ -8,6 +8,7 @@ import {
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
 } from '../lib/dashboardDomain';
+import { PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
   return (
@@ -109,9 +110,11 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     });
   }, [projects, searchTerm, statusFilter, sortKey, currentCategory]);
 
+  const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
+
   const handleCreateSubmit = (e) => {
     e.preventDefault();
-    if (!selectedModule) return;
+    if (!canCreateProject) return;
     onCreateProject(newTitle, selectedModule.id, creatorName, newPassword);
     setShowCreate(false); 
     setNewTitle(''); 
@@ -299,7 +302,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
                  <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
                     <label className="app-label">{t('projTitle')}</label>
-                    <input type="text" placeholder={t('projTitlePlaceholder')} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="app-input" required />
+                    <input type="text" placeholder={t('projTitlePlaceholder')} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="app-input" required maxLength={PROJECT_TITLE_MAX_LENGTH} />
                   </div>
                   <div className="w-full md:w-1/3">
                     <label className="app-label">{t('creatorName')}</label>
@@ -311,7 +314,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
                     <label className="app-label">{t('accessPass')}</label>
                     <input type="text" placeholder={t('leaveEmpty')} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="app-input" />
                   </div>
-                  <button type="submit" className={`app-button w-full px-8 text-white hover:shadow-elevation-2 md:w-auto ${currentCategory.bg}`}>
+                  <button type="submit" disabled={!canCreateProject} className={`app-button w-full px-8 text-white hover:shadow-elevation-2 disabled:cursor-not-allowed disabled:opacity-45 md:w-auto ${currentCategory.bg}`}>
                     {t('createBtn', { label: selectedModule.label })}
                   </button>
                 </div>

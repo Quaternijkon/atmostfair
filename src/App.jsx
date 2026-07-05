@@ -17,6 +17,7 @@ import {
   createGatherFieldData,
   createGatherSubmissionData,
   createProjectCascadeDeleteOperations,
+  createProjectCreateData,
   createProjectDuplicateChildOperations,
   createProjectDuplicateData,
   createQueueJoinData,
@@ -513,10 +514,11 @@ function AppContent() {
   };
 
   const handleCreateProject = async (title, type, creatorName, password) => {
-    if (!user || !title.trim()) return;
+    const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
+    if (!projectData) return;
     try {
-      const projectRef = await addDoc(collection(db, 'projects'), { title, type, creatorId: user.uid, creatorName: creatorName || currentUserName(), password: password||'', status: 'active', createdAt: nowMs(), winners: [] });
-      void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: title, actorName: creatorName });
+      const projectRef = await addDoc(collection(db, 'projects'), projectData);
+      void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: projectData.title, actorName: projectData.creatorName });
     } catch (e) { console.error(e); }
   };
 

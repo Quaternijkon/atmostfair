@@ -15,6 +15,9 @@ export const PROJECT_CASCADE_COLLECTIONS = [
   { name: 'project_activities', field: 'projectId' },
 ];
 
+export const PROJECT_TITLE_MAX_LENGTH = 120;
+
+const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
 const REPEAT_SEED_MODULUS = 2147483647;
@@ -556,6 +559,22 @@ export function createProjectStatusPatch(project, user, isAdmin) {
   if (project.status === 'finished') return null;
   return {
     status: project.status === 'active' ? 'stopped' : 'active',
+  };
+}
+
+export function createProjectCreateData(title, type, user, creatorName, password, createdAt) {
+  if (!user?.uid || !PROJECT_TYPES.has(type)) return null;
+  const cleanTitle = String(title || '').trim();
+  if (!cleanTitle || cleanTitle.length > PROJECT_TITLE_MAX_LENGTH) return null;
+  return {
+    title: cleanTitle,
+    type,
+    creatorId: user.uid,
+    creatorName: cleanName(creatorName, user),
+    password: String(password || '').trim(),
+    status: 'active',
+    createdAt,
+    winners: [],
   };
 }
 

@@ -9,6 +9,7 @@ import {
   createBookingReleasePatch,
   createBookingWaitlistPatch,
   createProjectCascadeDeleteOperations,
+  createProjectCreateData,
   createGatherFieldData,
   createQueueJoinData,
   createQueueResultData,
@@ -695,6 +696,44 @@ test('single vote mode moves the user vote inside one project only', () => {
   assert.deepEqual(createVoteToggleOperations(items, items[1], { uid: '' }, { mode: 'single' }), []);
 });
 
+test('project creation data normalizes valid input and rejects invalid project shells', () => {
+  assert.equal(typeof createProjectCreateData, 'function');
+
+  const user = { uid: 'owner-1', displayName: 'Ada' };
+  assert.deepEqual(
+    createProjectCreateData('  Weekly Lunch  ', 'vote', user, '  Ada Lovelace  ', '  team only  ', 6000),
+    {
+      title: 'Weekly Lunch',
+      type: 'vote',
+      creatorId: 'owner-1',
+      creatorName: 'Ada Lovelace',
+      password: 'team only',
+      status: 'active',
+      createdAt: 6000,
+      winners: [],
+    },
+  );
+
+  assert.deepEqual(
+    createProjectCreateData('Queue Day', 'queue', { uid: 'owner-2', email: 'grace@example.com' }, '', '', 6001),
+    {
+      title: 'Queue Day',
+      type: 'queue',
+      creatorId: 'owner-2',
+      creatorName: 'grace',
+      password: '',
+      status: 'active',
+      createdAt: 6001,
+      winners: [],
+    },
+  );
+
+  assert.equal(createProjectCreateData('   ', 'vote', user, 'Ada', '', 6002), null, 'blank titles should not create projects');
+  assert.equal(createProjectCreateData('Valid', 'unknown', user, 'Ada', '', 6003), null, 'unknown project types should not create projects');
+  assert.equal(createProjectCreateData('Valid', 'vote', { uid: '' }, 'Ada', '', 6004), null, 'missing users should not create projects');
+  assert.equal(createProjectCreateData('A'.repeat(121), 'vote', user, 'Ada', '', 6005), null, 'overlong titles should not create projects');
+});
+
 test('project status toggle guard allows owner and admin but blocks other users', () => {
   const createProjectStatusPatch = projectDomain.createProjectStatusPatch;
   assert.equal(typeof createProjectStatusPatch, 'function');
@@ -851,6 +890,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createVoteToggleOperations',
     'createClaimToggleData',
     'createProjectStatusPatch',
+    'createProjectCreateData',
     'createProjectDuplicateData',
     'createProjectDuplicateChildOperations',
     'createProjectCascadeDeleteOperations',
