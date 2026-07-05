@@ -738,6 +738,36 @@ test('announcement read tracking happens from explicit open actions instead of r
   );
 });
 
+test('announcement lifecycle management is visible and time-window aware', async () => {
+  const files = {
+    announcements: await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8'),
+    admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'createAnnouncement',
+    'announcementTitle',
+    'announcementContent',
+    'announcementType',
+    'announcementTypeInfo',
+    'announcementTypeWarning',
+    'announcementStartsAt',
+    'announcementEndsAt',
+    'activeAnnouncement',
+    'noAnnouncements',
+  ]) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.announcements, /isAnnouncementVisible/, 'Announcement launcher should filter by active state and time window');
+  assert.match(files.announcements, /\.filter\(isAnnouncementVisible\)/, 'Announcement list should only render currently visible announcements');
+  assert.match(files.admin, /addDoc\(collection\(db,\s*'announcements'\)/, 'Admin dashboard should create announcements');
+  assert.match(files.admin, /updateDoc\(doc\(db,\s*'announcements'/, 'Admin dashboard should update announcement publish state');
+  assert.match(files.admin, /deleteDoc\(doc\(db,\s*'announcements'/, 'Admin dashboard should delete announcements');
+  assert.match(files.admin, /type="datetime-local"/, 'Admin dashboard should support announcement start/end windows');
+});
+
 test('auth and user fallbacks avoid visible English fragments', async () => {
   const files = {
     login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),

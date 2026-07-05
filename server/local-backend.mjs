@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { createAuthService } from './auth-service.mjs';
 import { createDataStore } from './data-store.mjs';
+import {
+  isAnnouncementVisible,
+  normalizeAnnouncementCreateData,
+  normalizeAnnouncementUpdateData,
+} from '../src/lib/announcementDomain.js';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
@@ -167,13 +172,13 @@ async function handleApi({ request, response, url, auth, store, now }) {
   if (url.pathname.startsWith('/api/data/')) {
     const user = await requireUser(request, auth);
     const body = await readJson(request);
-    return handleDataApi({ request, response, url, store, body, user });
+    return handleDataApi({ request, response, url, store, body, user, now });
   }
 
   return sendJson(response, 404, { error: { code: 'not-found', message: 'API route not found.' } });
 }
 
-async function handleDataApi({ request, response, url, store, body, user }) {
+async function handleDataApi({ request, response, url, store, body, user, now }) {
   if (request.method !== 'POST') {
     return sendJson(response, 405, { error: { code: 'method-not-allowed', message: 'Method not allowed.' } });
   }
@@ -182,7 +187,7 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const query = body.query || {};
     const rawDocs = await store.list(collection, query);
-    const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs, query });
+    const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs, query, now });
     return sendJson(response, 200, { docs });
   }
 
@@ -190,48 +195,48 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const rawDoc = await store.get(collection, id);
-    const doc = await toReadableDataDoc({ store, user, collection, doc: rawDoc });
+    const doc = await toReadableDataDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/add') {
     const collection = validateDataCollection(body.collection);
-    const data = await authorizeDataOperation({ store, user, type: 'add', collection, data: body.data || {} });
+    const data = await authorizeDataOperation({ store, user, type: 'add', collection, data: body.data || {}, now });
     const rawDoc = await store.add(collection, data);
-    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/set') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    const data = await authorizeDataOperation({ store, user, type: 'set', collection, id, data: body.data || {} });
+    const data = await authorizeDataOperation({ store, user, type: 'set', collection, id, data: body.data || {}, now });
     const accessLifecycle = collection === 'projects'
       ? await getProjectAccessLifecycleChange({ store, type: 'set', id, data, options: body.options || {} })
       : null;
     const rawDoc = await store.set(collection, id, data, body.options || {});
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
-    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/update') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    const data = await authorizeDataOperation({ store, user, type: 'update', collection, id, data: body.data || {} });
+    const data = await authorizeDataOperation({ store, user, type: 'update', collection, id, data: body.data || {}, now });
     const accessLifecycle = collection === 'projects'
       ? await getProjectAccessLifecycleChange({ store, type: 'update', id, data })
       : null;
     const rawDoc = await store.update(collection, id, data);
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
-    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/delete') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    await authorizeDataOperation({ store, user, type: 'delete', collection, id });
+    await authorizeDataOperation({ store, user, type: 'delete', collection, id, now });
     const accessLifecycle = collection === 'projects' ? { projectId: id, revoke: true } : null;
     await store.delete(collection, id);
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
@@ -240,11 +245,11 @@ async function handleDataApi({ request, response, url, store, body, user }) {
 
   if (url.pathname === '/api/data/batch') {
     const operations = validateDataBatchOperations(body.operations || []);
-    const authorizedOperations = await authorizeDataOperations({ store, user, operations });
+    const authorizedOperations = await authorizeDataOperations({ store, user, operations, now });
     const accessLifecycleChanges = await getProjectAccessLifecycleChanges({ store, operations: authorizedOperations });
     const rawResults = await store.batch(authorizedOperations);
     await applyProjectAccessLifecycleChanges({ store, changes: accessLifecycleChanges });
-    const results = await toReadableDataBatchResults({ store, user, operations: authorizedOperations, results: rawResults });
+    const results = await toReadableDataBatchResults({ store, user, operations: authorizedOperations, results: rawResults, now });
     return sendJson(response, 200, { results });
   }
 
@@ -293,7 +298,7 @@ function validateDataBatchOperations(operations) {
   return operations;
 }
 
-async function authorizeDataOperations({ store, user, operations }) {
+async function authorizeDataOperations({ store, user, operations, now }) {
   const authorizedOperations = [];
   const context = createAuthorizationContext();
   for (const operation of operations) {
@@ -305,6 +310,7 @@ async function authorizeDataOperations({ store, user, operations }) {
       collection: operation.collection,
       id: operation.id,
       data: operation.data || {},
+      now,
     });
     const authorizedOperation = data === undefined ? operation : { ...operation, data };
     authorizedOperations.push(authorizedOperation);
@@ -313,13 +319,13 @@ async function authorizeDataOperations({ store, user, operations }) {
   return authorizedOperations;
 }
 
-async function authorizeDataOperation({ store, user, context, type, collection, id, data }) {
+async function authorizeDataOperation({ store, user, context, type, collection, id, data, now }) {
   if (collection === 'users') {
     return authorizeUserOperation({ store, user, type, id, data });
   }
 
   if (collection === 'announcements') {
-    return authorizeAnnouncementOperation({ store, user, type, id, data });
+    return authorizeAnnouncementOperation({ store, user, type, id, data, now });
   }
 
   if (collection === 'notifications') {
@@ -363,17 +369,32 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   });
 }
 
-async function authorizeAnnouncementOperation({ store, user, type, id, data }) {
+async function authorizeAnnouncementOperation({ store, user, type, id, data, now }) {
   if (!isAdminUser(user)) forbidden();
-  if (type === 'add') return data || {};
+  if (type === 'add') return normalizeAnnouncementData(data, now);
 
   const existing = await store.get('announcements', id);
   if (!existing) {
-    if (type === 'set') return data || {};
+    if (type === 'set') return normalizeAnnouncementData(data, now);
     throwDataError(404, 'data/not-found', 'Announcement not found.');
   }
 
-  return type === 'delete' ? undefined : data || {};
+  if (type === 'delete') return undefined;
+  if (type === 'set') return normalizeAnnouncementData(data, now);
+
+  const patch = normalizeAnnouncementUpdateData(data || {}, existing);
+  if (!patch) throwInvalidAnnouncement();
+  return patch;
+}
+
+function normalizeAnnouncementData(data, now) {
+  const normalized = normalizeAnnouncementCreateData(data || {}, typeof now === 'function' ? now() : Date.now());
+  if (!normalized) throwInvalidAnnouncement();
+  return normalized;
+}
+
+function throwInvalidAnnouncement() {
+  throwDataError(400, 'data/invalid-announcement', 'Announcement payload is invalid.');
 }
 
 async function authorizeUserOperation({ store, user, type, id, data }) {
@@ -1494,12 +1515,12 @@ function allowOnlyFields(data, fields) {
   return patch;
 }
 
-async function filterReadableDocs({ store, user, collection, docs, query }) {
+async function filterReadableDocs({ store, user, collection, docs, query, now }) {
   if (!collectionNeedsReadFiltering(collection)) return docs;
 
   const visible = [];
   for (const doc of docs || []) {
-    const readable = await toReadableDataDoc({ store, user, collection, doc, query });
+    const readable = await toReadableDataDoc({ store, user, collection, doc, query, now });
     if (readable) visible.push(readable);
   }
   return visible;
@@ -1507,23 +1528,24 @@ async function filterReadableDocs({ store, user, collection, docs, query }) {
 
 function collectionNeedsReadFiltering(collection) {
   return collection === 'projects'
+    || collection === 'announcements'
     || PROJECT_CHILD_COLLECTION_FIELDS.has(collection)
     || ['notifications', 'friendships', 'friend_messages'].includes(collection);
 }
 
-async function toReadableDataDoc({ store, user, collection, doc, query }) {
+async function toReadableDataDoc({ store, user, collection, doc, query, now }) {
   if (!doc) return null;
   if (collection === 'projects') return toReadableProjectDoc({ store, user, project: doc });
-  if (await canReadDataDoc({ store, user, collection, doc, query })) return doc;
+  if (await canReadDataDoc({ store, user, collection, doc, query, now })) return doc;
   return null;
 }
 
-async function toDataWriteResponseDoc({ store, user, collection, doc }) {
-  if (collection === 'projects') return toReadableDataDoc({ store, user, collection, doc });
+async function toDataWriteResponseDoc({ store, user, collection, doc, now }) {
+  if (collection === 'projects') return toReadableDataDoc({ store, user, collection, doc, now });
   return doc;
 }
 
-async function toReadableDataBatchResults({ store, user, operations, results }) {
+async function toReadableDataBatchResults({ store, user, operations, results, now }) {
   const readableResults = [];
   for (let index = 0; index < (results || []).length; index += 1) {
     const operation = operations[index];
@@ -1531,7 +1553,7 @@ async function toReadableDataBatchResults({ store, user, operations, results }) 
     if (!operation || operation.type === 'delete') {
       readableResults.push(result);
     } else if (operation.collection === 'projects') {
-      readableResults.push(await toReadableDataDoc({ store, user, collection: operation.collection, doc: result }));
+      readableResults.push(await toReadableDataDoc({ store, user, collection: operation.collection, doc: result, now }));
     } else {
       readableResults.push(result);
     }
@@ -1539,9 +1561,10 @@ async function toReadableDataBatchResults({ store, user, operations, results }) 
   return readableResults;
 }
 
-async function canReadDataDoc({ store, user, collection, doc, query }) {
+async function canReadDataDoc({ store, user, collection, doc, query, now }) {
   if (!doc) return true;
   if (isAdminUser(user)) return true;
+  if (collection === 'announcements') return isAnnouncementVisible(doc, typeof now === 'function' ? now() : Date.now());
   const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
   if (projectField) {
     return canReadProjectById({ store, user, projectId: doc[projectField] });

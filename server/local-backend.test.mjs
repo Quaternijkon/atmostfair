@@ -774,15 +774,62 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       assert.equal(userAdd.body.error.code, 'data/forbidden');
       assert.deepEqual(await store.list('announcements'), []);
 
+      for (const data of [
+        { title: '   ', content: 'No title', createdAt: 1 },
+        { title: 'No content', content: '   ', createdAt: 1 },
+        { title: 'Bad type', content: 'Unsupported type', type: 'critical', createdAt: 1 },
+        { title: 'Bad active', content: 'Active must be boolean', active: 'yes', createdAt: 1 },
+        { title: 'Bad window', content: 'Ends before it starts', startsAt: 3000, endsAt: 2000, createdAt: 1 },
+        { title: 'Long title', content: 'Too long', createdAt: 1 },
+      ].map((data) => (data.title === 'Long title' ? { ...data, title: 'x'.repeat(121) } : data))) {
+        const invalid = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+          method: 'POST',
+          token: admin.token,
+          body: { collection: 'announcements', data },
+        });
+        assert.equal(invalid.status, 400);
+        assert.equal(invalid.body.error.code, 'data/invalid-announcement');
+      }
+
       const adminAdd = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: admin.token,
         body: {
           collection: 'announcements',
-          data: { title: 'Release', content: 'Admin authored', createdAt: 2 },
+          data: { title: '  Release  ', content: '  Admin authored  ', type: 'warning', createdAt: 2 },
         },
       });
       assert.equal(adminAdd.doc.title, 'Release');
+      assert.equal(adminAdd.doc.content, 'Admin authored');
+      assert.equal(adminAdd.doc.type, 'warning');
+      assert.equal(adminAdd.doc.active, true);
+      assert.equal(adminAdd.doc.startsAt, null);
+      assert.equal(adminAdd.doc.endsAt, null);
+
+      const hiddenInactive = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'announcements',
+          data: { title: 'Inactive', content: 'Hidden inactive', active: false, createdAt: 5 },
+        },
+      });
+      const hiddenFuture = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'announcements',
+          data: { title: 'Future', content: 'Hidden future', active: true, startsAt: 1700000100000, createdAt: 6 },
+        },
+      });
+      const hiddenExpired = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'announcements',
+          data: { title: 'Expired', content: 'Hidden expired', active: true, endsAt: 1699999999999, createdAt: 7 },
+        },
+      });
 
       const userUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
@@ -833,6 +880,36 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       });
       assert.deepEqual(readable.docs.map((entry) => entry.id), [adminAdd.doc.id]);
 
+      const hiddenGet = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: user.token,
+        body: { collection: 'announcements', id: hiddenInactive.doc.id },
+      });
+      assert.equal(hiddenGet.doc, null);
+
+      const adminReadable = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: admin.token,
+        body: { collection: 'announcements', query: {} },
+      });
+      assert.deepEqual(
+        adminReadable.docs.map((entry) => entry.title).sort(),
+        ['Expired', 'Future', 'Inactive', 'Release'],
+      );
+
+      const invalidUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'announcements',
+          id: adminAdd.doc.id,
+          data: { title: '   ' },
+        },
+      });
+      assert.equal(invalidUpdate.status, 400);
+      assert.equal(invalidUpdate.body.error.code, 'data/invalid-announcement');
+      assert.equal((await store.get('announcements', adminAdd.doc.id)).title, 'Release');
+
       const adminDelete = await fetchJson(`${baseUrl}/api/data/delete`, {
         method: 'POST',
         token: admin.token,
@@ -840,6 +917,15 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       });
       assert.equal(adminDelete.ok, true);
       assert.equal(await store.get('announcements', adminAdd.doc.id), null);
+
+      for (const id of [hiddenInactive.doc.id, hiddenFuture.doc.id, hiddenExpired.doc.id]) {
+        await fetchJson(`${baseUrl}/api/data/delete`, {
+          method: 'POST',
+          token: admin.token,
+          body: { collection: 'announcements', id },
+        });
+      }
+      assert.deepEqual(await store.list('announcements'), []);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

@@ -1,15 +1,63 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Database, Trash2 } from './Icons';
-import { collection, deleteDoc, doc, getDocs, db } from '../lib/localData';
+import { Shield, Database, Trash2, Flag, Plus, AlertTriangle } from './Icons';
+import { collection, addDoc, deleteDoc, doc, getDocs, updateDoc, db } from '../lib/localData';
+import {
+  ANNOUNCEMENT_CONTENT_MAX_LENGTH,
+  ANNOUNCEMENT_TITLE_MAX_LENGTH,
+  ANNOUNCEMENT_TYPES,
+  isAnnouncementVisible,
+  normalizeAnnouncementCreateData,
+  normalizeAnnouncementUpdateData,
+} from '../lib/announcementDomain';
 import { createProjectOrphanCleanupPlan } from '../lib/projectDomain';
 import { formatDate } from '../lib/locale';
 import { useUI } from './UIContext';
 
 const ADMIN_ORPHAN_REMOTE_COLLECTIONS = ['project_chats', 'game_rooms', 'notifications', 'project_activities'];
+const EMPTY_ANNOUNCEMENT_FORM = {
+  title: '',
+  content: '',
+  type: 'info',
+  active: true,
+  startsAt: '',
+  endsAt: '',
+};
+
+async function readAnnouncements() {
+  const snapshot = await getDocs(collection(db, 'announcements'));
+  return snapshot.docs
+    .map((entry) => ({ id: entry.id, ...entry.data() }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function readAnnouncementsSnapshot() {
+  return {
+    docs: await readAnnouncements(),
+    timestamp: Date.now(),
+  };
+}
+
+function timestampFromDateTimeLocal(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+}
+
+function createAnnouncementFormData(form, now = Date.now()) {
+  return normalizeAnnouncementCreateData({
+    ...form,
+    startsAt: timestampFromDateTimeLocal(form.startsAt),
+    endsAt: timestampFromDateTimeLocal(form.endsAt),
+    createdAt: now,
+  });
+}
 
 export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, onDeleteProject, onClose, t }) {
   const { confirm, showToast } = useUI();
   const [remoteProjectDocs, setRemoteProjectDocs] = useState({});
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementNow, setAnnouncementNow] = useState(null);
+  const [announcementForm, setAnnouncementForm] = useState(EMPTY_ANNOUNCEMENT_FORM);
 
   useEffect(() => {
     let active = true;
@@ -19,7 +67,12 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
           const snapshot = await getDocs(collection(db, collectionName));
           return [collectionName, snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))];
         }));
-        if (active) setRemoteProjectDocs(Object.fromEntries(entries));
+        const announcementSnapshot = await readAnnouncementsSnapshot();
+        if (active) {
+          setRemoteProjectDocs(Object.fromEntries(entries));
+          setAnnouncements(announcementSnapshot.docs);
+          setAnnouncementNow(announcementSnapshot.timestamp);
+        }
       } catch (error) {
         console.error('Error loading admin orphan collections', error);
       }
@@ -62,6 +115,58 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   };
 
   const hasOrphans = orphanPlan.operations.length > 0;
+  const updateAnnouncementForm = (patch) => setAnnouncementForm((current) => ({ ...current, ...patch }));
+
+  const refreshAnnouncements = async () => {
+    const announcementSnapshot = await readAnnouncementsSnapshot();
+    setAnnouncements(announcementSnapshot.docs);
+    setAnnouncementNow(announcementSnapshot.timestamp);
+  };
+
+  const handleCreateAnnouncement = async (event) => {
+    event.preventDefault();
+    const data = createAnnouncementFormData(announcementForm);
+    if (!data) {
+      showToast(t('announcementInvalid'), 'error');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'announcements'), data);
+      setAnnouncementForm(EMPTY_ANNOUNCEMENT_FORM);
+      await refreshAnnouncements();
+      showToast(t('announcementCreated'), 'success');
+    } catch (error) {
+      showToast(t('errorWithMessage', { title: t('createAnnouncement'), message: error.message }), 'error');
+    }
+  };
+
+  const toggleAnnouncement = async (announcement) => {
+    const patch = normalizeAnnouncementUpdateData({ active: !announcement.active }, announcement);
+    if (!patch) return;
+    try {
+      await updateDoc(doc(db, 'announcements', announcement.id), patch);
+      await refreshAnnouncements();
+      showToast(t('announcementUpdated'), 'success');
+    } catch (error) {
+      showToast(t('errorWithMessage', { title: t('announcements'), message: error.message }), 'error');
+    }
+  };
+
+  const deleteAnnouncement = (announcement) => {
+    confirm({
+      title: t('delete'),
+      message: t('announcementDeleteConfirm', { title: announcement.title }),
+      confirmText: t('delete'),
+      cancelText: t('cancel'),
+      type: 'destructive',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'announcements', announcement.id));
+        await refreshAnnouncements();
+        showToast(t('announcementDeleted'), 'success');
+      },
+    });
+  };
 
   const cleanOrphans = async () => {
     confirm({
@@ -140,6 +245,145 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
           <div className="text-3xl font-medium">{rouletteParticipants.length}</div>
         </div>
       </div>
+
+      <section className="app-card mb-8 p-5 sm:p-6" aria-label={t('announcements')}>
+        <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="flex items-center gap-2 text-xl font-medium text-m3-on-surface">
+              <Flag className="h-5 w-5 text-google-yellow" />
+              {t('announcements')}
+            </h2>
+            <p className="mt-1 text-sm text-m3-on-surface-variant">{t('announcementAdminDesc')}</p>
+          </div>
+          <span className="app-chip app-chip-blue">{announcements.length}</span>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+          <form onSubmit={handleCreateAnnouncement} className="grid gap-3">
+            <div>
+              <label htmlFor="announcement-title" className="app-label">{t('announcementTitle')}</label>
+              <input
+                id="announcement-title"
+                type="text"
+                value={announcementForm.title}
+                onChange={(event) => updateAnnouncementForm({ title: event.target.value })}
+                className="app-input"
+                maxLength={ANNOUNCEMENT_TITLE_MAX_LENGTH}
+              />
+            </div>
+            <div>
+              <label htmlFor="announcement-content" className="app-label">{t('announcementContent')}</label>
+              <textarea
+                id="announcement-content"
+                value={announcementForm.content}
+                onChange={(event) => updateAnnouncementForm({ content: event.target.value })}
+                className="app-input min-h-[104px] resize-y"
+                maxLength={ANNOUNCEMENT_CONTENT_MAX_LENGTH}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="announcement-type" className="app-label">{t('announcementType')}</label>
+                <select
+                  id="announcement-type"
+                  value={announcementForm.type}
+                  onChange={(event) => updateAnnouncementForm({ type: event.target.value })}
+                  className="app-input"
+                >
+                  {ANNOUNCEMENT_TYPES.map((type) => (
+                    <option key={type} value={type}>{t(type === 'warning' ? 'announcementTypeWarning' : 'announcementTypeInfo')}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex min-h-11 items-center gap-2 self-end rounded-xl border border-m3-outline-variant/45 px-3 text-sm text-m3-on-surface">
+                <input
+                  type="checkbox"
+                  checked={announcementForm.active}
+                  onChange={(event) => updateAnnouncementForm({ active: event.target.checked })}
+                  className="h-4 w-4 accent-google-blue"
+                />
+                {t('activeAnnouncement')}
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="announcement-starts" className="app-label">{t('announcementStartsAt')}</label>
+                <input
+                  id="announcement-starts"
+                  type="datetime-local"
+                  value={announcementForm.startsAt}
+                  onChange={(event) => updateAnnouncementForm({ startsAt: event.target.value })}
+                  className="app-input"
+                />
+              </div>
+              <div>
+                <label htmlFor="announcement-ends" className="app-label">{t('announcementEndsAt')}</label>
+                <input
+                  id="announcement-ends"
+                  type="datetime-local"
+                  value={announcementForm.endsAt}
+                  onChange={(event) => updateAnnouncementForm({ endsAt: event.target.value })}
+                  className="app-input"
+                />
+              </div>
+            </div>
+            <button type="submit" className="app-button-primary justify-center">
+              <Plus className="h-4 w-4" />
+              {t('createAnnouncement')}
+            </button>
+          </form>
+
+          <div className="min-h-[220px] overflow-hidden rounded-xl border border-m3-outline-variant/35">
+            {announcements.length === 0 ? (
+              <div className="flex h-full min-h-[220px] items-center justify-center p-6 text-center text-sm text-m3-on-surface-variant">
+                {t('noAnnouncements')}
+              </div>
+            ) : (
+              <div className="max-h-[380px] divide-y divide-m3-outline-variant/20 overflow-y-auto">
+                {announcements.map((announcement) => {
+                  const visibleNow = announcementNow !== null && isAnnouncementVisible(announcement, announcementNow);
+                  const statusKey = !announcement.active
+                    ? 'announcementInactive'
+                    : visibleNow
+                      ? 'announcementVisible'
+                      : announcementNow !== null && announcement.startsAt && announcementNow < announcement.startsAt
+                        ? 'announcementScheduled'
+                        : 'announcementExpired';
+                  return (
+                    <div key={announcement.id} className="p-4">
+                      <div className="mb-2 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {announcement.type === 'warning' && <AlertTriangle className="h-4 w-4 shrink-0 text-google-red" />}
+                            <h3 className="truncate text-sm font-medium text-m3-on-surface">{announcement.title}</h3>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-sm text-m3-on-surface-variant">{announcement.content}</p>
+                        </div>
+                        <span className={`app-chip shrink-0 py-0.5 ${visibleNow ? 'app-chip-green' : 'bg-m3-on-surface/10 text-m3-on-surface-variant'}`}>
+                          {t(statusKey)}
+                        </span>
+                      </div>
+                      <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-m3-on-surface-variant">
+                        <span>{t(announcement.type === 'warning' ? 'announcementTypeWarning' : 'announcementTypeInfo')}</span>
+                        {announcement.startsAt ? <span>{t('announcementStartsAt')}: {formatDate(announcement.startsAt, t)}</span> : null}
+                        {announcement.endsAt ? <span>{t('announcementEndsAt')}: {formatDate(announcement.endsAt, t)}</span> : null}
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => toggleAnnouncement(announcement)} className="app-button-quiet px-3 text-xs text-google-blue">
+                          {t(announcement.active ? 'unpublishAnnouncement' : 'publishAnnouncement')}
+                        </button>
+                        <button type="button" onClick={() => deleteAnnouncement(announcement)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={t('delete')}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Cleanup Section */}
       <div className="app-card relative mb-8 overflow-hidden border-google-red/20 p-6">

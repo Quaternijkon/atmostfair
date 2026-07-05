@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot, limit, db } from '../lib/localData';
+import { isAnnouncementVisible } from '../lib/announcementDomain';
 import { formatDate } from '../lib/locale';
 import { Flag, X, Info, AlertTriangle } from './Icons';
 
@@ -22,7 +23,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
         );
     
         const unsubscribe = onSnapshot(q, (snapshot) => {
-          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(isAnnouncementVisible);
           setAnnouncements(items);
         });
         return () => unsubscribe();
