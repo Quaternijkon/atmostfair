@@ -1,0 +1,185 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import test from 'node:test';
+
+import {
+  createProjectParticipantExport,
+  formatCsvCell,
+} from '../src/lib/exportDomain.js';
+import { TRANSLATIONS } from '../src/constants/translations.js';
+
+const root = process.cwd();
+
+const LABELS = {
+  book: 'Reserve',
+  exportAvailability: 'Availability',
+  exportBookedAt: 'Booked At',
+  exportBookedBy: 'Booked By',
+  exportClaimCount: 'Claim Count',
+  exportClaimants: 'Claimants',
+  exportFile: 'export',
+  exportJoinedAt: 'Joined At',
+  exportParticipants: 'Export participants',
+  exportQueueOrder: 'Queue Order',
+  exportSlotLabel: 'Slot',
+  maxClaims: 'Max People',
+  nameLabel: 'Name',
+  noExportData: 'No participant data to export',
+  queue: 'Queue',
+  startDate: 'Start Date',
+  endDate: 'End Date',
+  submittedAtCsv: 'Submitted At',
+  taskTitle: 'Task / Item',
+  valueLabel: 'Value (0-100)',
+};
+
+function t(key, params = {}) {
+  let value = LABELS[key] || key;
+  for (const [name, replacement] of Object.entries(params)) {
+    value = value.replace(`{${name}}`, replacement);
+  }
+  return value;
+}
+
+test('CSV cell formatting escapes delimiters, quotes, newlines, and empty values', () => {
+  assert.equal(formatCsvCell('plain'), 'plain');
+  assert.equal(formatCsvCell('a,b'), '"a,b"');
+  assert.equal(formatCsvCell('say "hi"'), '"say ""hi"""');
+  assert.equal(formatCsvCell('line\nbreak'), '"line\nbreak"');
+  assert.equal(formatCsvCell(null), '');
+  assert.equal(formatCsvCell(undefined), '');
+});
+
+test('participant export builds localized CSV for each participant workflow', () => {
+  const queueExport = createProjectParticipantExport({
+    id: 'p1',
+    title: 'Launch / Queue',
+    type: 'queue',
+  }, {
+    queueParticipants: [
+      { name: 'Ana, "A"', value: 7, queueOrder: 2, joinedAt: 1704164645000 },
+    ],
+  }, t);
+
+  assert.equal(queueExport.filename, 'Launch-Queue_queue_participants.csv');
+  assert.match(queueExport.csv, /^Name,Value \(0-100\),Queue Order,Joined At\n/);
+  assert.match(queueExport.csv, /"Ana, ""A""",7,2,2024-01-02T03:04:05.000Z/);
+
+  const bookingExport = createProjectParticipantExport({
+    id: 'p2',
+    title: 'Office Hours',
+    type: 'book',
+  }, {
+    bookingSlots: [
+      {
+        label: 'Morning',
+        start: '2024-05-01',
+        end: '2024-05-01',
+        bookerName: 'Bo',
+        bookedBy: 'u1',
+        bookedAt: 1714554000000,
+        bookingData: { Phone: '123', Note: 'needs, projector' },
+      },
+    ],
+  }, t);
+  assert.match(bookingExport.csv, /^Slot,Start Date,End Date,Name,Booked By,Booked At,Phone,Note\n/);
+  assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Bo,u1,2024-05-01T09:00:00.000Z,123,"needs, projector"/);
+
+  const scheduleExport = createProjectParticipantExport({
+    id: 'p3',
+    title: 'Planning',
+    type: 'schedule',
+  }, {
+    scheduleSubmissions: [
+      {
+        name: 'Chen',
+        availability: [
+          '2024-05-02',
+          '2024-05-03_morning',
+          { date: '2024-05-04', start: '09:00', end: '10:30' },
+        ],
+        submittedAt: 1714554000000,
+      },
+    ],
+  }, t);
+  assert.match(scheduleExport.csv, /^Name,Availability,Submitted At\n/);
+  assert.match(scheduleExport.csv, /Chen,2024-05-02; 2024-05-03_morning; 2024-05-04 09:00-10:30,2024-05-01T09:00:00.000Z/);
+
+  const gatherExport = createProjectParticipantExport({
+    id: 'p4',
+    title: '',
+    type: 'gather',
+  }, {
+    gatherFields: [{ id: 'topic', label: 'Topic' }],
+    gatherSubmissions: [
+      { name: 'Dora', data: { topic: 'CSV, edge' }, submittedAt: 1714554000000 },
+    ],
+  }, t);
+  assert.equal(gatherExport.filename, 'export_gather_participants.csv');
+  assert.match(gatherExport.csv, /^Name,Submitted At,Topic\n/);
+  assert.match(gatherExport.csv, /Dora,2024-05-01T09:00:00.000Z,"CSV, edge"/);
+
+  const claimExport = createProjectParticipantExport({
+    id: 'p5',
+    title: 'Setup',
+    type: 'claim',
+  }, {
+    claimItems: [
+      {
+        title: 'Bring badges',
+        maxClaims: 3,
+        claimants: [{ name: 'Eli' }, { name: 'Fay' }],
+      },
+    ],
+  }, t);
+  assert.match(claimExport.csv, /^Task \/ Item,Max People,Claim Count,Claimants\n/);
+  assert.match(claimExport.csv, /Bring badges,3,2,Eli; Fay/);
+});
+
+test('participant export returns null for unsupported or empty participant data', () => {
+  assert.equal(createProjectParticipantExport({ type: 'vote', title: 'Poll' }, {}, t), null);
+  assert.equal(createProjectParticipantExport({ type: 'queue', title: 'Queue' }, { queueParticipants: [] }, t), null);
+  assert.equal(createProjectParticipantExport({ type: 'book', title: 'Book' }, { bookingSlots: [{ label: 'Open' }] }, t), null);
+});
+
+test('participant export preserves zero timestamps instead of treating them as empty', () => {
+  const queueExport = createProjectParticipantExport({
+    id: 'p6',
+    title: 'Epoch',
+    type: 'queue',
+  }, {
+    queueParticipants: [
+      { name: 'Zero', value: 0, queueOrder: 1, joinedAt: 0 },
+    ],
+  }, t);
+
+  assert.match(queueExport.csv, /Zero,0,1,1970-01-01T00:00:00.000Z/);
+});
+
+test('project detail exposes owner/admin participant export without native dialogs', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.match(detail, /Download/, 'Project detail should use the download icon');
+  assert.match(detail, /createProjectParticipantExport/, 'Project detail should use the participant export domain');
+  assert.match(detail, /handleExportParticipants/, 'Project detail should wire an export click handler');
+  assert.match(detail, /hasAdminRights[\s\S]{0,1800}exportParticipants/, 'Export action should live in owner/admin controls');
+  assert.match(detail, /showToast\(t\('noExportData'\)/, 'No-data export attempts should use app toast feedback');
+  assert.doesNotMatch(detail, /\b(?:alert|prompt)\(/, 'Project detail export should not use native browser dialogs');
+
+  for (const key of [
+    'exportAvailability',
+    'exportBookedAt',
+    'exportBookedBy',
+    'exportClaimCount',
+    'exportClaimants',
+    'exportJoinedAt',
+    'exportParticipants',
+    'exportQueueOrder',
+    'exportSlotLabel',
+    'noExportData',
+  ]) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+});

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, Archive, ArrowLeft, Copy, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
+import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { getActivityMessageKey } from '../lib/activityDomain';
+import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
@@ -54,7 +55,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { confirm } = useUI();
+  const { confirm, showToast } = useUI();
   
   const [unlocked, setUnlocked] = useState(() => Boolean(location.state?.unlocked));
   const [inputPassword, setInputPassword] = useState('');
@@ -116,6 +117,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const isArchived = Boolean(project.archived);
   const isStopped = project.status === 'stopped';
   const isFinished = project.status === 'finished';
+  const canExportParticipants = hasAdminRights && supportsParticipantExport(project.type);
   const shortProjectId = project.id.slice(0, 8);
   const projectTypeLabel = {
     vote: t('voting'),
@@ -181,6 +183,32 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
     .filter((activity) => activity.projectId === project.id)
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  const handleExportParticipants = () => {
+    const exportData = createProjectParticipantExport(project, {
+      queueParticipants: projectQueueData,
+      bookingSlots: projectBookingSlots,
+      scheduleSubmissions: projectScheduleSubmissions,
+      gatherFields: projectGatherFields,
+      gatherSubmissions: projectGatherSubmissions,
+      claimItems: projectClaimItems,
+    }, t);
+
+    if (!exportData) {
+      showToast(t('noExportData'), 'info');
+      return;
+    }
+
+    const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = exportData.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="animate-fade-in pb-20">
       <div className="app-card mb-6 flex flex-col gap-5 p-5 md:flex-row md:items-center md:justify-between sm:p-6">
@@ -214,6 +242,11 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
 
            {hasAdminRights && (
              <div className="flex flex-wrap gap-2">
+               {canExportParticipants && (
+                 <button onClick={handleExportParticipants} className="app-button-quiet border border-m3-outline-variant/45" title={t('exportParticipants')}>
+                   <Download className="w-4 h-4" /> <span className="hidden lg:inline">{t('exportParticipants')}</span>
+                 </button>
+               )}
                <button onClick={handleDuplicateProject} className="app-button-quiet border border-m3-outline-variant/45">
                  <Copy className="w-4 h-4" /> <span className="hidden lg:inline">{t('duplicate')}</span>
                </button>
