@@ -108,7 +108,7 @@ function createBookingExport({ bookingSlots = [] }, t) {
       t('exportSlotLabel'),
       t('startDate'),
       t('endDate'),
-      t('exportBookingStatus'),
+      t('exportStatus'),
       t('nameLabel'),
       t('exportParticipantId'),
       t('exportBookedAt'),
@@ -184,7 +184,7 @@ function createGameExport({ gameRooms = [] }, t) {
     headers: [
       t('exportGameRoom'),
       t('exportGameType'),
-      t('exportBookingStatus'),
+      t('exportStatus'),
       t('exportWinner'),
       t('exportScore'),
       t('exportPlayerCount'),
