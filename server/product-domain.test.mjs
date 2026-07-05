@@ -9,6 +9,7 @@ import {
   createProjectCascadeDeleteOperations,
   createQueueJoinData,
   createTeamJoinMember,
+  createVoteToggleOperations,
   PROJECT_CASCADE_COLLECTIONS,
 } from '../src/lib/projectDomain.js';
 import * as projectDomain from '../src/lib/projectDomain.js';
@@ -186,6 +187,46 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
   });
 });
 
+test('vote toggle operations preserve multiple mode and toggle the selected option', () => {
+  const user = { uid: 'u2', displayName: 'Dorothy' };
+  const items = [
+    { id: 'vote-1', projectId: 'project-1', title: 'A', votes: ['u1'] },
+    { id: 'vote-2', projectId: 'project-1', title: 'B', votes: ['u2'] },
+  ];
+
+  assert.deepEqual(createVoteToggleOperations(items, items[0], user, { mode: 'multiple' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'addVote', uid: 'u2' },
+  ]);
+
+  assert.deepEqual(createVoteToggleOperations(items, items[1], user, { mode: 'multiple' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-2', action: 'removeVote', uid: 'u2' },
+  ]);
+
+  assert.deepEqual(createVoteToggleOperations(items, items[0], user, undefined), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'addVote', uid: 'u2' },
+  ]);
+});
+
+test('single vote mode moves the user vote inside one project only', () => {
+  const user = { uid: 'u2', displayName: 'Dorothy' };
+  const items = [
+    { id: 'vote-1', projectId: 'project-1', title: 'A', votes: ['u1', 'u2'] },
+    { id: 'vote-2', projectId: 'project-1', title: 'B', votes: [] },
+    { id: 'vote-3', projectId: 'other-project', title: 'C', votes: ['u2'] },
+  ];
+
+  assert.deepEqual(createVoteToggleOperations(items, items[1], user, { mode: 'single' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'removeVote', uid: 'u2' },
+    { type: 'update', collection: 'voting_items', id: 'vote-2', action: 'addVote', uid: 'u2' },
+  ]);
+
+  assert.deepEqual(createVoteToggleOperations(items, items[0], user, { mode: 'single' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'removeVote', uid: 'u2' },
+  ]);
+
+  assert.deepEqual(createVoteToggleOperations(items, items[1], { uid: '' }, { mode: 'single' }), []);
+});
+
 test('project status toggle guard allows owner and admin but blocks other users', () => {
   const createProjectStatusPatch = projectDomain.createProjectStatusPatch;
   assert.equal(typeof createProjectStatusPatch, 'function');
@@ -218,6 +259,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
     rouletteResult: { winner: 'winner' },
     bookingConfig: { mode: 'date', requiredFields: 'Name' },
     scheduleConfig: { start: '2026-07-05', end: '2026-07-07' },
+    votingConfig: { mode: 'single' },
   };
 
   const duplicate = createProjectDuplicateData(sourceProject, user, 'Ada Lovelace', 5000, ' (Copy)');
@@ -232,6 +274,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
     winners: [],
     bookingConfig: { mode: 'date', requiredFields: 'Name' },
     scheduleConfig: { start: '2026-07-05', end: '2026-07-07' },
+    votingConfig: { mode: 'single' },
   });
   assert.equal(duplicate.rouletteResult, undefined);
   assert.notEqual(duplicate.bookingConfig, sourceProject.bookingConfig);
@@ -332,6 +375,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createGatherSubmissionData',
     'createRouletteJoinData',
     'createScheduleSubmissionWrite',
+    'createVoteToggleOperations',
     'createClaimToggleData',
     'createProjectStatusPatch',
     'createProjectDuplicateData',
@@ -344,6 +388,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
 
   assert.match(app, /loadProjectCascadeDocs/, 'Project deletion should load project-owned docs before deleting');
   assert.doesNotMatch(app, /handleDeleteProject:\s*async\s*\(projectId\)\s*=>\s*\{\s*await deleteDoc\(doc\(db,\s*'projects'/, 'Project deletion should not delete only the project shell');
+  assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
+  assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
 });
 
 test('project detail exposes localized project duplication', async () => {

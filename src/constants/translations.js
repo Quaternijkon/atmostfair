@@ -159,6 +159,9 @@ export const TRANSLATIONS = {
     add: "Add",
     votes: "votes",
     addedBy: "Added by",
+    voteMode: "Vote mode",
+    voteModeMultiple: "Multiple",
+    voteModeSingle: "Single",
     votingHelpTitle: "How to use Collect",
     votingHelpSteps: [
       "Enter option name and click Add.",
@@ -614,6 +617,9 @@ export const TRANSLATIONS = {
     add: "添加",
     votes: "票",
     addedBy: "添加者",
+    voteMode: "投票模式",
+    voteModeMultiple: "多选",
+    voteModeSingle: "单选",
     votingHelpTitle: "如何使用 Collect",
     votingHelpSteps: [
       "输入选项名称并点击 Add 添加新的投票项。",

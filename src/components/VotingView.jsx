@@ -2,12 +2,50 @@ import React, { useState } from 'react';
 import { Trophy, Trash2 } from './Icons';
 import { InfoCard } from './InfoCard';
 
-export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onDelete, onVote, isProjectOwner, t }) {
+export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onDelete, onVote, votingConfig, onUpdateVotingConfig, isProjectOwner, projectId, t }) {
   const [newItem, setNewItem] = useState('');
   const [myName, setMyName] = useState(user.displayName || '');
   const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
+  const hasAdminRights = isProjectOwner || isAdmin;
+  const voteMode = votingConfig?.mode === 'single' ? 'single' : 'multiple';
+  const voteModes = [
+    { value: 'multiple', label: t('voteModeMultiple') },
+    { value: 'single', label: t('voteModeSingle') },
+  ];
+
+  const updateVoteMode = (mode) => {
+    if (!hasAdminRights || isStopped || mode === voteMode) return;
+    onUpdateVotingConfig(projectId, { ...(votingConfig || {}), mode });
+  };
+
   return (
     <div>
+      {hasAdminRights && (
+        <div className="app-card mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-medium text-m3-on-surface">{t('voteMode')}</div>
+          <div role="group" aria-label={t('voteMode')} className="inline-flex w-full rounded-full border border-m3-outline-variant/45 bg-m3-surface-container-low p-1 sm:w-auto">
+            {voteModes.map((mode) => {
+              const selected = voteMode === mode.value;
+              return (
+                <button
+                  key={mode.value}
+                  type="button"
+                  aria-pressed={selected}
+                  disabled={isStopped}
+                  onClick={() => updateVoteMode(mode.value)}
+                  className={`min-h-11 flex-1 rounded-full px-4 text-sm font-medium transition sm:flex-none ${
+                    selected
+                      ? 'bg-google-blue text-white shadow-elevation-1'
+                      : 'text-m3-on-surface-variant hover:bg-m3-surface-container-high hover:text-m3-on-surface'
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {!isStopped && (
         <div className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
           <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={t('addItemPlaceholder')} className="app-input flex-[2]" />

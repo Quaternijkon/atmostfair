@@ -191,6 +191,27 @@ test('collaboration workspaces avoid fallback copy and clickable divs', async ()
   assert.doesNotMatch(files.gather, new RegExp('>Name<|>Time<|Name / Nickname|Submitted on|`Enter \\\\$\\\\{field\\\\.label\\\\}`'), 'Gather should avoid hardcoded visible English');
 });
 
+test('voting workspace exposes localized admin vote-mode controls', async () => {
+  const files = {
+    voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+  };
+
+  for (const key of ['voteMode', 'voteModeMultiple', 'voteModeSingle']) {
+    assert.match(files.voting, new RegExp(`t\\('${key}'(?:,|\\))`), `Voting view should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.voting, /votingConfig/, 'Voting view should receive project votingConfig');
+  assert.match(files.voting, /onUpdateVotingConfig/, 'Voting view should expose a config update callback');
+  assert.match(files.voting, /role="group"/, 'Vote mode control should be grouped for assistive technology');
+  assert.match(files.voting, /aria-pressed/, 'Vote mode buttons should expose selected state');
+  assert.match(files.voting, /hasAdminRights/, 'Vote mode controls should only be visible to owner/admin users');
+  assert.match(files.detail, /onUpdateVotingConfig=\{actions\.handleUpdateVotingConfig\}/, 'Project detail should wire voting config updates');
+  assert.doesNotMatch(files.voting, />Multiple<|>Single<|>Mode</, 'Voting mode visible copy should be localized');
+});
+
 test('shared utility surfaces localize visible copy and retain ergonomic controls', async () => {
   const files = {
     detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),

@@ -132,6 +132,31 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
   };
 }
 
+export function normalizeVotingMode(votingConfig) {
+  return votingConfig?.mode === 'single' ? 'single' : 'multiple';
+}
+
+export function createVoteToggleOperations(items, targetItem, user, votingConfig) {
+  if (!targetItem?.id || !targetItem.projectId || !user?.uid) return [];
+  const votes = Array.isArray(targetItem.votes) ? targetItem.votes : [];
+  const hasVoted = votes.includes(user.uid);
+  if (hasVoted) return [createVoteOperation(targetItem.id, 'removeVote', user.uid)];
+
+  if (normalizeVotingMode(votingConfig) !== 'single') {
+    return [createVoteOperation(targetItem.id, 'addVote', user.uid)];
+  }
+
+  const operations = [];
+  const projectItems = Array.isArray(items) ? items : [];
+  for (const item of projectItems) {
+    if (!item?.id || item.id === targetItem.id || item.projectId !== targetItem.projectId) continue;
+    const itemVotes = Array.isArray(item.votes) ? item.votes : [];
+    if (itemVotes.includes(user.uid)) operations.push(createVoteOperation(item.id, 'removeVote', user.uid));
+  }
+  operations.push(createVoteOperation(targetItem.id, 'addVote', user.uid));
+  return operations;
+}
+
 export function createProjectStatusPatch(project, user, isAdmin) {
   if (!project?.id || !user?.uid) return null;
   if (project.creatorId !== user.uid && !isAdmin) return null;
@@ -154,7 +179,7 @@ export function createProjectDuplicateData(sourceProject, user, creatorName, cre
     winners: [],
   };
 
-  for (const key of ['rouletteConfig', 'scheduleConfig', 'bookingConfig']) {
+  for (const key of ['rouletteConfig', 'scheduleConfig', 'bookingConfig', 'votingConfig']) {
     if (sourceProject[key] !== undefined) duplicate[key] = clonePlainValue(sourceProject[key]);
   }
 
@@ -273,6 +298,16 @@ function cleanName(userName, user) {
 
 function normalizedCollection(docsByCollection, collectionName) {
   return Array.isArray(docsByCollection?.[collectionName]) ? docsByCollection[collectionName] : [];
+}
+
+function createVoteOperation(id, action, uid) {
+  return {
+    type: 'update',
+    collection: 'voting_items',
+    id,
+    action,
+    uid,
+  };
 }
 
 function clonePlainValue(value) {

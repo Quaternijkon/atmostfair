@@ -20,6 +20,7 @@ import {
   createRouletteJoinData,
   createScheduleSubmissionWrite,
   createTeamJoinMember,
+  createVoteToggleOperations,
   createClaimToggleData,
   createProjectStatusPatch,
   PROJECT_CASCADE_COLLECTIONS,
@@ -176,12 +177,22 @@ function AppContent() {
         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.voteItemAdded, subject: title, actorName: creatorName });
       },
       handleDeleteItem: async (itemId) => deleteDoc(doc(db, 'voting_items', itemId)),
-      handleVote: async (item) => {
+      handleVote: async (item, votingConfig) => {
          if (!user) return;
-         const ref = doc(db, 'voting_items', item.id);
-         if (item.votes?.includes(user.uid)) await updateDoc(ref, { votes: arrayRemove(user.uid) });
-         else await updateDoc(ref, { votes: arrayUnion(user.uid) });
+         const voteOperations = createVoteToggleOperations(items, item, user, votingConfig);
+         if (voteOperations.length === 0) return;
+         const batch = writeBatch(db);
+         voteOperations.forEach((operation) => {
+            batch.update(doc(db, operation.collection, operation.id), {
+              votes: operation.action === 'removeVote' ? arrayRemove(operation.uid) : arrayUnion(operation.uid),
+            });
+         });
+         await batch.commit();
          void recordProjectActivity({ projectId: item.projectId, type: PROJECT_ACTIVITY_TYPES.voteToggled, subject: item.title });
+      },
+      handleUpdateVotingConfig: async (projectId, config) => {
+         if (!user) return;
+         await updateDoc(doc(db, 'projects', projectId), { votingConfig: config });
       },
       handleCreateRoom: async (name, maxMembers, projectId, creatorName) => {
          if (!user || !name.trim()) return;
