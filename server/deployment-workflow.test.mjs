@@ -23,3 +23,27 @@ test('GitHub Pages workflow uses Node 24 compatible action majors', async () => 
     'workflow should not pin Pages deployment actions to Node 20-era v4 majors',
   );
 });
+
+test('GitHub Pages workflow ignores backend-only changes', async () => {
+  const workflow = await readFile(path.join(root, '.github/workflows/deploy.yml'), 'utf8');
+
+  assert.match(workflow, /paths:\s*\n(?:\s+- .+\n)+/, 'workflow should constrain Pages deploy triggers by path');
+
+  for (const expectedPath of [
+    'src/**',
+    'index.html',
+    'package.json',
+    'package-lock.json',
+    'vite.config.*',
+    'postcss.config.*',
+    'tailwind.config.*',
+  ]) {
+    assert.match(
+      workflow,
+      new RegExp(`- ['"]?${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*')}['"]?`),
+      `workflow should deploy when ${expectedPath} changes`,
+    );
+  }
+
+  assert.doesNotMatch(workflow, /-\s+['"]?server\/\*\*/, 'backend-only changes should not trigger Pages deploy');
+});
