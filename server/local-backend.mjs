@@ -10,6 +10,27 @@ import { createDataStore } from './data-store.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
+const DATA_API_COLLECTIONS = new Set([
+  'users',
+  'projects',
+  'voting_items',
+  'rooms',
+  'roulette_participants',
+  'queue_participants',
+  'gather_fields',
+  'gather_submissions',
+  'schedule_submissions',
+  'booking_slots',
+  'claim_items',
+  'notifications',
+  'project_activities',
+  'announcements',
+  'project_chats',
+  'game_rooms',
+  'friendships',
+  'friend_messages',
+]);
+const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 
 export function createLocalBackendServer({
   store,
@@ -108,41 +129,79 @@ async function handleDataApi({ request, response, url, store, body }) {
   }
 
   if (url.pathname === '/api/data/list') {
-    const docs = await store.list(body.collection, body.query || {});
+    const collection = validateDataCollection(body.collection);
+    const docs = await store.list(collection, body.query || {});
     return sendJson(response, 200, { docs });
   }
 
   if (url.pathname === '/api/data/get') {
-    const doc = await store.get(body.collection, body.id);
+    const collection = validateDataCollection(body.collection);
+    const doc = await store.get(collection, body.id);
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/add') {
-    const doc = await store.add(body.collection, body.data || {});
+    const collection = validateDataCollection(body.collection);
+    const doc = await store.add(collection, body.data || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/set') {
-    const doc = await store.set(body.collection, body.id, body.data || {}, body.options || {});
+    const collection = validateDataCollection(body.collection);
+    const doc = await store.set(collection, body.id, body.data || {}, body.options || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/update') {
-    const doc = await store.update(body.collection, body.id, body.data || {});
+    const collection = validateDataCollection(body.collection);
+    const doc = await store.update(collection, body.id, body.data || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/delete') {
-    await store.delete(body.collection, body.id);
+    const collection = validateDataCollection(body.collection);
+    await store.delete(collection, body.id);
     return sendJson(response, 200, { ok: true });
   }
 
   if (url.pathname === '/api/data/batch') {
-    const results = await store.batch(body.operations || []);
+    const operations = validateDataBatchOperations(body.operations || []);
+    const results = await store.batch(operations);
     return sendJson(response, 200, { results });
   }
 
   return sendJson(response, 404, { error: { code: 'not-found', message: 'Data route not found.' } });
+}
+
+function validateDataCollection(collection) {
+  if (typeof collection !== 'string' || !DATA_API_COLLECTIONS.has(collection)) {
+    const error = new Error('Invalid data collection.');
+    error.status = 400;
+    error.code = 'data/invalid-collection';
+    throw error;
+  }
+  return collection;
+}
+
+function validateDataBatchOperations(operations) {
+  if (!Array.isArray(operations)) {
+    const error = new Error('Invalid data batch.');
+    error.status = 400;
+    error.code = 'data/invalid-operation';
+    throw error;
+  }
+
+  for (const operation of operations) {
+    if (!operation || typeof operation !== 'object' || !DATA_BATCH_OPERATION_TYPES.has(operation.type)) {
+      const error = new Error('Invalid data operation.');
+      error.status = 400;
+      error.code = 'data/invalid-operation';
+      throw error;
+    }
+    validateDataCollection(operation.collection);
+  }
+
+  return operations;
 }
 
 async function requireUser(request, auth) {

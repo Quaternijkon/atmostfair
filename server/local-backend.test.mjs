@@ -139,6 +139,108 @@ test('HTTP backend exposes local auth and authenticated data APIs', async () => 
   });
 });
 
+test('HTTP data API rejects non-app and internal collections', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const session = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+
+      const arbitrary = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: session.token,
+        body: { collection: 'evil_collection', data: { title: 'Bad' } },
+      });
+      assert.equal(arbitrary.status, 400);
+      assert.equal(arbitrary.body.error.code, 'data/invalid-collection');
+      assert.equal(store.state.collections.evil_collection, undefined);
+
+      const internal = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: session.token,
+        body: { collection: 'auth_accounts', id: 'takeover', data: { email: 'attacker@example.com' } },
+      });
+      assert.equal(internal.status, 400);
+      assert.equal(internal.body.error.code, 'data/invalid-collection');
+      assert.equal(await store.get('auth_accounts', 'takeover'), null);
+
+      const listed = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: session.token,
+        body: { collection: 'projects', query: {} },
+      });
+      assert.deepEqual(listed.docs, []);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API rejects invalid batch operations without partial writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const session = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+
+      const mixedCollection = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: session.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'projects', data: { title: 'Should not persist' } },
+            { type: 'add', collection: 'evil_collection', data: { title: 'Bad' } },
+          ],
+        },
+      });
+      assert.equal(mixedCollection.status, 400);
+      assert.equal(mixedCollection.body.error.code, 'data/invalid-collection');
+      assert.deepEqual(await store.list('projects'), []);
+      assert.equal(store.state.collections.evil_collection, undefined);
+
+      const unknownType = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: session.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'projects', data: { title: 'Still should not persist' } },
+            { type: 'touch', collection: 'projects', id: 'project-1', data: { title: 'Bad op' } },
+          ],
+        },
+      });
+      assert.equal(unknownType.status, 400);
+      assert.equal(unknownType.body.error.code, 'data/invalid-operation');
+      assert.deepEqual(await store.list('projects'), []);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP backend translates auth failures into HTTP responses', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
@@ -196,4 +298,19 @@ async function fetchJson(url, { method = 'GET', token, body } = {}) {
     throw new Error(payload.error?.message || `HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function fetchJsonResponse(url, { method = 'GET', token, body } = {}) {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      ...(body ? { 'content-type': 'application/json' } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return {
+    status: response.status,
+    body: await response.json(),
+  };
 }
