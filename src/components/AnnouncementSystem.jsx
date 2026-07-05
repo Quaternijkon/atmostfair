@@ -33,15 +33,17 @@ export default function AnnouncementSystem({ t = (k) => k }) {
 
   const unreadCount = announcements.filter(a => !readIds.includes(a.id)).length;
 
-  const markAsRead = (id) => {
-    if (!readIds.includes(id)) {
-      const newReadIds = [...readIds, id];
-      setReadIds(newReadIds);
-      localStorage.setItem('readAnnouncements', JSON.stringify(newReadIds));
-    }
+  const markVisibleAnnouncementsAsRead = () => {
+    const unreadIds = announcements.map((item) => item.id).filter((id) => !readIds.includes(id));
+    if (unreadIds.length === 0) return;
+
+    const newReadIds = [...readIds, ...unreadIds];
+    setReadIds(newReadIds);
+    localStorage.setItem('readAnnouncements', JSON.stringify(newReadIds));
   };
 
   const handleOpen = () => {
+    markVisibleAnnouncementsAsRead();
     setIsOpen(true);
   };
 
@@ -76,11 +78,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
              </div>
 
              <div className="overflow-y-auto p-4 space-y-3">
-                {announcements.map((item) => {
-                    const isUnread = !readIds.includes(item.id);
-                    if (isUnread) markAsRead(item.id); 
-
-                    return (
+                {announcements.map((item) => (
                         <div key={item.id} className={`rounded-2xl border p-4 ${item.type === 'warning' ? 'bg-google-red/5 border-google-red/30' : 'bg-m3-surface border-m3-outline-variant/30'}`}>
                             <div className="flex gap-3">
                                 <div className="mt-1">
@@ -99,8 +97,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
                                 </div>
                             </div>
                         </div>
-                    );
-                })}
+                ))}
              </div>
            </div>
         </div>

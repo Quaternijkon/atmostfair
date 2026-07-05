@@ -597,6 +597,26 @@ test('date-heavy workspaces format dates with the app locale', async () => {
   }
 });
 
+test('announcement read tracking happens from explicit open actions instead of render', async () => {
+  const announcements = await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8');
+
+  assert.match(
+    announcements,
+    /const markVisibleAnnouncementsAsRead = \(\) => \{[\s\S]{0,700}localStorage\.setItem\('readAnnouncements'/,
+    'Announcements should batch read-state persistence in an explicit action helper',
+  );
+  assert.match(
+    announcements,
+    /const handleOpen = \(\) => \{[\s\S]{0,160}markVisibleAnnouncementsAsRead\(\)[\s\S]{0,160}setIsOpen\(true\)/,
+    'Opening the announcement dialog should mark currently visible announcements as read',
+  );
+  assert.doesNotMatch(
+    announcements,
+    /announcements\.map\(\(item\) => \{[\s\S]{0,240}markAsRead\(item\.id\)/,
+    'Announcement rendering should not update state or localStorage while mapping visible rows',
+  );
+});
+
 test('auth and user fallbacks avoid visible English fragments', async () => {
   const files = {
     login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),
