@@ -6,6 +6,7 @@ import test from 'node:test';
 import { TRANSLATIONS } from '../src/constants/translations.js';
 import {
   createClearReadNotificationOperations,
+  createMarkNotificationReadOperation,
   createMarkNotificationsReadOperations,
 } from '../src/lib/notificationDomain.js';
 
@@ -24,6 +25,22 @@ test('mark all read only updates unread notifications', () => {
   ]);
 });
 
+test('single notification read only updates an unread notification from the current snapshot', () => {
+  const notifications = [
+    { id: 'n1', read: false },
+    { id: 'n2', read: true },
+  ];
+
+  assert.deepEqual(createMarkNotificationReadOperation(notifications, 'n1'), {
+    type: 'update',
+    collection: 'notifications',
+    id: 'n1',
+    data: { read: true },
+  });
+  assert.equal(createMarkNotificationReadOperation(notifications, 'n2'), null, 'already-read notifications should not be rewritten');
+  assert.equal(createMarkNotificationReadOperation(notifications, 'missing'), null, 'stale or foreign ids must not be written');
+});
+
 test('clear read deletes only read notifications', () => {
   const operations = createClearReadNotificationOperations([
     { id: 'n1', read: false },
@@ -40,9 +57,19 @@ test('clear read deletes only read notifications', () => {
 test('notification center exposes bulk read and clear-read actions', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
 
-  for (const helper of ['createMarkNotificationsReadOperations', 'createClearReadNotificationOperations']) {
+  for (const helper of ['createMarkNotificationReadOperation', 'createMarkNotificationsReadOperations', 'createClearReadNotificationOperations']) {
     assert.match(app, new RegExp(helper), `App should use ${helper}`);
   }
+  assert.match(
+    app,
+    /const operation = createMarkNotificationReadOperation\(notifications, nId\);/,
+    'single notification reads should resolve against the current notification snapshot',
+  );
+  assert.match(
+    app,
+    /await updateDoc\(doc\(db, operation\.collection, operation\.id\), operation\.data\);/,
+    'single notification reads should write only the guarded operation',
+  );
 
   for (const key of ['markAllRead', 'clearRead']) {
     assert.match(app, new RegExp(`t\\('${key}'\\)`), `App should localize ${key}`);

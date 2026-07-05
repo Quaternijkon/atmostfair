@@ -32,6 +32,7 @@ import {
 } from './lib/projectDomain';
 import {
   createClearReadNotificationOperations,
+  createMarkNotificationReadOperation,
   createMarkNotificationsReadOperations,
 } from './lib/notificationDomain';
 import { TRANSLATIONS } from './constants/translations';
@@ -459,7 +460,11 @@ function AppContent() {
          }
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingCancelled, subject: reason || recipientId });
       },
-      handleReadNotification: async (nId) => updateDoc(doc(db, 'notifications', nId), { read: true }),
+      handleReadNotification: async (nId) => {
+        const operation = createMarkNotificationReadOperation(notifications, nId);
+        if (!operation) return;
+        await updateDoc(doc(db, operation.collection, operation.id), operation.data);
+      },
       handleMarkAllNotificationsRead: async () => {
         const operations = createMarkNotificationsReadOperations(notifications);
         if (operations.length === 0) return;
