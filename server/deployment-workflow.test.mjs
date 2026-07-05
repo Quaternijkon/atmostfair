@@ -11,6 +11,7 @@ test('GitHub Pages workflow uses Node 24 compatible action majors', async () => 
   for (const action of [
     'actions/checkout@v6',
     'actions/setup-node@v6',
+    'actions/configure-pages@v5',
     'actions/upload-pages-artifact@v5',
     'actions/deploy-pages@v5',
   ]) {
@@ -19,7 +20,7 @@ test('GitHub Pages workflow uses Node 24 compatible action majors', async () => 
 
   assert.doesNotMatch(
     workflow,
-    /actions\/(?:checkout|setup-node|upload-pages-artifact|deploy-pages)@v4/,
+    /actions\/(?:checkout|setup-node|configure-pages|upload-pages-artifact|deploy-pages)@v4/,
     'workflow should not pin Pages deployment actions to Node 20-era v4 majors',
   );
 });
