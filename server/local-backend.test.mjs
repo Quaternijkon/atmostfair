@@ -934,6 +934,7 @@ test('HTTP data API rejects child writes against stopped and finished projects w
 
       const stoppedQueueEntry = await store.add('queue_participants', {
         projectId: stoppedProject.doc.id,
+        uid: member.user.uid,
         userId: member.user.uid,
         name: 'Member',
       });
@@ -1023,6 +1024,312 @@ test('HTTP data API rejects child writes against stopped and finished projects w
         },
       });
       assert.equal(auditActivity.doc.projectId, stoppedProject.doc.id);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API normalizes participant identities and rejects duplicate direct entries', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+
+      const queueProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Queue', type: 'queue', status: 'active', createdAt: 1 } },
+      });
+      const queueEntry = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'queue_participants',
+          data: {
+            projectId: queueProject.doc.id,
+            uid: alice.user.uid,
+            name: 'Bob Alias',
+            value: 7,
+            queueOrder: 1,
+            joinedAt: 10,
+          },
+        },
+      });
+      assert.equal(queueEntry.doc.uid, bob.user.uid);
+      assert.equal(queueEntry.doc.name, 'Bob Alias');
+      assert.equal(queueEntry.doc.queueOrder, null);
+
+      const duplicateQueue = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'queue_participants',
+          data: { projectId: queueProject.doc.id, uid: bob.user.uid, name: 'Bob Again', value: 9, joinedAt: 11 },
+        },
+      });
+      assert.equal(duplicateQueue.status, 409);
+      assert.equal(duplicateQueue.body.error.code, 'data/duplicate-entry');
+
+      const rouletteProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Roulette', type: 'roulette', status: 'active', createdAt: 2 } },
+      });
+      const rouletteEntry = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'roulette_participants',
+          data: {
+            projectId: rouletteProject.doc.id,
+            uid: bob.user.uid,
+            name: 'Alice Alias',
+            value: 4,
+            isWinner: true,
+            joinedAt: 12,
+          },
+        },
+      });
+      assert.equal(rouletteEntry.doc.uid, alice.user.uid);
+      assert.equal(rouletteEntry.doc.name, 'Alice Alias');
+      assert.equal(rouletteEntry.doc.isWinner, false);
+
+      const duplicateRoulette = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'roulette_participants',
+          data: { projectId: rouletteProject.doc.id, uid: alice.user.uid, name: 'Alice Again', value: 5, joinedAt: 13 },
+        },
+      });
+      assert.equal(duplicateRoulette.status, 409);
+      assert.equal(duplicateRoulette.body.error.code, 'data/duplicate-entry');
+
+      const gatherProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Gather', type: 'gather', status: 'active', createdAt: 3 } },
+      });
+      const gatherSubmission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'gather_submissions',
+          data: {
+            projectId: gatherProject.doc.id,
+            uid: bob.user.uid,
+            name: 'Alice Alias',
+            data: { field: 'answer' },
+            submittedAt: 20,
+          },
+        },
+      });
+      assert.equal(gatherSubmission.doc.uid, alice.user.uid);
+      assert.equal(gatherSubmission.doc.name, 'Alice Alias');
+
+      const duplicateGather = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'gather_submissions',
+          data: { projectId: gatherProject.doc.id, uid: alice.user.uid, name: 'Alice Again', data: {}, submittedAt: 21 },
+        },
+      });
+      assert.equal(duplicateGather.status, 409);
+      assert.equal(duplicateGather.body.error.code, 'data/duplicate-entry');
+
+      const scheduleProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Schedule', type: 'schedule', status: 'active', createdAt: 4 } },
+      });
+      const scheduleSubmission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          data: {
+            projectId: scheduleProject.doc.id,
+            uid: bob.user.uid,
+            name: 'Alice Alias',
+            availability: ['2026-07-05'],
+            submittedAt: 30,
+          },
+        },
+      });
+      assert.equal(scheduleSubmission.doc.uid, alice.user.uid);
+      assert.equal(scheduleSubmission.doc.name, 'Alice Alias');
+
+      const duplicateSchedule = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          data: { projectId: scheduleProject.doc.id, uid: alice.user.uid, name: 'Alice Again', availability: [], submittedAt: 31 },
+        },
+      });
+      assert.equal(duplicateSchedule.status, 409);
+      assert.equal(duplicateSchedule.body.error.code, 'data/duplicate-entry');
+
+      const aliceScheduleUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          id: scheduleSubmission.doc.id,
+          data: { availability: ['2026-07-06'], submittedAt: 32 },
+        },
+      });
+      assert.deepEqual(aliceScheduleUpdate.doc.availability, ['2026-07-06']);
+      assert.equal(aliceScheduleUpdate.doc.uid, alice.user.uid);
+
+      const bobScheduleUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'schedule_submissions',
+          id: scheduleSubmission.doc.id,
+          data: { availability: ['2026-07-07'], submittedAt: 33 },
+        },
+      });
+      assert.equal(bobScheduleUpdate.status, 403);
+      assert.equal(bobScheduleUpdate.body.error.code, 'data/forbidden');
+      assert.deepEqual((await store.get('schedule_submissions', scheduleSubmission.doc.id)).availability, ['2026-07-06']);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API rejects unauthorized active project child deletes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Active', status: 'active', createdAt: 1 } },
+      });
+
+      const votingItem = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          data: { projectId: project.doc.id, title: 'Alice item', creatorId: alice.user.uid, votes: [], createdAt: 2 },
+        },
+      });
+      const bobVotingDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'voting_items', id: votingItem.doc.id },
+      });
+      assert.equal(bobVotingDelete.status, 403);
+      assert.equal(bobVotingDelete.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('voting_items', votingItem.doc.id), null);
+
+      const aliceVotingDelete = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'voting_items', id: votingItem.doc.id },
+      });
+      assert.equal(aliceVotingDelete.ok, true);
+      assert.equal(await store.get('voting_items', votingItem.doc.id), null);
+
+      const bookingSlot = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          data: { projectId: project.doc.id, start: '2026-07-05', end: '2026-07-05', label: 'Owner slot' },
+        },
+      });
+      const bobSlotDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'booking_slots', id: bookingSlot.doc.id },
+      });
+      assert.equal(bobSlotDelete.status, 403);
+      assert.equal(bobSlotDelete.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('booking_slots', bookingSlot.doc.id), null);
+
+      const ownerSlotDelete = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'booking_slots', id: bookingSlot.doc.id },
+      });
+      assert.equal(ownerSlotDelete.ok, true);
+      assert.equal(await store.get('booking_slots', bookingSlot.doc.id), null);
+
+      const queueEntry = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'queue_participants',
+          data: { projectId: project.doc.id, name: 'Alice', value: 3, joinedAt: 3 },
+        },
+      });
+      const bobQueueDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'queue_participants', id: queueEntry.doc.id },
+      });
+      assert.equal(bobQueueDelete.status, 403);
+      assert.equal(bobQueueDelete.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('queue_participants', queueEntry.doc.id), null);
+
+      const ownerQueueDelete = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'queue_participants', id: queueEntry.doc.id },
+      });
+      assert.equal(ownerQueueDelete.ok, true);
+      assert.equal(await store.get('queue_participants', queueEntry.doc.id), null);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

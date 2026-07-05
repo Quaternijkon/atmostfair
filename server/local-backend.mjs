@@ -361,8 +361,11 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
   }
 
   if (type === 'delete') {
-    if (!isProjectLocked(project)) return undefined;
-    if (canWriteProject(project, user)) return undefined;
+    if (isProjectLocked(project)) {
+      if (canWriteProject(project, user)) return undefined;
+      forbidden();
+    }
+    if (canDeleteProjectChild({ collection, doc: existing, project, user })) return undefined;
     forbidden();
   }
 
@@ -370,7 +373,109 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
     throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
   }
 
+  if (
+    collection === 'queue_participants'
+    || collection === 'roulette_participants'
+    || collection === 'gather_submissions'
+    || collection === 'schedule_submissions'
+  ) {
+    return authorizeProjectUserEntryOperation({
+      store,
+      user,
+      type,
+      collection,
+      data,
+      existing,
+      project,
+      projectId,
+    });
+  }
+
   return existing ? preserveImmutableField(data, existing, projectField, type) : data || {};
+}
+
+async function authorizeProjectUserEntryOperation({
+  store,
+  user,
+  type,
+  collection,
+  data,
+  existing,
+  project,
+  projectId,
+}) {
+  if (!existing) {
+    return normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data });
+  }
+
+  if (collection === 'queue_participants') {
+    if (!canWriteProject(project, user)) forbidden();
+    return allowOnlyFields(data, ['queueOrder']);
+  }
+
+  if (collection === 'roulette_participants') {
+    if (!canWriteProject(project, user)) forbidden();
+    return allowOnlyFields(data, ['isWinner']);
+  }
+
+  if (collection === 'schedule_submissions') {
+    if (existing.uid !== user.uid && !isAdminUser(user)) forbidden();
+    return allowOnlyFields(data, ['availability', 'submittedAt']);
+  }
+
+  if (collection === 'gather_submissions') {
+    if (!isAdminUser(user)) forbidden();
+    return type === 'delete' ? undefined : allowOnlyFields(data, ['data', 'submittedAt']);
+  }
+
+  return data || {};
+}
+
+async function normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data }) {
+  await assertNoDuplicateProjectUserEntry(store, collection, projectId, user.uid);
+
+  const base = {
+    ...(data || {}),
+    projectId,
+    uid: user.uid,
+    name: cleanUserProvidedName(data?.name, user),
+  };
+
+  if (collection === 'queue_participants') {
+    return {
+      ...base,
+      value: Number.parseInt(data?.value, 10) || 0,
+      queueOrder: null,
+    };
+  }
+
+  if (collection === 'roulette_participants') {
+    return {
+      ...base,
+      value: Number.parseInt(data?.value, 10) || 0,
+      isWinner: false,
+    };
+  }
+
+  return base;
+}
+
+async function assertNoDuplicateProjectUserEntry(store, collection, projectId, uid) {
+  const docs = await store.list(collection, {
+    filters: [{ field: 'projectId', op: '==', value: projectId }],
+  });
+  if (docs.some((doc) => doc.uid === uid)) {
+    throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
+  }
+}
+
+function allowOnlyFields(data, fields) {
+  const patch = data || {};
+  const allowed = new Set(fields);
+  for (const key of Object.keys(patch)) {
+    if (!allowed.has(key)) forbidden();
+  }
+  return patch;
 }
 
 async function filterReadableDocs({ store, user, collection, docs }) {
@@ -587,6 +692,35 @@ function canWriteProject(project, user) {
   return project.creatorId === user.uid || isAdminUser(user);
 }
 
+function canDeleteProjectChild({ collection, doc, project, user }) {
+  if (canWriteProject(project, user)) return true;
+  if (!doc || !user?.uid) return false;
+
+  if (collection === 'voting_items' || collection === 'claim_items' || collection === 'gather_fields') {
+    return doc.creatorId === user.uid;
+  }
+
+  if (collection === 'rooms') {
+    return doc.ownerId === user.uid;
+  }
+
+  if (
+    collection === 'queue_participants'
+    || collection === 'roulette_participants'
+    || collection === 'gather_submissions'
+    || collection === 'schedule_submissions'
+    || collection === 'project_chats'
+  ) {
+    return doc.uid === user.uid;
+  }
+
+  if (collection === 'game_rooms') {
+    return doc.createdBy === user.uid;
+  }
+
+  return false;
+}
+
 function isProjectLocked(project) {
   return LOCKED_PROJECT_STATUSES.has(project?.status);
 }
@@ -605,6 +739,12 @@ function adminEmails() {
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
+}
+
+function cleanUserProvidedName(name, user) {
+  const cleaned = String(name || '').trim();
+  if (cleaned) return cleaned;
+  return user?.displayName || user?.email?.split('@')[0] || '';
 }
 
 function throwDataError(status, code, message) {
