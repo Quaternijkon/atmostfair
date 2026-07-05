@@ -10,7 +10,9 @@ import { createDataStore } from './data-store.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds } from '../src/lib/dashboardDomain.js';
 import {
+  createBookingConfigData,
   createGameRoomJoinPatch,
+  createScheduleConfigData,
   createRpsNextRoundPatch,
 } from '../src/lib/projectDomain.js';
 
@@ -40,6 +42,7 @@ const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 const PROJECT_STATUSES = new Set(['active', 'stopped', 'finished']);
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
+const VOTING_MODES = new Set(['multiple', 'single']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
 const GAME_TYPES = new Set(['rps', 'mine']);
@@ -2086,7 +2089,56 @@ function normalizeProjectStateData({ data, existing, type }) {
     normalized.archivedAt = null;
   }
 
+  normalizeProjectConfigData(normalized);
+
   return normalized;
+}
+
+function normalizeProjectConfigData(normalized) {
+  if (Object.hasOwn(normalized, 'votingConfig')) {
+    normalized.votingConfig = normalizeVotingConfigData(normalized.votingConfig);
+  }
+
+  if (Object.hasOwn(normalized, 'scheduleConfig')) {
+    normalized.scheduleConfig = normalizeScheduleConfigData(normalized.scheduleConfig);
+  }
+
+  if (Object.hasOwn(normalized, 'bookingConfig')) {
+    normalized.bookingConfig = normalizeBookingConfigData(normalized.bookingConfig);
+  }
+}
+
+function normalizeVotingConfigData(config) {
+  if (!isPlainObject(config) || !VOTING_MODES.has(config.mode)) {
+    throwDataError(400, 'data/invalid-project-config', 'Project configuration is invalid.');
+  }
+  return { mode: config.mode };
+}
+
+function normalizeScheduleConfigData(config) {
+  if (!isPlainObject(config)) {
+    throwDataError(400, 'data/invalid-project-config', 'Project configuration is invalid.');
+  }
+  const normalized = createScheduleConfigData(config);
+  if (!normalized) {
+    throwDataError(400, 'data/invalid-project-config', 'Project configuration is invalid.');
+  }
+  return normalized;
+}
+
+function normalizeBookingConfigData(config) {
+  if (!isPlainObject(config)) {
+    throwDataError(400, 'data/invalid-project-config', 'Project configuration is invalid.');
+  }
+  const normalized = createBookingConfigData(config);
+  if (!normalized) {
+    throwDataError(400, 'data/invalid-project-config', 'Project configuration is invalid.');
+  }
+  return normalized;
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function assertValidProjectStatus(status) {

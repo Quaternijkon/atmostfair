@@ -418,7 +418,7 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
-test('HTTP data API rejects invalid project state metadata without partial writes', async () => {
+test('HTTP data API rejects invalid project state metadata and config payloads without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
       store,
@@ -484,6 +484,61 @@ test('HTTP data API rejects invalid project state metadata without partial write
       assert.equal(invalidArchiveUpdate.body.error.code, 'data/invalid-project-archive');
       assert.equal((await store.get('projects', project.doc.id)).archived, false);
 
+      const invalidConfigCreate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Broken schedule',
+            type: 'schedule',
+            status: 'active',
+            scheduleConfig: { mode: 'time', start: '2026-02-10', end: '2026-02-01' },
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(invalidConfigCreate.status, 400);
+      assert.equal(invalidConfigCreate.body.error.code, 'data/invalid-project-config');
+      assert.equal((await store.list('projects')).some((entry) => entry.title === 'Broken schedule'), false);
+
+      const invalidVotingConfigUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { votingConfig: { mode: 'ranked' } },
+        },
+      });
+      assert.equal(invalidVotingConfigUpdate.status, 400);
+      assert.equal(invalidVotingConfigUpdate.body.error.code, 'data/invalid-project-config');
+      assert.equal(Object.hasOwn((await store.get('projects', project.doc.id)), 'votingConfig'), false);
+
+      const validBookingConfigUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: {
+            bookingConfig: {
+              mode: 'date',
+              start: '2026-02-01',
+              end: '2026-02-03',
+              requiredFields: ' Name, Name，Email ',
+              unexpected: 'drop me',
+            },
+          },
+        },
+      });
+      assert.deepEqual(validBookingConfigUpdate.doc.bookingConfig, {
+        mode: 'date',
+        start: '2026-02-01',
+        end: '2026-02-03',
+        requiredFields: 'Name, Email',
+      });
+
       const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
         method: 'POST',
         token: owner.token,
@@ -503,13 +558,13 @@ test('HTTP data API rejects invalid project state metadata without partial write
               type: 'update',
               collection: 'projects',
               id: project.doc.id,
-              data: { status: 'unknown' },
+              data: { bookingConfig: { mode: 'slot', start: '2026-02-01', end: '2026-02-03' } },
             },
           ],
         },
       });
       assert.equal(blockedBatch.status, 400);
-      assert.equal(blockedBatch.body.error.code, 'data/invalid-project-status');
+      assert.equal(blockedBatch.body.error.code, 'data/invalid-project-config');
       assert.equal((await store.get('projects', project.doc.id)).status, 'active');
       assert.deepEqual(await store.list('project_activities'), []);
     } finally {
