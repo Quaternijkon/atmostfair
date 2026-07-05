@@ -65,7 +65,8 @@ export function createLocalBackendServer({
   staticDir = path.join(projectRoot, 'dist'),
   now,
 }) {
-  const auth = createAuthService({ store, sessionSecret, now });
+  const nowMs = typeof now === 'function' ? now : Date.now;
+  const auth = createAuthService({ store, sessionSecret, now: nowMs });
 
   return http.createServer(async (request, response) => {
     try {
@@ -76,7 +77,7 @@ export function createLocalBackendServer({
       }
 
       if (url.pathname.startsWith('/api/')) {
-        return await handleApi({ request, response, url, auth, store });
+        return await handleApi({ request, response, url, auth, store, now: nowMs });
       }
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -96,7 +97,7 @@ export function createLocalBackendServer({
   });
 }
 
-async function handleApi({ request, response, url, auth, store }) {
+async function handleApi({ request, response, url, auth, store, now }) {
   if (request.method === 'GET' && url.pathname === '/api/health') {
     return sendJson(response, 200, { ok: true, service: 'atmostfair-local-backend' });
   }
@@ -141,6 +142,13 @@ async function handleApi({ request, response, url, auth, store }) {
     return sendJson(response, 200, { ok: true });
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/project-access/unlock') {
+    const user = await requireUser(request, auth);
+    const body = await readJson(request);
+    const result = await unlockProjectAccess({ store, user, body, now });
+    return sendJson(response, 200, result);
+  }
+
   if (url.pathname.startsWith('/api/data/')) {
     const user = await requireUser(request, auth);
     const body = await readJson(request);
@@ -167,7 +175,7 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const rawDoc = await store.get(collection, id);
-    const doc = await canReadDataDoc({ store, user, collection, doc: rawDoc }) ? rawDoc : null;
+    const doc = await toReadableDataDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
 
@@ -375,6 +383,8 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     if (type === 'delete' && isAdminUser(user)) return undefined;
     throwDataError(404, 'data/project-not-found', 'Project not found.');
   }
+
+  if (!(await canReadPrivateProject({ store, user, project }))) forbidden();
 
   if (collection === 'project_activities') {
     return authorizeProjectActivityOperation({ user, type, data, project });
@@ -1404,19 +1414,36 @@ function allowOnlyFields(data, fields) {
 }
 
 async function filterReadableDocs({ store, user, collection, docs, query }) {
-  if (isAdminUser(user)) return docs;
-  if (!['notifications', 'friendships', 'friend_messages'].includes(collection)) return docs;
+  if (!collectionNeedsReadFiltering(collection)) return docs;
 
   const visible = [];
   for (const doc of docs || []) {
-    if (await canReadDataDoc({ store, user, collection, doc, query })) visible.push(doc);
+    const readable = await toReadableDataDoc({ store, user, collection, doc, query });
+    if (readable) visible.push(readable);
   }
   return visible;
+}
+
+function collectionNeedsReadFiltering(collection) {
+  return collection === 'projects'
+    || PROJECT_CHILD_COLLECTION_FIELDS.has(collection)
+    || ['notifications', 'friendships', 'friend_messages'].includes(collection);
+}
+
+async function toReadableDataDoc({ store, user, collection, doc, query }) {
+  if (!doc) return null;
+  if (collection === 'projects') return toReadableProjectDoc({ store, user, project: doc });
+  if (await canReadDataDoc({ store, user, collection, doc, query })) return doc;
+  return null;
 }
 
 async function canReadDataDoc({ store, user, collection, doc, query }) {
   if (!doc) return true;
   if (isAdminUser(user)) return true;
+  const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
+  if (projectField) {
+    return canReadProjectById({ store, user, projectId: doc[projectField] });
+  }
   if (collection === 'notifications') {
     return doc.recipientId === user.uid || (
       isExactProjectQuery(query, doc.projectId)
@@ -1426,6 +1453,84 @@ async function canReadDataDoc({ store, user, collection, doc, query }) {
   if (collection === 'friendships') return hasMember(doc, user.uid);
   if (collection === 'friend_messages') return canAccessFriendMessage(store, user, doc);
   return true;
+}
+
+async function unlockProjectAccess({ store, user, body, now }) {
+  const projectId = validateDataId(body?.projectId);
+  const submittedPassword = String(body?.password || '');
+  const project = await store.get('projects', projectId);
+  if (!project) throwDataError(404, 'project-access/not-found', 'Project not found.');
+
+  if (hasProjectPassword(project) && !canWriteProject(project, user)) {
+    if (submittedPassword !== project.password) {
+      throwDataError(403, 'project-access/invalid-password', 'Project password is incorrect.');
+    }
+    await store.set('project_access', projectAccessGrantId(project.id, user.uid), {
+      projectId: project.id,
+      uid: user.uid,
+      grantedAt: now(),
+    });
+  }
+
+  return {
+    ok: true,
+    project: await toReadableProjectDoc({ store, user, project }),
+  };
+}
+
+async function toReadableProjectDoc({ store, user, project }) {
+  const { password: _password, ...safeProject } = project;
+  const hasPassword = hasProjectPassword(project);
+  const accessGranted = await canReadPrivateProject({ store, user, project });
+
+  if (!hasPassword || accessGranted) {
+    return {
+      ...safeProject,
+      hasPassword,
+      accessGranted: true,
+    };
+  }
+
+  return {
+    id: project.id,
+    title: project.title,
+    type: project.type,
+    creatorId: project.creatorId,
+    creatorName: project.creatorName,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    status: project.status,
+    archived: project.archived,
+    hasPassword: true,
+    accessGranted: false,
+  };
+}
+
+async function canReadProjectById({ store, user, projectId }) {
+  if (typeof projectId !== 'string' || projectId.trim() === '') return false;
+  const project = await store.get('projects', projectId);
+  if (!project) return false;
+  return canReadPrivateProject({ store, user, project });
+}
+
+async function canReadPrivateProject({ store, user, project }) {
+  if (!hasProjectPassword(project)) return true;
+  if (canWriteProject(project, user)) return true;
+  return hasProjectAccessGrant({ store, user, projectId: project.id });
+}
+
+async function hasProjectAccessGrant({ store, user, projectId }) {
+  if (!user?.uid) return false;
+  const grant = await store.get('project_access', projectAccessGrantId(projectId, user.uid));
+  return grant?.projectId === projectId && grant?.uid === user.uid;
+}
+
+function projectAccessGrantId(projectId, uid) {
+  return `${projectId}:${uid}`;
+}
+
+function hasProjectPassword(project) {
+  return String(project?.password || '').trim() !== '';
 }
 
 async function authorizeNotificationOperation({ store, user, type, id, data }) {

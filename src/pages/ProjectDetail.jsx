@@ -6,6 +6,7 @@ import { getActivityMessageKey } from '../lib/activityDomain';
 import { getProjectRoutePrefix } from '../lib/dashboardDomain';
 import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
+import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
 import { PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
@@ -137,7 +138,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const location = useLocation();
   const { confirm, showToast } = useUI();
   
-  const [unlocked, setUnlocked] = useState(() => Boolean(location.state?.unlocked));
+  const [unlockedProjectId, setUnlockedProjectId] = useState(() => (location.state?.unlocked ? id : null));
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -168,8 +169,21 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     );
   }
 
+  const isLocallyUnlocked = unlockedProjectId === project.id || Boolean(location.state?.unlocked);
+  const isProjectLocked = hasProjectPassword(project) && !project.accessGranted && !isLocallyUnlocked;
+  const handleUnlockProject = async (e) => {
+    e.preventDefault();
+    try {
+      await unlockProjectAccess(project.id, inputPassword);
+      setUnlockedProjectId(project.id);
+      setPasswordError(false);
+    } catch {
+      setPasswordError(true);
+    }
+  };
+
   // Password Guard
-  if (project.password && !unlocked) {
+  if (isProjectLocked) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
         <div className="app-card flex w-full max-w-sm flex-col items-center p-8">
@@ -179,14 +193,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
             <h3 className="text-2xl font-medium text-m3-on-surface mb-2">{t('lockTitle')}</h3>
             <p className="text-sm text-m3-on-surface-variant mb-6 text-center">{t('verifyAccess')}</p>
             
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (inputPassword === project.password) {
-                setUnlocked(true);
-              } else {
-                setPasswordError(true);
-              }
-            }} className="w-full">
+            <form onSubmit={handleUnlockProject} className="w-full">
               <div className="relative mb-2">
                 <input
                   type="password" value={inputPassword}
@@ -307,7 +314,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
               <button onClick={copyId} className="touch-target -my-2 -mr-2 inline-flex items-center justify-center rounded-full text-m3-on-surface-variant hover:text-google-blue" title={t('copyFullProjectId')} aria-label={t('copyFullProjectId')}><Copy className="w-3.5 h-3.5" /></button>
             </div>
             <div className="app-chip">{projectTypeLabel}</div>
-            {project.password && <div className="app-chip app-chip-yellow"><Key className="w-4 h-4" /></div>}
+            {hasProjectPassword(project) && <div className="app-chip app-chip-yellow"><Key className="w-4 h-4" /></div>}
             {isArchived && <div className="app-chip"><Archive className="w-3 h-3" /> {t('archived')}</div>}
             {isStopped && <div className="app-chip"><Lock className="w-3 h-3" /> {t('paused')}</div>}
             {isFinished && <div className="app-chip app-chip-red"><Flag className="w-3 h-3" /> {t('finished')}</div>}

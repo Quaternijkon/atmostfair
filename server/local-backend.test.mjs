@@ -3221,6 +3221,205 @@ test('HTTP data API filters private notifications and friend records by current 
   });
 });
 
+test('HTTP data API hides private project contents until password unlock', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123', displayName: 'Viewer' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123', displayName: 'Admin' },
+      });
+
+      const privateProject = await store.add('projects', {
+        title: 'Secret Plan',
+        type: 'vote',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        password: 'open-sesame',
+        brief: 'Hidden launch plan',
+        votingConfig: { mode: 'single' },
+        createdAt: 1,
+      });
+      const publicProject = await store.add('projects', {
+        title: 'Public Plan',
+        type: 'vote',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        password: '',
+        brief: 'Visible launch plan',
+        createdAt: 2,
+      });
+      const privateItem = await store.add('voting_items', {
+        projectId: privateProject.id,
+        title: 'Secret option',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [],
+        createdAt: 3,
+      });
+      const publicItem = await store.add('voting_items', {
+        projectId: publicProject.id,
+        title: 'Public option',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [],
+        createdAt: 4,
+      });
+
+      const viewerProjectsBefore = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', query: {} },
+      });
+      const privatePreview = viewerProjectsBefore.docs.find((entry) => entry.id === privateProject.id);
+      assert.equal(privatePreview.title, 'Secret Plan');
+      assert.equal(privatePreview.type, 'vote');
+      assert.equal(privatePreview.hasPassword, true);
+      assert.equal(privatePreview.accessGranted, false);
+      assert.equal(Object.hasOwn(privatePreview, 'password'), false);
+      assert.equal(Object.hasOwn(privatePreview, 'brief'), false);
+      assert.equal(Object.hasOwn(privatePreview, 'votingConfig'), false);
+      assert.equal(
+        viewerProjectsBefore.docs.find((entry) => entry.id === publicProject.id).brief,
+        'Visible launch plan',
+      );
+
+      const viewerPrivateBefore = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(viewerPrivateBefore.doc.hasPassword, true);
+      assert.equal(viewerPrivateBefore.doc.accessGranted, false);
+      assert.equal(Object.hasOwn(viewerPrivateBefore.doc, 'password'), false);
+      assert.equal(Object.hasOwn(viewerPrivateBefore.doc, 'brief'), false);
+
+      const viewerItemsBefore = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'voting_items', query: {} },
+      });
+      assert.deepEqual(viewerItemsBefore.docs.map((entry) => entry.id), [publicItem.id]);
+
+      const viewerPrivateItemBefore = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'voting_items', id: privateItem.id },
+      });
+      assert.equal(viewerPrivateItemBefore.doc, null);
+
+      const blockedPrivateItem = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          collection: 'voting_items',
+          data: {
+            projectId: privateProject.id,
+            title: 'Intrusion option',
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(blockedPrivateItem.status, 403);
+      assert.equal(blockedPrivateItem.body.error.code, 'data/forbidden');
+
+      const ownerProject = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(ownerProject.doc.brief, 'Hidden launch plan');
+      assert.equal(ownerProject.doc.hasPassword, true);
+      assert.equal(ownerProject.doc.accessGranted, true);
+      assert.equal(Object.hasOwn(ownerProject.doc, 'password'), false);
+
+      const adminItems = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: admin.token,
+        body: { collection: 'voting_items', query: {} },
+      });
+      assert.deepEqual(
+        adminItems.docs.map((entry) => entry.id).sort(),
+        [privateItem.id, publicItem.id].sort(),
+      );
+
+      const wrongUnlock = await fetchJsonResponse(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'wrong-password' },
+      });
+      assert.equal(wrongUnlock.status, 403);
+      assert.equal(wrongUnlock.body.error.code, 'project-access/invalid-password');
+
+      const unlock = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'open-sesame' },
+      });
+      assert.equal(unlock.ok, true);
+      assert.equal(unlock.project.brief, 'Hidden launch plan');
+      assert.equal(unlock.project.hasPassword, true);
+      assert.equal(unlock.project.accessGranted, true);
+      assert.equal(Object.hasOwn(unlock.project, 'password'), false);
+
+      const viewerPrivateAfter = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(viewerPrivateAfter.doc.brief, 'Hidden launch plan');
+      assert.equal(viewerPrivateAfter.doc.votingConfig.mode, 'single');
+      assert.equal(viewerPrivateAfter.doc.accessGranted, true);
+      assert.equal(Object.hasOwn(viewerPrivateAfter.doc, 'password'), false);
+
+      const viewerItemsAfter = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'voting_items', query: {} },
+      });
+      assert.deepEqual(
+        viewerItemsAfter.docs.map((entry) => entry.id).sort(),
+        [privateItem.id, publicItem.id].sort(),
+      );
+
+      const allowedPrivateItem = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          collection: 'voting_items',
+          data: {
+            projectId: privateProject.id,
+            title: 'Unlocked option',
+            createdAt: 6,
+          },
+        },
+      });
+      assert.equal(allowedPrivateItem.doc.creatorId, viewer.user.uid);
+      assert.equal(allowedPrivateItem.doc.title, 'Unlocked option');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects duplicate friendships and keeps friend messages append-only', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

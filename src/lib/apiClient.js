@@ -35,3 +35,23 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
   }
   return payload;
 }
+
+export function hasProjectPassword(project) {
+  return Boolean(project?.hasPassword || String(project?.password || '').trim());
+}
+
+export async function unlockProjectAccess(projectId, password) {
+  const cleanProjectId = String(projectId || '').trim();
+  if (!cleanProjectId) {
+    const error = new Error('Project id is required.');
+    error.code = 'project-access/invalid-project';
+    throw error;
+  }
+
+  return apiRequest('/api/project-access/unlock', {
+    body: {
+      projectId: cleanProjectId,
+      password: String(password || ''),
+    },
+  });
+}

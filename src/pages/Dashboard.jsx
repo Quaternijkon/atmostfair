@@ -8,6 +8,7 @@ import {
   filterAndSortDashboardProjects,
   getProjectRoutePrefix,
 } from '../lib/dashboardDomain';
+import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
 import { PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
@@ -122,27 +123,29 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     setSelectedModule(null);
   };
 
-  const navigateToProject = (project) => {
+  const navigateToProject = (project, options) => {
        const routePrefix = getProjectRoutePrefix(project.type);
-       navigate(`/${routePrefix}/${project.id}`);
+       navigate(`/${routePrefix}/${project.id}`, options);
   }
 
   const handleProjectClick = (project) => {
-    if (project.password) {
+    if (hasProjectPassword(project) && !project.accessGranted) {
       setPasswordPromptProject(project); setInputPassword(''); setPasswordError(false);
     } else {
       navigateToProject(project);
     }
   };
 
-  const verifyPassword = (e) => {
+  const verifyPassword = async (e) => {
     e.preventDefault();
-    if (inputPassword === passwordPromptProject.password) {
+    try {
       const project = passwordPromptProject;
-      const routePrefix = getProjectRoutePrefix(project.type);
-      navigate(`/${routePrefix}/${project.id}`, { state: { unlocked: true } });
+      await unlockProjectAccess(project.id, inputPassword);
+      navigateToProject(project, { state: { unlocked: true } });
       setPasswordPromptProject(null);
-    } else { setPasswordError(true); }
+    } catch {
+      setPasswordError(true);
+    }
   };
 
   // Styles Helper for Grid
@@ -368,7 +371,7 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t) => (
               {isArchived && <span className="app-chip bg-m3-on-surface/10 py-0.5"><Archive className="w-3 h-3" /> {t('archived')}</span>}
               {!isArchived && project.status === 'finished' && <span className="app-chip bg-m3-on-surface/10 py-0.5">{t('finished')}</span>}
               {!isArchived && project.status === 'stopped' && <span className="app-chip bg-m3-on-surface/10 py-0.5">{t('paused')}</span>}
-              {project.password && <Lock className={`w-4 h-4 ${isActive ? 'text-google-yellow' : 'text-m3-on-surface-variant'}`} />}
+              {hasProjectPassword(project) && <Lock className={`w-4 h-4 ${isActive ? 'text-google-yellow' : 'text-m3-on-surface-variant'}`} />}
             </div>
             <h3 className={`mb-2 line-clamp-2 px-1 text-lg font-medium leading-snug transition-colors ${isActive ? 'text-m3-on-surface font-semibold' : 'text-m3-on-surface-variant'}`}>{project.title}</h3>
             <div className="mt-auto flex items-center justify-between border-t border-m3-outline-variant/20 px-1 pt-4 text-xs text-m3-on-surface-variant">

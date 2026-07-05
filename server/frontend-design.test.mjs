@@ -126,6 +126,31 @@ test('project detail distinguishes loading from missing projects with recovery c
   assert.doesNotMatch(files.detail, /<h2[^>]*>\{t\('loading'\)\}<\/h2>[\s\S]{0,160}<button/, 'Project detail should not show an infinite loading state with only a dashboard button');
 });
 
+test('password-protected project unlocks use server access grants', async () => {
+  const files = {
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    apiClient: await readFile(path.join(root, 'src/lib/apiClient.js'), 'utf8'),
+  };
+  const combinedSource = Object.values(files).join('\n');
+
+  assert.match(combinedSource, /\/api\/project-access\/unlock/, 'Project unlocks should call the backend grant endpoint');
+  assert.match(files.dashboard, /unlockProjectAccess/, 'Dashboard password modal should request a server grant');
+  assert.match(files.detail, /unlockProjectAccess/, 'Project detail password guard should request a server grant');
+  assert.match(files.dashboard, /hasProjectPassword/, 'Dashboard should use lock metadata instead of raw project passwords');
+  assert.match(files.detail, /hasProjectPassword/, 'Project detail should use lock metadata instead of raw project passwords');
+  assert.doesNotMatch(
+    files.dashboard,
+    /inputPassword\s*===\s*passwordPromptProject\.password/,
+    'Dashboard should not compare private project passwords in browser state',
+  );
+  assert.doesNotMatch(
+    files.detail,
+    /inputPassword\s*===\s*project\.password/,
+    'Project detail should not compare private project passwords in browser state',
+  );
+});
+
 test('game and booking workspaces use localized ergonomic states', async () => {
   const files = {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
@@ -690,8 +715,9 @@ test('React compiler hotspots stay derived and deterministic', async () => {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
   };
 
-  assert.match(files.detail, /useState\(\(\) => Boolean\(location\.state\?\.\unlocked\)\)/, 'Project detail should initialize unlock state from navigation state');
-  assert.doesNotMatch(files.detail, /useEffect\([\s\S]{0,240}setUnlocked\(true\)/, 'Project detail should not synchronously set unlock state inside an effect');
+  assert.match(files.detail, /useState\(\(\) => \(location\.state\?\.unlocked \? id : null\)\)/, 'Project detail should initialize route unlock state for the current project id');
+  assert.match(files.detail, /unlockedProjectId === project\.id \|\| Boolean\(location\.state\?\.unlocked\)/, 'Project detail should scope local unlock state to the current project');
+  assert.doesNotMatch(files.detail, /useEffect\([\s\S]{0,240}setUnlockedProjectId/, 'Project detail should not synchronously set unlock state inside an effect');
 
   assert.match(files.roulette, /advanceRepeatSeed/, 'Roulette repeat draws should advance a deterministic seed helper');
   assert.doesNotMatch(files.roulette, /\bprngState\s*=\s*\(prngState\s*\*/, 'Roulette should not reassign PRNG state after render');
