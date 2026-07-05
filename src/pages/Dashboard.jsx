@@ -13,7 +13,7 @@ import {
   normalizeRecentProjectIds,
 } from '../lib/dashboardDomain';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
-import { PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
+import { PROJECT_CREATOR_NAME_MAX_LENGTH, PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
   return (
@@ -31,6 +31,7 @@ const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
 
 const DASHBOARD_TAB_IDS = ['collect', 'connect', 'select', 'project'];
 const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
+const normalizeCreatorNameInput = (value) => String(value || '').slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
 
 export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -44,7 +45,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const [showCreate, setShowCreate] = useState(false);
   const [selectedModule, setSelectedModule] = useState(null); // Sub-selection
   const [newTitle, setNewTitle] = useState('');
-  const [creatorName, setCreatorName] = useState(defaultName);
+  const [creatorName, setCreatorName] = useState(() => normalizeCreatorNameInput(defaultName));
   const [newPassword, setNewPassword] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -443,7 +444,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                   </div>
                   <div className="w-full md:w-1/3">
                     <label className="app-label">{t('creatorName')}</label>
-                    <input type="text" placeholder={t('creatorNamePlaceholder')} value={creatorName} onChange={e => setCreatorName(e.target.value)} className="app-input" required disabled={isCreatingProject} />
+                    <input type="text" placeholder={t('creatorNamePlaceholder')} value={creatorName} onChange={e => setCreatorName(normalizeCreatorNameInput(e.target.value))} className="app-input" required maxLength={PROJECT_CREATOR_NAME_MAX_LENGTH} disabled={isCreatingProject} />
                   </div>
                 </div>
                 <div className="flex flex-col md:flex-row gap-4 items-end">

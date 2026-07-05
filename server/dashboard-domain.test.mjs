@@ -327,6 +327,13 @@ test('dashboard create form exposes recoverable and accessible validation errors
   assert.doesNotMatch(dashboard, /prompt\(/, 'Create flow should not use native prompts');
 });
 
+test('dashboard create form caps creator display names with the shared project limit', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.match(dashboard, /PROJECT_CREATOR_NAME_MAX_LENGTH/, 'Dashboard should share the creator display-name limit with the project domain');
+  assert.match(dashboard, /maxLength=\{PROJECT_CREATOR_NAME_MAX_LENGTH\}/, 'Creator name input should cap text before submit');
+});
+
 test('dashboard opens the newly created project after a successful create', async () => {
   const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
 

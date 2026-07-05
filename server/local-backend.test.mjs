@@ -8,7 +8,11 @@ import { createAuthService } from './auth-service.mjs';
 import { arrayRemove, arrayUnion, createDataStore } from './data-store.mjs';
 import { createLocalBackendServer } from './local-backend.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
-import { PROJECT_CASCADE_COLLECTIONS, createProjectCascadeDeleteOperations } from '../src/lib/projectDomain.js';
+import {
+  PROJECT_CASCADE_COLLECTIONS,
+  PROJECT_CREATOR_NAME_MAX_LENGTH,
+  createProjectCascadeDeleteOperations,
+} from '../src/lib/projectDomain.js';
 
 async function withTempStore(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'atmostfair-'));
@@ -345,12 +349,14 @@ test('HTTP data API protects project documents from non-owner writes', async () 
           collection: 'projects',
           data: {
             title: 'Owned Project',
+            creatorName: 'C'.repeat(PROJECT_CREATOR_NAME_MAX_LENGTH + 20),
             creatorId: viewer.user.uid,
             createdAt: 1,
           },
         },
       });
       assert.equal(created.doc.creatorId, owner.user.uid);
+      assert.equal(created.doc.creatorName, 'C'.repeat(PROJECT_CREATOR_NAME_MAX_LENGTH));
 
       const hijack = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',

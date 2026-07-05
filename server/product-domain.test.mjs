@@ -1051,6 +1051,7 @@ test('single vote mode moves the user vote inside one project only', () => {
 
 test('project creation data normalizes valid input and rejects invalid project shells', () => {
   assert.equal(typeof createProjectCreateData, 'function');
+  assert.equal(typeof projectDomain.PROJECT_CREATOR_NAME_MAX_LENGTH, 'number');
 
   const user = { uid: 'owner-1', displayName: 'Ada' };
   assert.deepEqual(
@@ -1085,6 +1086,20 @@ test('project creation data normalizes valid input and rejects invalid project s
   assert.equal(createProjectCreateData('Valid', 'unknown', user, 'Ada', '', 6003), null, 'unknown project types should not create projects');
   assert.equal(createProjectCreateData('Valid', 'vote', { uid: '' }, 'Ada', '', 6004), null, 'missing users should not create projects');
   assert.equal(createProjectCreateData('A'.repeat(121), 'vote', user, 'Ada', '', 6005), null, 'overlong titles should not create projects');
+
+  const longCreatorName = 'C'.repeat(projectDomain.PROJECT_CREATOR_NAME_MAX_LENGTH + 8);
+  assert.equal(
+    createProjectCreateData('Creator Cap', 'vote', user, longCreatorName, '', 6006).creatorName,
+    'C'.repeat(projectDomain.PROJECT_CREATOR_NAME_MAX_LENGTH),
+    'explicit creator display names should be capped for downstream cards and exports',
+  );
+
+  const longFallbackName = 'F'.repeat(projectDomain.PROJECT_CREATOR_NAME_MAX_LENGTH + 8);
+  assert.equal(
+    createProjectCreateData('Creator Fallback Cap', 'vote', { uid: 'owner-3', displayName: longFallbackName }, '', '', 6007).creatorName,
+    'F'.repeat(projectDomain.PROJECT_CREATOR_NAME_MAX_LENGTH),
+    'fallback account display names should use the same cap',
+  );
 });
 
 test('project status toggle guard allows owner and admin but blocks other users', () => {

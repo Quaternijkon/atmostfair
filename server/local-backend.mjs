@@ -16,6 +16,7 @@ import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds, normalizeRecentProjectIds } from '../src/lib/dashboardDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
 import {
+  PROJECT_CREATOR_NAME_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
   createGameRoomCreateData,
@@ -2066,6 +2067,7 @@ async function normalizeProjectCreateData({ store, data, user }) {
       type: 'add',
     }),
     creatorId: user.uid,
+    creatorName: cleanUserProvidedName(projectData.creatorName, user),
     password: String(password || '').trim(),
   };
 }
@@ -2239,8 +2241,8 @@ function normalizeEmail(email) {
 
 function cleanUserProvidedName(name, user) {
   const cleaned = String(name || '').trim();
-  if (cleaned) return cleaned;
-  return user?.displayName || user?.email?.split('@')[0] || '';
+  const fallback = user?.displayName || user?.email?.split('@')[0] || '';
+  return String(cleaned || fallback || '').trim().slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
 }
 
 function throwDataError(status, code, message) {

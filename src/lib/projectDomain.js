@@ -16,6 +16,7 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 ];
 
 export const PROJECT_TITLE_MAX_LENGTH = 120;
+export const PROJECT_CREATOR_NAME_MAX_LENGTH = 60;
 export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 
@@ -998,8 +999,8 @@ export function createProjectOrphanCleanupPlan(projects, docsByCollection) {
 
 function cleanName(userName, user) {
   const explicit = String(userName || '').trim();
-  if (explicit) return explicit;
-  return user.displayName || user.email?.split('@')[0] || '';
+  const fallback = user?.displayName || user?.email?.split('@')[0] || '';
+  return String(explicit || fallback || '').trim().slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
 }
 
 function normalizeGameRoomInviteId(value) {
