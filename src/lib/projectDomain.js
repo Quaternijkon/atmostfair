@@ -303,6 +303,90 @@ export function createRouletteResultData(participants, config = {}, generatedAt)
   };
 }
 
+export function createRpsNextRoundPatch(room, transitionAt) {
+  if (!room?.id || room.game !== 'rps' || !transitionAt) return null;
+  const players = normalizeRpsPlayers(room.players);
+  if (players.length < 2) return null;
+
+  const resetPlayers = players.map((player) => ({
+    ...player,
+    lastMove: player.move || player.lastMove || null,
+    move: null,
+  }));
+  const winThreshold = Math.floor((Number.parseInt(room.config?.bestOf, 10) || 1) / 2) + 1;
+  const winner = players.find((player) => (Number.parseInt(player.score, 10) || 0) >= winThreshold);
+
+  if (winner) {
+    return {
+      status: 'finished',
+      winnerId: winner.uid,
+      finishedAt: transitionAt,
+      players: resetPlayers,
+      resultSummary: createGameRoomSummary({
+        ...room,
+        status: 'finished',
+        winnerId: winner.uid,
+        players: resetPlayers,
+      }),
+    };
+  }
+
+  return {
+    status: 'playing',
+    currentRound: (Number.parseInt(room.currentRound, 10) || 1) + 1,
+    roundStartTime: transitionAt,
+    players: resetPlayers,
+  };
+}
+
+export function createGameRoomSummary(room) {
+  if (!room?.id) return null;
+  if (room.resultSummary) return clonePlainValue(room.resultSummary);
+
+  const players = Array.isArray(room.players) ? room.players : [];
+  const playerCount = players.length;
+  if (room.game === 'rps') {
+    const winner = players.find((player) => player.uid === room.winnerId) || null;
+    const scores = players.map((player) => Number.parseInt(player.score, 10) || 0);
+    const history = Array.isArray(room.history) ? room.history : [];
+    const lastRound = history[history.length - 1] || null;
+    const lastRoundWinner = lastRound?.winnerId
+      ? players.find((player) => player.uid === lastRound.winnerId)
+      : null;
+
+    return {
+      game: 'rps',
+      status: room.status || 'waiting',
+      winnerId: winner?.uid || null,
+      winnerName: winner?.name || '',
+      roundsPlayed: history.length || Number.parseInt(room.currentRound, 10) || 0,
+      scoreLine: scores.length > 0 ? scores.join(' - ') : '',
+      playerCount,
+      ...(lastRound ? {
+        lastRound: {
+          round: Number.parseInt(lastRound.round, 10) || history.length,
+          p1Move: lastRound.p1Move || '',
+          p2Move: lastRound.p2Move || '',
+          winnerId: lastRound.winnerId || null,
+          winnerName: lastRoundWinner?.name || '',
+        },
+      } : {}),
+    };
+  }
+
+  const leader = [...players].sort((a, b) => (Number.parseInt(b.progress, 10) || 0) - (Number.parseInt(a.progress, 10) || 0))[0] || null;
+  const winner = players.find((player) => player.status === 'won') || null;
+  return {
+    game: room.game || 'mine',
+    status: room.status || 'playing',
+    winnerId: winner?.uid || null,
+    winnerName: winner?.name || '',
+    roundsPlayed: 0,
+    scoreLine: leader ? `${Number.parseInt(leader.progress, 10) || 0}%` : '',
+    playerCount,
+  };
+}
+
 export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt) {
   if (!projectId || !user?.uid) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
@@ -651,6 +735,17 @@ function normalizedRouletteParticipants(participants) {
       joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
     }))
     .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+}
+
+function normalizeRpsPlayers(players) {
+  if (!Array.isArray(players)) return [];
+  return players
+    .filter((player) => player?.uid)
+    .map((player) => ({
+      ...clonePlainValue(player),
+      score: Number.parseInt(player.score, 10) || 0,
+      move: player.move || null,
+    }));
 }
 
 function createRouletteTarget(participant) {

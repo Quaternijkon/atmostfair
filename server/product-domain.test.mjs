@@ -403,6 +403,77 @@ test('roulette result data records deterministic winners and replayable audit st
   assert.equal(createRouletteResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], { mode: 'classic' }, 4102), null);
 });
 
+test('RPS room transition persists a reusable match result summary', () => {
+  const createRpsNextRoundPatch = projectDomain.createRpsNextRoundPatch;
+  const createGameRoomSummary = projectDomain.createGameRoomSummary;
+  assert.equal(typeof createRpsNextRoundPatch, 'function');
+  assert.equal(typeof createGameRoomSummary, 'function');
+
+  const room = {
+    id: 'game-1',
+    game: 'rps',
+    status: 'showdown',
+    currentRound: 3,
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 2, move: 'rock' },
+      { uid: 'u2', name: 'Bo', score: 1, move: 'scissors' },
+    ],
+    history: [
+      { round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 1000 },
+      { round: 2, p1Move: 'paper', p2Move: 'scissors', winnerId: 'u2', timestamp: 2000 },
+      { round: 3, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 3000 },
+    ],
+  };
+
+  const patch = createRpsNextRoundPatch(room, 5000);
+  assert.deepEqual(patch, {
+    status: 'finished',
+    winnerId: 'u1',
+    finishedAt: 5000,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 2, lastMove: 'rock', move: null },
+      { uid: 'u2', name: 'Bo', score: 1, lastMove: 'scissors', move: null },
+    ],
+    resultSummary: {
+      game: 'rps',
+      status: 'finished',
+      winnerId: 'u1',
+      winnerName: 'Ana',
+      roundsPlayed: 3,
+      scoreLine: '2 - 1',
+      playerCount: 2,
+      lastRound: {
+        round: 3,
+        p1Move: 'rock',
+        p2Move: 'scissors',
+        winnerId: 'u1',
+        winnerName: 'Ana',
+      },
+    },
+  });
+
+  assert.deepEqual(createGameRoomSummary({ ...room, ...patch }), patch.resultSummary);
+
+  assert.deepEqual(createRpsNextRoundPatch({
+    ...room,
+    currentRound: 1,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 1, move: 'rock' },
+      { uid: 'u2', name: 'Bo', score: 0, move: 'scissors' },
+    ],
+    history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 1000 }],
+  }, 6000), {
+    status: 'playing',
+    currentRound: 2,
+    roundStartTime: 6000,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 1, lastMove: 'rock', move: null },
+      { uid: 'u2', name: 'Bo', score: 0, lastMove: 'scissors', move: null },
+    ],
+  });
+});
+
 test('schedule submission guard updates an existing response instead of duplicating it', () => {
   const createScheduleSubmissionWrite = projectDomain.createScheduleSubmissionWrite;
   assert.equal(typeof createScheduleSubmissionWrite, 'function');

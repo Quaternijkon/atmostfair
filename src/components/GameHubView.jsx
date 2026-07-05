@@ -4,6 +4,7 @@ import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepa
 import { useUI } from './UIContext';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
+import { createGameRoomSummary, createRpsNextRoundPatch } from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
 const RPS_COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
@@ -30,36 +31,8 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
   const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
   
   const startNextRound = useCallback(async () => {
-       // Check Win Condition already handled before entering showdown? 
-       // No, usually we check at end of showdown or start of next.
-       // Let's do it simply: We just clear moves and increment round, assuming scores updated before Showdown.
-       // Wait, if match ended, we shouldn't be in 'showdown' loop leading to 'playing'.
-       // Implementation detail: If Match Won, we go 'showdown' -> 'finished'.
-       
-       const winThreshold = Math.floor(room.config.bestOf / 2) + 1;
-       const p1 = room.players[0];
-       const p2 = room.players[1];
-       
-       let matchWinner = null;
-       if (p1.score >= winThreshold) matchWinner = p1.uid;
-       if (p2.score >= winThreshold) matchWinner = p2.uid;
-       
-       let updateData = {};
-       if (matchWinner) {
-           updateData = {
-               status: 'finished',
-               winnerId: matchWinner,
-               players: room.players.map(p => ({...p, lastMove: p.move, move: null})) 
-           };
-       } else {
-           updateData = {
-               status: 'playing',
-               currentRound: (room.currentRound || 1) + 1,
-              roundStartTime: nowMs(),
-               players: room.players.map(p => ({...p, lastMove: p.move, move: null}))
-           };
-       }
-       
+       const updateData = createRpsNextRoundPatch(room, nowMs());
+       if (!updateData) return;
        await updateDoc(doc(db, 'game_rooms', room.id), updateData);
   }, [room]);
 
@@ -721,7 +694,7 @@ export default function GameHubView({ project, user, t }) {
   const [activeTab, setActiveTab] = useState('lobby'); // lobby | finished
   const [rooms, setRooms] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [activeRoom, setActiveRoom] = useState(null); // If joined/spectating a room
+  const [activeRoomId, setActiveRoomId] = useState(null); // If joined/spectating a room
   
   // Create Form State
   const [roomName, setRoomName] = useState('');
@@ -735,15 +708,26 @@ export default function GameHubView({ project, user, t }) {
   useEffect(() => {
     const q = query(
         collection(db, 'game_rooms'), 
-        where('projectId', '==', project.id),
-        where('status', activeTab === 'lobby' ? 'in' : '==', activeTab === 'lobby' ? ['waiting', 'playing'] : 'finished')
+        where('projectId', '==', project.id)
     );
     
     const unsub = onSnapshot(q, (snapshot) => {
         setRooms(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
-  }, [project.id, activeTab]);
+  }, [project.id]);
+
+  const visibleRooms = useMemo(() => (
+      rooms.filter(room => (
+          activeTab === 'lobby'
+              ? ['waiting', 'playing', 'showdown'].includes(room.status)
+              : room.status === 'finished'
+      ))
+  ), [activeTab, rooms]);
+
+  const currentActiveRoom = useMemo(() => (
+      activeRoomId ? rooms.find(room => room.id === activeRoomId) || null : null
+  ), [activeRoomId, rooms]);
 
   const handleCreateRoom = async (e) => {
       e.preventDefault();
@@ -804,14 +788,14 @@ export default function GameHubView({ project, user, t }) {
   };
   
   const handleJoin = async (room) => {
-       setActiveRoom(room);
+       setActiveRoomId(room.id);
   };
   
-      if (activeRoom) {
-          if (activeRoom.game === 'mine') {
-              return <MinesweeperGame key={activeRoom.id} user={user} room={activeRoom} onLeave={() => setActiveRoom(null)} t={t} />;
+      if (currentActiveRoom) {
+          if (currentActiveRoom.game === 'mine') {
+              return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} onLeave={() => setActiveRoomId(null)} t={t} />;
           }
-          return <RPSGame key={activeRoom.id} user={user} room={activeRoom} projectId={project.id} onLeave={() => setActiveRoom(null)} t={t} />;
+          return <RPSGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} projectId={project.id} onLeave={() => setActiveRoomId(null)} t={t} />;
       }
   
   const GAMES = [
@@ -828,7 +812,27 @@ export default function GameHubView({ project, user, t }) {
     <div className="flex h-full flex-col animate-fade-in">
        {/* Header */}
        <div className="mb-6 flex items-center justify-between">
-           <h1 className="text-3xl font-medium text-m3-on-surface">{t('gameHub')}</h1>
+           <div>
+               <h1 className="text-3xl font-medium text-m3-on-surface">{t('gameHub')}</h1>
+               <div className="mt-3 inline-flex rounded-full border border-m3-outline-variant/50 bg-m3-surface-container p-1">
+                   <button
+                     type="button"
+                     aria-pressed={activeTab === 'lobby'}
+                     onClick={() => setActiveTab('lobby')}
+                     className={`min-h-10 rounded-full px-4 text-sm font-medium transition-colors ${activeTab === 'lobby' ? 'bg-m3-primary text-m3-on-primary' : 'text-m3-on-surface-variant hover:bg-m3-surface-container-high hover:text-m3-on-surface'}`}
+                   >
+                       {t('activeRooms')}
+                   </button>
+                   <button
+                     type="button"
+                     aria-pressed={activeTab === 'finished'}
+                     onClick={() => setActiveTab('finished')}
+                     className={`min-h-10 rounded-full px-4 text-sm font-medium transition-colors ${activeTab === 'finished' ? 'bg-m3-primary text-m3-on-primary' : 'text-m3-on-surface-variant hover:bg-m3-surface-container-high hover:text-m3-on-surface'}`}
+                   >
+                       {t('finishedRooms')}
+                   </button>
+               </div>
+           </div>
            <button onClick={() => setShowCreate(!showCreate)} className="app-button-tonal">
                {showCreate ? <X className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
                {showCreate ? t('close') : t('createRoom')}
@@ -932,13 +936,16 @@ export default function GameHubView({ project, user, t }) {
        
        {/* Rooms Grid */}
        <div className="workspace-grid">
-               {rooms.length === 0 ? (
+               {visibleRooms.length === 0 ? (
                    <div className="app-card-quiet col-span-full py-20 text-center text-m3-on-surface-variant/60">
                        <Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-50"/>
-                       {t('noActiveRooms')}
+                       {activeTab === 'finished' ? t('noFinishedRooms') : t('noActiveRooms')}
                    </div>
            ) : (
-                  rooms.map(room => (
+                  visibleRooms.map(room => {
+                   const roomSummary = createGameRoomSummary(room) || {};
+                   const isFinishedRoom = room.status === 'finished';
+                   return (
                    <button type="button" key={room.id} onClick={() => handleJoin(room)} className="app-card group relative w-full cursor-pointer overflow-hidden p-5 text-left hover:border-google-blue/30 hover:bg-m3-surface-container-high">
                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                            {room.game === 'mine' ? <Bomb className="w-24 h-24 rotate-12"/> : <Scissors className="w-24 h-24 -rotate-12"/> }
@@ -958,6 +965,23 @@ export default function GameHubView({ project, user, t }) {
                            <p className="text-sm text-m3-on-surface-variant mb-4 capitalize">
                                {room.game === 'mine' ? `${difficultyLabels[room.config.difficulty] || room.config.difficulty}` : `${t('bestOf')} ${room.config.bestOf}`}
                            </p>
+
+                           {isFinishedRoom && (
+                               <div className="mb-4 rounded-lg border border-google-yellow/25 bg-google-yellow/10 p-3">
+                                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+                                       <Trophy className="h-4 w-4 text-google-yellow" />
+                                       {t('gameResult')}
+                                   </div>
+                                   <div className="grid gap-1 text-xs text-m3-on-surface-variant">
+                                       <div>{t('gameWinner', { name: roomSummary.winnerName || t('draw') })}</div>
+                                       <div>{t('gameScoreLine', { score: roomSummary.scoreLine || '-' })}</div>
+                                       <div>{t('gameRoundsPlayed', { count: roomSummary.roundsPlayed || 0 })}</div>
+                                       {roomSummary.lastRound && (
+                                           <div>{t('gameLastRound', { round: roomSummary.lastRound.round })}</div>
+                                       )}
+                                   </div>
+                               </div>
+                           )}
                            
                            <div className="flex items-center gap-2 text-xs text-m3-on-surface-variant/70">
                                <User className="w-3 h-3"/>
@@ -965,7 +989,8 @@ export default function GameHubView({ project, user, t }) {
                            </div>
                        </div>
                    </button>
-                  ))
+                   );
+                  })
            )}
        </div>
     </div>

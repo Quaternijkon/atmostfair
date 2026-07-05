@@ -145,6 +145,39 @@ test('game and booking workspaces use localized ergonomic states', async () => {
   assert.match(files.booking, /app-card-quiet[\s\S]{0,300}configureFirst/, 'Booking unconfigured state should use a designed empty-state surface');
 });
 
+test('game hub exposes localized active and finished room summaries', async () => {
+  const files = {
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
+    projectDomain: await readFile(path.join(root, 'src/lib/projectDomain.js'), 'utf8'),
+  };
+
+  for (const key of [
+    'activeRooms',
+    'finishedRooms',
+    'noFinishedRooms',
+    'gameResult',
+    'gameWinner',
+    'gameRoundsPlayed',
+    'gameLastRound',
+    'gameScoreLine',
+  ]) {
+    assert.match(files.gameHub, new RegExp(`t\\('${key}'(?:,|\\))`), `Game hub should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.gameHub, /createGameRoomSummary/, 'Game hub should derive list summaries through the domain helper');
+  assert.match(files.gameHub, /createRpsNextRoundPatch/, 'RPS room transitions should use the domain helper');
+  assert.match(files.gameHub, /setActiveTab\('finished'\)/, 'Game hub should expose finished rooms');
+  assert.match(files.gameHub, /setActiveTab\('lobby'\)/, 'Game hub should expose active rooms');
+  assert.match(files.gameHub, /currentActiveRoom/, 'Active game room should be derived from live room snapshots');
+  assert.match(files.gameHub, /visibleRooms/, 'Room tabs should filter the full project room snapshot');
+  assert.match(files.gameHub, /roomSummary\.winnerName/, 'Room cards should show the finished winner');
+  assert.match(files.gameHub, /roomSummary\.scoreLine/, 'Room cards should show the score line');
+  assert.match(files.projectDomain, /resultSummary/, 'Finished game rooms should persist a reusable result summary');
+  assert.doesNotMatch(files.gameHub, />Finished|>Active|>Winner|>Rounds|>Last round|No finished rooms/, 'Game hub result copy should be localized');
+});
+
 test('collaboration workspaces avoid fallback copy and clickable divs', async () => {
   const files = {
     friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
