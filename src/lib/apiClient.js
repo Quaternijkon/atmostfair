@@ -1,4 +1,4 @@
-import { resolveApiBaseUrl } from './apiBase';
+import { resolveApiBaseUrl } from './apiBase.js';
 
 const TOKEN_KEY = 'atmostfair.localAuthToken';
 const API_BASE_URL = resolveApiBaseUrl({
@@ -28,8 +28,12 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.error?.message || `Request failed with status ${response.status}`);
-    error.code = payload.error?.code || 'request-failed';
+    const serviceUnavailable = response.status >= 500;
+    const error = new Error(
+      payload.error?.message
+      || (serviceUnavailable ? 'Service is temporarily unavailable.' : `Request failed with status ${response.status}`)
+    );
+    error.code = payload.error?.code || (serviceUnavailable ? 'request/service-unavailable' : 'request-failed');
     error.status = response.status;
     throw error;
   }
