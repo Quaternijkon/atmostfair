@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Copy, Key, Lock, Flag, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
-import { useUI } from '../components/UIComponents';
+import { Activity, Archive, ArrowLeft, Copy, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode } from '../components/Icons';
+import { useUI } from '../components/UIContext';
+import { getActivityMessageKey } from '../lib/activityDomain';
+import { formatDate } from '../lib/locale';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
@@ -14,13 +16,47 @@ import QRCodeShare from '../components/QRCodeShare';
 import ChatRoom from '../components/ChatRoom';
 import GameHubView from '../components/GameHubView';
 
-export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, actions, t }) {
+function ActivityTimeline({ activities, t }) {
+  const visibleActivities = (activities || []).slice(0, 8);
+
+  return (
+    <aside className="app-card p-4" aria-label={t('activityTimeline')}>
+      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+        <Activity className="h-4 w-4 text-google-blue" />
+        <span>{t('activityTimeline')}</span>
+      </div>
+      {visibleActivities.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-m3-outline-variant/40 px-3 py-4 text-center text-xs text-m3-on-surface-variant">
+          {t('noActivities')}
+        </div>
+      ) : (
+        <div role="list" className="space-y-3">
+          {visibleActivities.map((activity) => (
+            <div key={activity.id} role="listitem" className="rounded-lg border border-m3-outline-variant/30 px-3 py-2">
+              <p className="text-sm text-m3-on-surface">
+                {t(getActivityMessageKey(activity.type), {
+                  actor: activity.actorName || t('unknownUser'),
+                  subject: activity.subject || t('project'),
+                })}
+              </p>
+              <p className="mt-1 text-[11px] text-m3-on-surface-variant">
+                {formatDate(activity.createdAt, t)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, projectActivities, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { confirm } = useUI();
   
-  const [unlocked, setUnlocked] = useState(false);
+  const [unlocked, setUnlocked] = useState(() => Boolean(location.state?.unlocked));
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -28,18 +64,11 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
 
   const project = projects.find(p => p.id === id);
 
-  useEffect(() => {
-    // Check if passed 'unlocked' state from Dashboard
-    if (location.state?.unlocked) {
-      setUnlocked(true);
-    }
-  }, [location.state]);
-
   if (!project) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-m3-on-surface-variant">
         <h2 className="text-xl mb-4">{t('loading')}</h2>
-        <button onClick={() => navigate('/')} className="text-google-blue hover:underline">{t('backToDash')}</button>
+        <button onClick={() => navigate('/')} className="app-button-quiet text-google-blue">{t('backToDash')}</button>
       </div>
     );
   }
@@ -48,9 +77,11 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   if (project.password && !unlocked) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
-        <div className="bg-m3-surface-container rounded-[28px] p-8 w-full max-w-sm shadow-elevation-2 flex flex-col items-center">
-            <Lock className="w-10 h-10 text-m3-on-surface mb-4" />
-            <h3 className="text-2xl font-normal text-m3-on-surface mb-2">{t('lockTitle')}</h3>
+        <div className="app-card flex w-full max-w-sm flex-col items-center p-8">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-google-yellow/20">
+              <Lock className="h-7 w-7 text-[#8a5a00]" />
+            </div>
+            <h3 className="text-2xl font-medium text-m3-on-surface mb-2">{t('lockTitle')}</h3>
             <p className="text-sm text-m3-on-surface-variant mb-6 text-center">{t('verifyAccess')}</p>
             
             <form onSubmit={(e) => {
@@ -65,14 +96,14 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
                 <input
                   type="password" value={inputPassword}
                   onChange={e => { setInputPassword(e.target.value); setPasswordError(false); }}
-                  className="w-full px-4 py-3 bg-m3-surface text-m3-on-surface border border-m3-outline rounded-lg outline-none focus:border-google-blue focus:border-2 transition-all"
+                  className="app-input"
                   placeholder={t('enterPassword')} autoFocus
                 />
               </div>
               {passwordError && <p className="text-google-red text-xs mb-6 ml-1">{t('incorrectPass')}</p>}
               <div className="flex justify-end gap-2 mt-4">
-                <button type="button" onClick={() => navigate('/')} className="px-5 py-2.5 text-google-blue font-medium hover:bg-google-blue/10 rounded-full text-sm">{t('cancel')}</button>
-                <button type="submit" className="px-5 py-2.5 bg-google-blue text-white rounded-full font-medium text-sm hover:shadow-elevation-1">{t('unlock')}</button>
+                <button type="button" onClick={() => navigate('/')} className="app-button-quiet">{t('cancel')}</button>
+                <button type="submit" className="app-button-primary">{t('unlock')}</button>
               </div>
             </form>
         </div>
@@ -82,10 +113,60 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
 
   const isOwner = user?.uid === project.creatorId;
   const hasAdminRights = isOwner || isAdmin;
+  const isArchived = Boolean(project.archived);
   const isStopped = project.status === 'stopped';
   const isFinished = project.status === 'finished';
+  const shortProjectId = project.id.slice(0, 8);
+  const projectTypeLabel = {
+    vote: t('voting'),
+    gather: t('gather'),
+    schedule: t('schedule'),
+    book: t('book'),
+    team: t('teams'),
+    claim: t('tasks'),
+    roulette: t('roulette'),
+    queue: t('queue'),
+    game_hub: t('gameHub'),
+    project: t('project'),
+  }[project.type] || t('project');
+  const projectRoutePrefix = {
+    vote: 'collect',
+    gather: 'collect',
+    schedule: 'collect',
+    book: 'collect',
+    team: 'connect',
+    claim: 'connect',
+    roulette: 'select',
+    queue: 'select',
+    game_hub: 'games',
+    project: 'projects',
+  }[project.type] || 'projects';
   
   const copyId = () => { navigator.clipboard.writeText(project.id); };
+  const handleDuplicateProject = () => {
+    confirm({
+      title: t('duplicateProject'),
+      message: t('duplicateProjectConfirm'),
+      confirmText: t('duplicate'),
+      cancelText: t('cancel'),
+      onConfirm: async () => {
+        const duplicatedProjectId = await actions.handleDuplicateProject(project, t('copySuffix'));
+        if (duplicatedProjectId) navigate(`/${projectRoutePrefix}/${duplicatedProjectId}`);
+      },
+    });
+  };
+  const handleArchiveProject = (archived) => {
+    confirm({
+      title: archived ? t('archiveProject') : t('restoreProject'),
+      message: archived ? t('archiveProjectConfirm') : t('restoreProjectConfirm'),
+      confirmText: archived ? t('archive') : t('restore'),
+      cancelText: t('cancel'),
+      onConfirm: async () => {
+        await actions.handleArchiveProject(project, archived);
+        if (archived) navigate('/');
+      },
+    });
+  };
 
   const projectItems = items.filter(i => i.projectId === project.id);
   const projectRooms = rooms.filter(r => r.projectId === project.id);
@@ -96,39 +177,53 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
   const projectScheduleSubmissions = (scheduleSubmissions || []).filter(s => s.projectId === project.id);
   const projectBookingSlots = (bookingSlots || []).filter(s => s.projectId === project.id);
   const projectClaimItems = (claimItems || []).filter(c => c.projectId === project.id);
+  const projectActivityItems = (projectActivities || [])
+    .filter((activity) => activity.projectId === project.id)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   return (
     <div className="animate-fade-in pb-20">
-      <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-m3-outline-variant/20">
+      <div className="app-card mb-6 flex flex-col gap-5 p-5 md:flex-row md:items-center md:justify-between sm:p-6">
         <div>
-          <button onClick={() => navigate('/')} className="flex items-center text-sm font-medium text-m3-on-surface-variant hover:text-google-blue mb-3 transition-colors px-3 py-1.5 -ml-3 rounded-full hover:bg-m3-on-surface/5"><ArrowLeft className="w-5 h-5 mr-1" /> {t('backToDash')}</button>
-          <h1 className="text-4xl font-normal text-m3-on-surface flex items-center gap-3">
+          <button onClick={() => navigate('/')} className="app-button-quiet mb-3 -ml-2 px-3"><ArrowLeft className="w-5 h-5" /> {t('backToDash')}</button>
+          <h1 className="text-balance text-3xl font-medium text-m3-on-surface md:text-4xl">
             {project.title}
           </h1>
           <div className="flex items-center flex-wrap gap-2 mt-3">
-            <div className="flex items-center gap-2 bg-m3-surface-container px-3 py-1 rounded-full border border-m3-outline-variant/30">
-              <span className="text-xs font-mono text-m3-on-surface-variant select-all">{project.id}</span>
-              <button onClick={copyId} className="cursor-pointer text-m3-on-surface-variant hover:text-google-blue"><Copy className="w-3 h-3" /></button>
+            <div className="app-chip app-chip-blue">
+              <span className="text-xs font-mono text-m3-on-surface-variant select-all">ID {shortProjectId}</span>
+              <button onClick={copyId} className="touch-target -my-2 -mr-2 inline-flex items-center justify-center rounded-full text-m3-on-surface-variant hover:text-google-blue" title={t('copyFullProjectId')} aria-label={t('copyFullProjectId')}><Copy className="w-3.5 h-3.5" /></button>
             </div>
-            {project.password && <div className="p-1.5 rounded-full bg-google-yellow/20"><Key className="w-4 h-4 text-google-yellow" /></div>}
-            {isStopped && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-m3-surface-container-high text-xs font-medium text-m3-on-surface-variant border border-m3-outline-variant"><Lock className="w-3 h-3" /> {t('paused')}</div>}
-            {isFinished && <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-google-red/10 text-xs font-medium text-google-red border border-google-red/20"><Flag className="w-3 h-3" /> {t('finished')}</div>}
+            <div className="app-chip">{projectTypeLabel}</div>
+            {project.password && <div className="app-chip app-chip-yellow"><Key className="w-4 h-4" /></div>}
+            {isArchived && <div className="app-chip"><Archive className="w-3 h-3" /> {t('archived')}</div>}
+            {isStopped && <div className="app-chip"><Lock className="w-3 h-3" /> {t('paused')}</div>}
+            {isFinished && <div className="app-chip app-chip-red"><Flag className="w-3 h-3" /> {t('finished')}</div>}
           </div>
         </div>
         
-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center mt-4 md:mt-0">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center md:mt-0">
            <div className="flex gap-2">
-             <button onClick={() => setShowQR(true)} className="p-2.5 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 border border-m3-outline-variant/30" title={t('share')}>
+             <button onClick={() => setShowQR(true)} className="app-icon-button border-m3-outline-variant/45" title={t('share')}>
                 <QrCode className="w-5 h-5" />
              </button>
-             <button onClick={() => setShowChat(!showChat)} className={`p-2.5 rounded-full border transition-all ${showChat ? 'bg-m3-primary-container text-m3-on-primary-container border-transparent' : 'text-m3-on-surface-variant hover:bg-m3-on-surface/5 border-m3-outline-variant/30'}`} title={t('chat')}>
+             <button onClick={() => setShowChat(!showChat)} className={`app-icon-button ${showChat ? 'border-transparent bg-m3-primary-container text-m3-on-primary-container hover:bg-m3-primary-container hover:text-m3-on-primary-container' : 'border-m3-outline-variant/45'}`} title={t('chat')}>
                 <MessageSquare className="w-5 h-5" />
              </button>
            </div>
 
-           {hasAdminRights && !isFinished && (
-             <div className="flex gap-2">
-               <button onClick={() => actions.handleToggleProjectStatus(project)} className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all ${isStopped ? 'bg-m3-primary-container text-m3-on-primary-container hover:shadow-elevation-1' : 'bg-m3-surface-container-high text-m3-on-surface hover:bg-m3-surface-container-high/80 border border-m3-outline-variant'}`}>{isStopped ? t('resume') : t('pause')}</button>
+           {hasAdminRights && (
+             <div className="flex flex-wrap gap-2">
+               <button onClick={handleDuplicateProject} className="app-button-quiet border border-m3-outline-variant/45">
+                 <Copy className="w-4 h-4" /> <span className="hidden lg:inline">{t('duplicate')}</span>
+               </button>
+               <button onClick={() => handleArchiveProject(!isArchived)} className="app-button-quiet border border-m3-outline-variant/45">
+                 {isArchived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                 <span className="hidden lg:inline">{isArchived ? t('restore') : t('archive')}</span>
+               </button>
+               {!isFinished && (
+                 <button onClick={() => actions.handleToggleProjectStatus(project)} className={isStopped ? 'app-button-tonal' : 'app-button-quiet border border-m3-outline-variant/45'}>{isStopped ? t('resume') : t('pause')}</button>
+               )}
                <button 
                  onClick={() => confirm({
                    title: t('deleteProject'),
@@ -138,26 +233,11 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
                    type: 'destructive',
                    onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
                  })} 
-                 className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-google-red hover:bg-google-red/10 border border-transparent hover:border-google-red/20"
+                 className={isFinished ? 'app-button bg-google-red text-white hover:shadow-elevation-1' : 'app-button-danger'}
                >
-                 <Trash2 className="w-4 h-4" /> <span className="hidden lg:inline">{t('delete')}</span>
+                 <Trash2 className="w-4 h-4" /> <span className={isFinished ? '' : 'hidden lg:inline'}>{isFinished ? t('deleteProject') : t('delete')}</span>
                </button>
              </div>
-           )}
-           {hasAdminRights && isFinished && (
-             <button 
-               onClick={() => confirm({
-                   title: t('deleteProject'),
-                   message: t('deleteConfirm'),
-                   confirmText: t('delete'),
-                   cancelText: t('cancel'),
-                   type: 'destructive',
-                   onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
-               })}
-               className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm bg-google-red text-white hover:shadow-elevation-1"
-             >
-               <Trash2 className="w-4 h-4" /> {t('deleteProject')}
-             </button>
            )}
         </div>
       </div>
@@ -168,7 +248,7 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
         <div className="flex-1 w-full min-w-0 space-y-6">
       {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={actions.handleVote} isProjectOwner={isOwner} projectId={project.id} t={t} />}
       {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
-      {project.type === 'roulette' && <RouletteView user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
+      {project.type === 'roulette' && <RouletteView key={project.id} user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
@@ -176,21 +256,24 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
       {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'game_hub' && <GameHubView project={project} user={user} t={t} />}
       {project.type === 'project' && (
-        <div className="flex flex-col items-center justify-center p-12 bg-m3-surface-container-low rounded-[24px]">
+        <div className="app-card flex flex-col items-center justify-center p-12">
             <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
                 <Info className="w-8 h-8" />
             </div>
             <h3 className="text-xl text-m3-on-surface mb-2">{t('project')}</h3>
-            <p className="text-m3-on-surface-variant">Project View</p>
+            <p className="text-m3-on-surface-variant">{t('projectView')}</p>
         </div>
       )}
         </div>
         
-        {showChat && (
-           <div className="w-full xl:w-96 animate-fade-in sticky top-24 self-start">
-               <ChatRoom projectId={project.id} currentUser={user} t={t} />
-           </div>
-        )}
+        <div className="w-full space-y-4 xl:sticky xl:top-24 xl:w-96 self-start">
+          <ActivityTimeline activities={projectActivityItems} t={t} />
+          {showChat && (
+             <div className="animate-fade-in">
+                 <ChatRoom projectId={project.id} currentUser={user} t={t} />
+             </div>
+          )}
+        </div>
       </div>
     </div>
   );

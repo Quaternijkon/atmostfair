@@ -30,6 +30,8 @@ jobs:
         run: npm ci
 
       - name: Build
+        env:
+          VITE_API_BASE_URL: https://atmostfair.quaternijkon.xyz
         run: npm run build
 
       - name: Upload artifact

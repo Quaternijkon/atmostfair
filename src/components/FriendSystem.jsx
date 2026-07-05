@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, updateDoc, startAt, endAt, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, updateDoc, startAt, endAt, orderBy, db } from '../lib/localData';
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
 import Avatar from './Avatar';
-import { useUI } from './UIComponents';
+import { useUI } from './UIContext';
+import { nowMs } from '../lib/time';
 
 export default function FriendSystem({ user, onClose, t }) {
     const { showToast } = useUI();
@@ -25,8 +25,7 @@ export default function FriendSystem({ user, onClose, t }) {
         // Schema: { uid1, uid2, type: 'friend' | 'pending', initiator: uid }
         // We query twice (where uid1==me, where uid2==me) or use a composite ID.
         // For simplicity in this demo, let's assume we store frienships in a `users/{uid}/friends` subcollection
-        // Wait, Firestore Rules in prompt asked me to specify rules, implying I define the structure.
-        // Let's use a root collection `friendships` where array `members` contains [uid1, uid2].
+        // Use a root collection `friendships` where array `members` contains [uid1, uid2].
         
         const q = query(collection(db, 'friendships'), where('members', 'array-contains', user.uid));
         
@@ -38,7 +37,7 @@ export default function FriendSystem({ user, onClose, t }) {
             
             all.forEach(rel => {
                 const otherId = rel.members.find(id => id !== user.uid);
-                const otherName = rel.names?.[otherId] || 'Unknown';
+                const otherName = rel.names?.[otherId] || t('unknownUser');
                 
                 if (rel.status === 'confirmed') {
                     confirmed.push({ ...rel, otherId, otherName });
@@ -52,7 +51,7 @@ export default function FriendSystem({ user, onClose, t }) {
         });
         
         return () => unsub();
-    }, [user]);
+    }, [t, user]);
 
     // 2. Chat Listener
     useEffect(() => {
@@ -116,7 +115,7 @@ export default function FriendSystem({ user, onClose, t }) {
             console.error(e); 
             // Fallback if index missing for name search
             if (e.code === 'failed-precondition') {
-                 showToast('Search index building, try email only for now.', 'error');
+                 showToast(t('friendSearchIndexPending'), 'error');
             }
         }
     };
@@ -127,14 +126,14 @@ export default function FriendSystem({ user, onClose, t }) {
         await addDoc(collection(db, 'friendships'), {
             members: [user.uid, targetUser.uid],
             names: {
-                [user.uid]: user.displayName || 'User',
-                [targetUser.uid]: targetUser.displayName || 'User'
+                [user.uid]: user.displayName || t('userLabel'),
+                [targetUser.uid]: targetUser.displayName || t('userLabel')
             },
             status: 'pending',
             initiator: user.uid,
-            createdAt: Date.now()
+            createdAt: nowMs()
         });
-        showToast('Friend request sent!', 'success');
+        showToast(t('friendRequestSent'), 'success');
         setView('list');
         setSearchResults([]);
         setSearchTerm('');
@@ -143,16 +142,16 @@ export default function FriendSystem({ user, onClose, t }) {
         await addDoc(collection(db, 'notifications'), {
             recipientId: targetUser.uid,
             type: 'friend_req',
-            title: 'New Friend Request',
-            message: `${user.displayName} wants to be friends.`,
+            title: t('friendRequestTitle'),
+            message: t('friendRequestMessage', { name: user.displayName || t('userLabel') }),
             read: false,
-            createdAt: Date.now()
+            createdAt: nowMs()
         });
     };
 
     const acceptRequest = async (rel) => {
         await updateDoc(doc(db, 'friendships', rel.id), { status: 'confirmed' });
-        showToast('Friend added!', 'success');
+        showToast(t('friendAdded'), 'success');
     };
     
     const rejectRequest = async (id) => deleteDoc(doc(db, 'friendships', id));
@@ -167,7 +166,7 @@ export default function FriendSystem({ user, onClose, t }) {
             chatId: activeChatFriend.id,
             text: txt,
             senderId: user.uid,
-            createdAt: Date.now()
+            createdAt: nowMs()
         });
         
         // Notify if offline? (Optional)
@@ -180,7 +179,7 @@ export default function FriendSystem({ user, onClose, t }) {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
         >
             {/* Modal Container: Max width restricted for desktop, full width/height adaptable for mobile */}
             <motion.div 
@@ -189,30 +188,30 @@ export default function FriendSystem({ user, onClose, t }) {
                 exit={{ scale: 0.95, opacity: 0, y: 30 }}
                 transition={{ type: "spring", damping: 25, stiffness: 350 }}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-m3-surface w-full md:max-w-4xl h-[85vh] md:h-[650px] rounded-[28px] overflow-hidden flex shadow-elevation-3 relative"
+                className="app-dialog relative flex h-[85vh] w-full max-w-4xl overflow-hidden p-0 md:h-[650px]"
             >
                 
                 {/* Close Button (Global for Desktop, integrated in headers for mobile) */}
-                <button onClick={onClose} className="absolute top-4 right-4 z-[60] p-2 bg-black/10 hover:bg-black/20 rounded-full md:hidden text-m3-on-surface">
+                <button onClick={onClose} className="app-icon-button absolute right-4 top-4 z-[60] bg-black/10 md:hidden">
                     <X className="w-5 h-5"/>
                 </button>
 
                 {/* Sidebar (Friend List / Search) - Hidden on Mobile if Chat is Active */}
                 <div className={`w-full md:w-80 lg:w-96 bg-m3-surface-container border-r border-m3-outline-variant/20 flex flex-col md:flex ${activeChatFriend ? 'hidden' : 'flex'}`}>
                     {/* Header */}
-                    <div className="p-4 md:p-5 border-b border-m3-outline-variant/10 flex justify-between items-center shrink-0">
-                        <h2 className="text-xl font-normal text-m3-on-surface">{t('friends') || 'Friends'}</h2>
-                        <button onClick={onClose} className="hidden md:block hover:bg-m3-on-surface/5 p-2 rounded-full transition-colors"><X className="w-5 h-5"/></button>
+                    <div className="flex shrink-0 items-center justify-between border-b border-m3-outline-variant/10 p-4 md:p-5">
+                        <h2 className="text-xl font-medium text-m3-on-surface">{t('friends')}</h2>
+                        <button onClick={onClose} className="app-icon-button hidden md:inline-flex"><X className="w-5 h-5"/></button>
                     </div>
                     
                     {/* Action Area */}
                     <div className="p-4 pb-2 shrink-0">
                         <button 
                             onClick={() => { setView(view === 'add' ? 'list' : 'add'); setSearchTerm(''); setSearchResults([]); }}
-                            className={`w-full py-3 rounded-full flex items-center justify-center gap-2 text-sm font-medium transition-all ${view === 'add' ? 'bg-m3-secondary-container text-m3-on-secondary-container shadow-sm' : 'bg-m3-surface border border-m3-outline-variant hover:bg-m3-surface-container-high'}`}
+                            className={`app-button w-full ${view === 'add' ? 'bg-m3-secondary-container text-m3-on-secondary-container shadow-sm' : 'border border-m3-outline-variant bg-m3-surface hover:bg-m3-surface-container-high'}`}
                         >
                             {view === 'add' ? <ArrowLeft className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />} 
-                            {view === 'add' ? (t('backToList') || 'Back to List') : (t('addFriend') || 'Add Friend')}
+                            {view === 'add' ? t('backToList') : t('addFriend')}
                         </button>
                     </div>
 
@@ -221,16 +220,16 @@ export default function FriendSystem({ user, onClose, t }) {
                         {/* Requests Section */}
                         {requests.length > 0 && view !== 'add' && (
                             <div className="px-2 py-2 mb-2">
-                                <div className="text-xs font-bold text-m3-on-surface-variant uppercase mb-2 px-2">{t('requests') || 'Requests'}</div>
+                                <div className="text-xs font-bold text-m3-on-surface-variant uppercase mb-2 px-2">{t('requests')}</div>
                                 {requests.map(req => (
-                                    <div key={req.id} className="bg-m3-surface p-3 rounded-xl mb-2 shadow-sm border border-m3-outline-variant/10">
+                                    <div key={req.id} className="app-card mb-2 p-3">
                                         <div className="flex items-center gap-3 mb-3">
                                             <Avatar name={req.otherName} size="sm" />
                                             <span className="text-sm font-medium text-m3-on-surface">{req.otherName}</span>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => acceptRequest(req)} className="flex-1 py-1.5 bg-google-blue/10 text-google-blue font-medium text-xs rounded-lg hover:bg-google-blue/20 transition-colors">{t('accept') || 'Accept'}</button>
-                                            <button onClick={() => rejectRequest(req.id)} className="flex-1 py-1.5 bg-m3-surface-container-highest text-m3-on-surface-variant text-xs rounded-lg hover:bg-m3-outline-variant transition-colors">{t('ignore') || 'Ignore'}</button>
+                                            <button onClick={() => acceptRequest(req)} className="app-button flex-1 bg-google-blue/10 px-3 text-xs text-google-blue hover:bg-google-blue/20">{t('accept')}</button>
+                                            <button onClick={() => rejectRequest(req.id)} className="app-button flex-1 bg-m3-surface-container-highest px-3 text-xs text-m3-on-surface-variant hover:bg-m3-outline-variant">{t('ignore')}</button>
                                         </div>
                                     </div>
                                 ))}
@@ -242,26 +241,26 @@ export default function FriendSystem({ user, onClose, t }) {
                                 <div className="flex gap-2 mb-4">
                                     <div className="flex-1 relative">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-m3-on-surface-variant" />
-                                        <input 
-                                            value={searchTerm} 
-                                            onChange={e=>setSearchTerm(e.target.value)} 
+                                        <input
+                                            value={searchTerm}
+                                            onChange={e=>setSearchTerm(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                                            className="w-full bg-m3-surface rounded-full pl-9 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-google-blue/50 transition-all border border-transparent focus:border-google-blue" 
-                                            placeholder={t('searchPlaceholderUser') || "Email, Name, ID..."} 
+                                            className="app-input rounded-full pl-9"
+                                            placeholder={t('searchPlaceholderUser')}
                                         />
                                     </div>
-                                    <button onClick={handleSearch} className="bg-google-blue text-white px-4 rounded-full text-sm font-medium hover:shadow-md transition-shadow">{t('go') || 'Go'}</button>
+                                    <button onClick={handleSearch} className="app-button-primary px-4">{t('go')}</button>
                                 </div>
-                                
+
                                 {searchResults.length === 0 && searchTerm && (
                                     <div className="text-center text-sm text-m3-on-surface-variant mt-8 px-4 opacity-70">
-                                        {t('searchHint') || 'Try searching by full Email or exact User ID.'}
+                                        {t('searchHint')}
                                     </div>
                                 )}
 
                                 <div className="space-y-2">
                                     {searchResults.map(u => (
-                                        <div key={u.uid} className="flex items-center justify-between p-3 bg-m3-surface rounded-xl border border-m3-outline-variant/20">
+                                        <div key={u.uid} className="app-card flex items-center justify-between p-3">
                                              <div className="flex items-center gap-3 overflow-hidden">
                                                  <Avatar name={u.displayName} size="sm"/>
                                                  <div className="min-w-0">
@@ -269,7 +268,7 @@ export default function FriendSystem({ user, onClose, t }) {
                                                      <div className="text-xs text-m3-on-surface-variant truncate">{u.email}</div>
                                                  </div>
                                              </div>
-                                             <button onClick={() => sendRequest(u)} className="p-2 text-google-blue hover:bg-google-blue/10 rounded-full transition-colors"><UserPlus className="w-5 h-5"/></button>
+                                             <button onClick={() => sendRequest(u)} className="app-icon-button text-google-blue hover:bg-google-blue/10"><UserPlus className="w-5 h-5"/></button>
                                         </div>
                                     ))}
                                 </div>
@@ -277,19 +276,25 @@ export default function FriendSystem({ user, onClose, t }) {
                         ) : (
                             <div className="space-y-1 p-2">
                                 {friends.map(f => (
-                                    <div 
+                                    <button
+                                        type="button"
                                         key={f.id} 
                                         onClick={() => { setActiveChatFriend(f); setView('chat'); }}
-                                        className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${activeChatFriend?.id === f.id ? 'bg-m3-secondary-container text-m3-on-secondary-container' : 'hover:bg-m3-surface text-m3-on-surface'}`}
+                                        className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl p-3 text-left transition-all ${activeChatFriend?.id === f.id ? 'bg-m3-secondary-container text-m3-on-secondary-container' : 'text-m3-on-surface hover:bg-m3-surface'}`}
                                     >
                                         <Avatar name={f.otherName} className="shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium truncate">{f.otherName}</div>
-                                            <div className="text-xs opacity-70 truncate">{t('tapToChat') || 'Message'}</div>
+                                            <div className="text-xs opacity-70 truncate">{t('tapToChat')}</div>
                                         </div>
-                                    </div>
+                                    </button>
                                 ))}
-                                {friends.length === 0 && requests.length === 0 && <div className="text-center text-sm text-m3-on-surface-variant mt-10 opacity-60">{t('noFriends') || 'No friends yet'}</div>}
+                                {friends.length === 0 && requests.length === 0 && (
+                                    <div className="app-card-quiet mt-8 flex flex-col items-center gap-3 p-6 text-center text-sm text-m3-on-surface-variant">
+                                        <UserPlus className="h-8 w-8 text-google-blue" />
+                                        <span>{t('noFriends')}</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -302,13 +307,13 @@ export default function FriendSystem({ user, onClose, t }) {
                             <div className="w-24 h-24 bg-m3-surface-container rounded-full flex items-center justify-center mb-4">
                                 <MessageSquare className="w-10 h-10" />
                             </div>
-                            <div className="text-lg">{t('selectFriend') || 'Select a friend to chat'}</div>
+                            <div className="text-lg">{t('selectFriend')}</div>
                         </div>
                     ) : (
                         <>
                             {/* Chat Header */}
                             <div className="px-4 py-3 border-b border-m3-outline-variant/10 flex items-center gap-3 bg-m3-surface-container-low shrink-0 h-16">
-                                <button onClick={() => setActiveChatFriend(null)} className="md:hidden -ml-2 p-2 rounded-full hover:bg-black/5 text-m3-on-surface"><ArrowLeft className="w-6 h-6"/></button>
+                                <button onClick={() => setActiveChatFriend(null)} className="app-icon-button -ml-2 text-m3-on-surface md:hidden"><ArrowLeft className="w-6 h-6"/></button>
                                 <Avatar name={activeChatFriend.otherName} size="sm" />
                                 <div className="font-medium text-m3-on-surface text-lg truncate">{activeChatFriend.otherName}</div>
                             </div>
@@ -319,7 +324,7 @@ export default function FriendSystem({ user, onClose, t }) {
                                     const isMe = msg.senderId === user.uid;
                                     return (
                                         <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-slide-up`}>
-                                            <div className={`max-w-[80%] md:max-w-[70%] px-4 py-2.5 rounded-[20px] text-sm leading-relaxed shadow-sm break-words ${isMe ? 'bg-google-blue text-white rounded-br-sm' : 'bg-m3-surface-container-high text-m3-on-surface rounded-bl-sm'}`}>
+                                            <div className={`max-w-[80%] break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm md:max-w-[70%] ${isMe ? 'rounded-br-sm bg-google-blue text-white' : 'rounded-bl-sm bg-m3-surface-container-high text-m3-on-surface'}`}>
                                                 {msg.text}
                                             </div>
                                         </div>
@@ -333,10 +338,10 @@ export default function FriendSystem({ user, onClose, t }) {
                                 <input 
                                     value={chatInput} 
                                     onChange={e=>setChatInput(e.target.value)} 
-                                    className="flex-1 bg-m3-surface-container-high rounded-full px-5 py-3 border-none outline-none focus:ring-2 focus:ring-google-blue/50 text-m3-on-surface transition-shadow"
-                                    placeholder={t('typeMessage') || "Message..."}
+                                    className="app-input flex-1 rounded-full"
+                                    placeholder={t('typeMessage')}
                                 />
-                                <button disabled={!chatInput.trim()} className="p-3 bg-google-blue text-white rounded-full hover:shadow-md disabled:opacity-50 disabled:shadow-none transition-all">
+                                <button disabled={!chatInput.trim()} className="app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1">
                                     <Send className="w-5 h-5"/>
                                 </button>
                             </form>

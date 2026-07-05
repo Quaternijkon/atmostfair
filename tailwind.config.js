@@ -15,8 +15,12 @@ export default {
         },
         m3: {
           surface: '#F8F9FA', // Surface
+          'surface-bright': '#FFFFFF',
+          'surface-dim': '#EDEFF3',
+          'surface-container-low': '#FFFFFF',
           'surface-container': '#F3F6FC', // Surface Container
           'surface-container-high': '#E8EAED', // Surface Container High
+          'surface-container-highest': '#DADCE0',
           'on-surface': '#1F1F1F',
           'on-surface-variant': '#444746',
           outline: '#747775',
@@ -29,11 +33,25 @@ export default {
           'on-secondary': '#001D35',
           'secondary-container': '#C2E7FF',
           'on-secondary-container': '#001D35',
+          'inverse-surface': '#303134',
+          'inverse-on-surface': '#F1F3F4',
+        },
+        amf: {
+          blue: '#4285F4',
+          'blue-700': '#0B57D0',
+          red: '#EA4335',
+          yellow: '#FBBC05',
+          green: '#34A853',
+          surface: '#F8FAFD',
+          card: '#FFFFFF',
+          line: '#DADCE0',
+          text: '#202124',
+          muted: '#5F6368',
         }
       },
       fontFamily: {
-        sans: ['"Google Sans"', 'Roboto', 'Arial', 'sans-serif'],
-        display: ['"Google Sans Display"', 'Roboto', 'Arial', 'sans-serif'],
+        sans: ['system-ui', 'Roboto', 'Arial', 'sans-serif'],
+        display: ['system-ui', 'Roboto', 'Arial', 'sans-serif'],
       },
       boxShadow: {
         'elevation-1': '0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15)',

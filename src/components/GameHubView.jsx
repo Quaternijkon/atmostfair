@@ -1,18 +1,27 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle } from './Icons';
-import { useUI } from './UIComponents';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, query, where, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { useUI } from './UIContext';
+import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, query, where, getDoc, db } from '../lib/localData';
+import { nowMs } from '../lib/time';
+
+const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
+const RPS_COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
+
+function MoveIcon({ move, className = 'w-10 h-10' }) {
+  const Icon = RPS_ICONS[move] || Disc;
+  return <Icon className={`${className} ${RPS_COLORS[move] || 'text-m3-on-surface-variant'}`} />;
+}
 
 // --- Rock Paper Scissors Game ---
-const RPSGame = ({ user, room, projectId, onLeave }) => {
+const RPSGame = ({ user, room, projectId, onLeave, t }) => {
   const { showToast } = useUI();
   
   // Game State derived from room
   const [timeLeft, setTimeLeft] = useState(0);
-  const [selectedMove, setSelectedMove] = useState(null);
+  const [selectedMoveState, setSelectedMoveState] = useState(() => ({ round: room.currentRound, move: null }));
   const [showdownAnim, setShowdownAnim] = useState(null); // Local state for animation trigger
+  const selectedMove = selectedMoveState.round === room.currentRound ? selectedMoveState.move : null;
   
   const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
   const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
@@ -20,48 +29,7 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
   const isSpectator = !isPlayer;
   const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
   
-  const ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
-  const COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
-
-  // Reset local selection when round changes
-  useEffect(() => {
-    setSelectedMove(null);
-  }, [room.currentRound]);
-
-  // Timer & Game Loop logic
-  useEffect(() => {
-    if (!room) return;
-
-    const interval = setInterval(() => {
-        const now = Date.now();
-        
-        // 1. PLAYING STATE TIMER
-        if (room.status === 'playing') {
-            const elapsed = (now - (room.roundStartTime || now)) / 1000;
-            const remaining = Math.max(0, room.config.timeout - elapsed);
-            setTimeLeft(remaining);
-
-            // Timeout Auto-move (Client side enforcement by player themselves)
-            if (remaining <= 0 && isPlayer && !me.move) {
-               // Auto-play random or rock
-               const moves = ['rock', 'paper', 'scissors'];
-               const randomMove = moves[Math.floor(Math.random() * moves.length)];
-               handleMove(randomMove);
-            }
-        }
-        
-        // 2. SHOWDOWN STATE TIMER (Host only handles transition)
-        if (room.status === 'showdown' && isHost) {
-             if (now > room.showdownEndTime) {
-                 startNextRound();
-             }
-        }
-
-    }, 200);
-    return () => clearInterval(interval);
-  }, [room, isPlayer, me, isHost]);
-
-  const startNextRound = async () => {
+  const startNextRound = useCallback(async () => {
        // Check Win Condition already handled before entering showdown? 
        // No, usually we check at end of showdown or start of next.
        // Let's do it simply: We just clear moves and increment round, assuming scores updated before Showdown.
@@ -87,17 +55,17 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
            updateData = {
                status: 'playing',
                currentRound: (room.currentRound || 1) + 1,
-               roundStartTime: Date.now(),
+              roundStartTime: nowMs(),
                players: room.players.map(p => ({...p, lastMove: p.move, move: null}))
            };
        }
        
        await updateDoc(doc(db, 'game_rooms', room.id), updateData);
-  };
+  }, [room]);
 
-  const handleMove = async (move) => {
+  const handleMove = useCallback(async (move) => {
       if ((selectedMove || me.move) && room.status === 'playing') return; // Already acted locally
-      setSelectedMove(move);
+      setSelectedMoveState({ round: room.currentRound, move });
       
       let newPlayers = room.players.map(p => {
           if (p.uid === user.uid) return { ...p, move: move };
@@ -143,7 +111,7 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
               p1Move: p1.move,
               p2Move: p2.move,
               winnerId,
-              timestamp: Date.now()
+              timestamp: nowMs()
           };
           const history = [...(room.history || []), historyItem];
           
@@ -152,24 +120,57 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
               players: newPlayers, // Save moves/scores
               history,
               status: 'showdown',
-              showdownEndTime: Date.now() + 3000 // 3 seconds animation
+              showdownEndTime: nowMs() + 3000 // 3 seconds animation
           };
       }
       
       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
-  };
+  }, [me, room, selectedMove, user.uid]);
+
+  // Timer & Game Loop logic
+  useEffect(() => {
+    if (!room) return;
+
+    const interval = setInterval(() => {
+        const now = nowMs();
+
+        // 1. PLAYING STATE TIMER
+        if (room.status === 'playing') {
+            const elapsed = (now - (room.roundStartTime || now)) / 1000;
+            const remaining = Math.max(0, room.config.timeout - elapsed);
+            setTimeLeft(remaining);
+
+            // Timeout Auto-move (Client side enforcement by player themselves)
+            if (remaining <= 0 && isPlayer && !me.move) {
+               // Auto-play random or rock
+               const moves = ['rock', 'paper', 'scissors'];
+               const randomMove = moves[Math.floor(Math.random() * moves.length)];
+               handleMove(randomMove);
+            }
+        }
+
+        // 2. SHOWDOWN STATE TIMER (Host only handles transition)
+        if (room.status === 'showdown' && isHost) {
+             if (now > room.showdownEndTime) {
+                 startNextRound();
+             }
+        }
+
+    }, 200);
+    return () => clearInterval(interval);
+  }, [handleMove, isHost, isPlayer, me, room, startNextRound]);
 
   
   const joinGame = async () => {
       if (room.players.length >= 2) return;
       
-      const newPlayer = { uid: user.uid, name: user.displayName || 'User', score: 0, move: null };
+      const newPlayer = { uid: user.uid, name: user.displayName || t('userLabel'), score: 0, move: null };
       const newPlayers = [...room.players, newPlayer];
       
       let updateData = { players: newPlayers };
       if (newPlayers.length === 2) {
           updateData.status = 'playing';
-          updateData.roundStartTime = Date.now();
+          updateData.roundStartTime = nowMs();
           updateData.currentRound = 1;
       }
       
@@ -183,11 +184,11 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
             <div className="flex items-center gap-2">
-                <button onClick={onLeave} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5"/></button>
+                <button onClick={onLeave} className="app-icon-button"><X className="w-5 h-5"/></button>
                 <h2 className="text-xl font-medium">{room.name}</h2>
             </div>
             <div className="flex items-center gap-4 bg-m3-surface-container px-3 py-1.5 rounded-full text-sm font-medium">
-                <span className="text-google-blue">Best of {room.config.bestOf}</span>
+                <span className="text-google-blue">{t('bestOf')} {room.config.bestOf}</span>
                 {room.status === 'playing' && (
                   <span className={`flex items-center gap-1 ${timeLeft < 5 ? 'text-google-red animate-pulse' : 'text-m3-on-surface-variant'}`}>
                       <Clock className="w-4 h-4"/> {Math.ceil(timeLeft)}s
@@ -214,10 +215,8 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                                 initial={{ x: -50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}
                                 className="flex flex-col items-center"
                              >
-                                 <div className={`p-6 rounded-3xl bg-white shadow-xl ${room.players[0].move === 'rock' ? 'text-google-red' : room.players[0].move === 'paper' ? 'text-google-blue' : 'text-google-yellow'}`}>
-                                     {room.players[0].move === 'rock' && <Disc className="w-16 h-16"/>}
-                                     {room.players[0].move === 'paper' && <Hand className="w-16 h-16"/>}
-                                     {room.players[0].move === 'scissors' && <Scissors className="w-16 h-16"/>}
+                                 <div className="app-card-quiet flex h-28 w-28 items-center justify-center p-5">
+                                     <MoveIcon move={room.players[0].move} className="w-16 h-16" />
                                  </div>
                                  <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[0].name}</div>
                              </motion.div>
@@ -229,10 +228,8 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                                 initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}
                                 className="flex flex-col items-center"
                              >
-                                 <div className={`p-6 rounded-3xl bg-white shadow-xl ${room.players[1].move === 'rock' ? 'text-google-red' : room.players[1].move === 'paper' ? 'text-google-blue' : 'text-google-yellow'}`}>
-                                     {room.players[1].move === 'rock' && <Disc className="w-16 h-16"/>}
-                                     {room.players[1].move === 'paper' && <Hand className="w-16 h-16"/>}
-                                     {room.players[1].move === 'scissors' && <Scissors className="w-16 h-16"/>}
+                                 <div className="app-card-quiet flex h-28 w-28 items-center justify-center p-5">
+                                     <MoveIcon move={room.players[1].move} className="w-16 h-16" />
                                  </div>
                                  <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[1].name}</div>
                              </motion.div>
@@ -246,23 +243,23 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                             {(() => {
                                 const p1 = room.players[0];
                                 const p2 = room.players[1];
-                                if (p1.move === p2.move) return "DRAW!";
+                                if (p1.move === p2.move) return t('draw');
                                 // We calculated round winner logic in handleMove but hard to reconstruct here cleanly without duplicating logic
                                 // Or reading last history item?
                                 const lastRound = room.history && room.history[room.history.length - 1];
                                 if (lastRound) {
-                                    if (!lastRound.winnerId) return "DRAW!";
+                                    if (!lastRound.winnerId) return t('draw');
                                     const winnerName = room.players.find(p => p.uid === lastRound.winnerId)?.name;
-                                    return `${winnerName} WINS!`;
+                                    return t('wins', { name: winnerName });
                                 }
-                                return "ROUND OVER";
+                                return t('roundOver');
                             })()}
                          </motion.div>
                          <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} 
                             className="mt-2 text-sm text-m3-on-surface-variant"
                          >
-                             Next round starting...
+                             {t('nextRoundStarting')}
                          </motion.div>
                     </motion.div>
                 )}
@@ -275,7 +272,7 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                        // Show Move in Showdown OR Playing (if we wanted to cheat/debug, but handled by logic above)
                        // If Showdown, Show Icon? No, overlay handles it.
                        opponent.move && room.status === 'playing' ? 
-                       <div className="text-4xl animate-bounce">🤔</div> : // Thinking
+                       <Clock className="h-8 w-8 animate-pulse text-google-blue" /> :
                        room.status === 'finished' && room.winnerId === opponent.uid ? 
                        <Trophy className="w-8 h-8 text-google-yellow"/> :
                        <User className="w-8 h-8 text-m3-on-surface-variant"/>
@@ -284,18 +281,18 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                    {/* Score Badge */}
                     {opponent && <div className="absolute -top-1 -right-1 bg-google-red text-white text-xs w-6 h-6 flex items-center justify-center rounded-full border border-white">{opponent.score}</div>}
                 </div>
-                <div className="text-sm font-medium text-m3-on-surface">{opponent?.name || 'Waiting...'}</div>
-                {opponent?.move && room.status === 'playing' && <div className="text-xs text-google-green mt-1 font-medium">Ready</div>}
+                <div className="text-sm font-medium text-m3-on-surface">{opponent?.name || t('waiting')}</div>
+                {opponent?.move && room.status === 'playing' && <div className="text-xs text-google-green mt-1 font-medium">{t('ready')}</div>}
             </div>
             
             {/* Center Status / Result */}
             <div className="text-center h-20 flex items-center justify-center">
-                 {room.status === 'waiting' && <span className="text-m3-on-surface-variant animate-pulse">Waiting for opponent...</span>}
-                 {room.status === 'playing' && <div className="text-4xl font-display font-medium text-m3-on-surface/20">ROUND {room.currentRound}</div>}
+                 {room.status === 'waiting' && <span className="text-m3-on-surface-variant animate-pulse">{t('waitingForOpponent')}</span>}
+                 {room.status === 'playing' && <div className="text-4xl font-display font-medium text-m3-on-surface/20">{t('round')} {room.currentRound}</div>}
                  {room.status === 'finished' && (
                      <motion.div initial={{scale:0}} animate={{scale:1}} className="flex flex-col items-center">
-                         <div className="text-2xl font-bold text-google-yellow mb-1">{room.winnerId === user.uid ? 'Victory!' : 'Defeat'}</div>
-                         <button onClick={onLeave} className="px-4 py-1.5 bg-m3-primary text-white text-sm rounded-full">Leave Room</button>
+                         <div className="text-2xl font-bold text-google-yellow mb-1">{room.winnerId === user.uid ? t('victory') : t('defeat')}</div>
+                         <button onClick={onLeave} className="app-button bg-m3-primary text-sm text-white">{t('leaveRoom')}</button>
                      </motion.div>
                  )}
             </div>
@@ -306,34 +303,34 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
                     <>
                         <div className="flex items-center gap-6 mb-8">
                             {['rock', 'paper', 'scissors'].map(move => {
-                                const MoveIcon = ICONS[move];
+                                const ButtonIcon = RPS_ICONS[move];
                                 const isSelected = selectedMove === move || me.move === move;
                                 return (
                                     <button
                                         key={move}
                                         disabled={!!selectedMove || room.status !== 'playing'}
                                         onClick={() => handleMove(move)}
-                                        className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-200 
-                                            ${isSelected 
-                                                ? `bg-m3-primary-container ring-4 ring-google-blue/30 -translate-y-2 shadow-lg` 
-                                                : `bg-m3-surface-container hover:bg-m3-surface-container-high hover:-translate-y-1 shadow-sm`
+                                        className={`touch-target flex h-20 w-20 items-center justify-center rounded-2xl transition-all duration-200
+                                            ${isSelected
+                                                ? `bg-m3-primary-container ring-4 ring-google-blue/30 shadow-elevation-1`
+                                                : `bg-m3-surface-container hover:bg-m3-surface-container-high hover:ring-2 hover:ring-google-blue/20 shadow-sm`
                                             }
-                                            ${(selectedMove && !isSelected) ? 'opacity-40 grayscale scale-90' : ''}
+                                            ${(selectedMove && !isSelected) ? 'opacity-40 saturate-50' : ''}
                                         `}
                                     >
-                                        <MoveIcon className={`w-10 h-10 ${isSelected ? COLORS[move] : 'text-m3-on-surface'}`} />
+                                        <ButtonIcon className={`w-10 h-10 ${isSelected ? RPS_COLORS[move] : 'text-m3-on-surface'}`} />
                                     </button>
                                 );
                             })}
                         </div>
                         <div className="flex flex-col items-center">
-                            <div className="text-lg font-medium">{me.name} (You)</div>
-                            <div className="text-sm text-m3-on-surface-variant">Score: {me.score}</div>
+                            <div className="text-lg font-medium">{me.name} ({t('you')})</div>
+                            <div className="text-sm text-m3-on-surface-variant">{t('score')}: {me.score}</div>
                         </div>
                     </>
                 ) : (
-                    <button onClick={joinGame} className="px-8 py-3 bg-google-blue text-white rounded-full font-medium shadow-elevation-1 hover:shadow-elevation-2 hover:scale-105 transition-all">
-                        Join Game
+                    <button onClick={joinGame} className="app-button-primary px-8">
+                        {t('joinGame')}
                     </button>
                 )}
             </div>
@@ -343,17 +340,17 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
         {/* History Log Panel */}
         {room.history && room.history.length > 0 && (
             <div className="mt-8 pt-4 border-t border-m3-outline-variant/10">
-                <h4 className="text-xs font-medium text-m3-on-surface-variant uppercase tracking-wider mb-3">Previous Rounds</h4>
+                <h4 className="text-xs font-medium text-m3-on-surface-variant uppercase tracking-wider mb-3">{t('previousRounds')}</h4>
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     {[...room.history].reverse().map((round, i) => (
-                        <div key={i} className="flex-shrink-0 flex flex-col items-center p-2 bg-m3-surface-container rounded-lg min-w-[80px]">
-                            <span className="text-[10px] text-m3-on-surface-variant mb-1">R{round.round}</span>
-                            <div className="flex gap-2 text-lg">
-                                {round.p1Move === 'rock' ? '🪨' : round.p1Move === 'paper' ? '✋' : '✂️'}
-                                <span className="text-xs text-m3-on-surface-variant">vs</span>
-                                {round.p2Move === 'rock' ? '🪨' : round.p2Move === 'paper' ? '✋' : '✂️'}
+                            <div key={i} className="flex-shrink-0 flex min-w-[88px] flex-col items-center rounded-xl border border-m3-outline-variant/30 bg-m3-surface-container p-2">
+                                <span className="text-[10px] text-m3-on-surface-variant mb-1">R{round.round}</span>
+                                <div className="flex items-center gap-2">
+                                    <MoveIcon move={round.p1Move} className="w-4 h-4" />
+                                    <span className="text-xs text-m3-on-surface-variant">vs</span>
+                                    <MoveIcon move={round.p2Move} className="w-4 h-4" />
+                                </div>
                             </div>
-                        </div>
                     ))}
                 </div>
             </div>
@@ -363,45 +360,122 @@ const RPSGame = ({ user, room, projectId, onLeave }) => {
 };
 
 
+const MINE_NUMBER_COLORS = [
+  '',
+  'text-google-blue',
+  'text-google-green',
+  'text-google-red',
+  'text-google-yellow',
+  'text-m3-primary',
+  'text-google-blue',
+  'text-google-green',
+  'text-google-red',
+];
+
+function MineCell({
+  r,
+  c,
+  status,
+  revealed,
+  flags,
+  mineLocations,
+  explodedMine,
+  countMines,
+  revealCell,
+  toggleFlag,
+  handleChord,
+}) {
+  const longPressTimer = useRef(null);
+  const key = `${r},${c}`;
+  const isRevealed = revealed.has(key);
+  const isFlagged = flags.has(key);
+  const isMine = mineLocations.has(key);
+  const isExploded = explodedMine?.r === r && explodedMine?.c === c;
+  const count = !isMine ? countMines(r, c) : 0;
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
+
+  let content = null;
+  let bgClass = 'bg-m3-surface-container-high hover:bg-m3-surface-container-highest';
+
+  if (status === 'dead' && isMine) {
+    bgClass = isExploded ? 'bg-google-red' : 'bg-m3-surface-container-highest';
+    content = <Bomb className={`w-4 h-4 ${isExploded ? 'text-white' : 'text-google-red'}`} />;
+  } else if (isRevealed) {
+    bgClass = 'bg-m3-surface-container border border-m3-outline/5';
+    if (isMine) {
+      content = <Bomb className="w-5 h-5 text-google-red" />;
+    } else if (count > 0) {
+      content = <span className={`text-lg font-bold ${MINE_NUMBER_COLORS[count] || 'text-m3-on-surface'}`}>{count}</span>;
+    }
+  } else if (isFlagged) {
+    content = <Flag className="w-4 h-4 text-google-red" />;
+  }
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+
+  const handlePointerDown = (event) => {
+    if (event.button === 2) return;
+    clearLongPressTimer();
+    longPressTimer.current = setTimeout(() => {
+      toggleFlag(r, c);
+      longPressTimer.current = null;
+    }, 500);
+  };
+
+  const handlePointerUp = () => {
+    clearLongPressTimer();
+  };
+
+  return (
+    <button
+      type="button"
+      aria-label={`${r + 1}, ${c + 1}`}
+      className={`flex h-9 w-9 select-none items-center justify-center rounded-md transition-colors sm:h-10 sm:w-10 ${bgClass} ${isRevealed ? 'cursor-default' : 'cursor-pointer'}`}
+      onClick={() => { if (!isFlagged && !isRevealed) revealCell(r, c); else if (isRevealed) handleChord(r, c); }}
+      onContextMenu={(event) => { event.preventDefault(); toggleFlag(r, c); }}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      {content}
+    </button>
+  );
+}
+
+
 // --- Minesweeper Game ---
-const MinesweeperGame = ({ user, room, onLeave }) => {
+const MinesweeperGame = ({ user, room, onLeave, t }) => {
   const { showToast } = useUI();
-  const [grid, setGrid] = useState([]);
-  const [status, setStatus] = useState('loading'); // loading, ready, playing, dead, won
-  const [mineLocations, setMineLocations] = useState(new Set());
+  const { rows, cols, mines } = room.config;
+  const [status, setStatus] = useState(() => room.config.mineLocations ? 'ready' : 'loading'); // loading, ready, playing, dead, won
   const [flags, setFlags] = useState(new Set());
   const [revealed, setRevealed] = useState(new Set());
   const [explodedMine, setExplodedMine] = useState(null); // {r, c}
-  const [longPressTimer, setLongPressTimer] = useState(null);
+  const mineLocations = useMemo(() => new Set(room.config.mineLocations || []), [room.config.mineLocations]);
+  const grid = useMemo(() => {
+    return Array.from({ length: rows }, (_, r) => (
+      Array.from({ length: cols }, (_, c) => ({ r, c }))
+    ));
+  }, [cols, rows]);
   
   const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
   const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
   const isSpectator = !isPlayer || me?.status === 'spectating'; // if implemented
+  const difficultyLabels = {
+    easy: t('difficultyEasy'),
+    medium: t('difficultyMedium'),
+    hard: t('difficultyHard'),
+  };
 
-  const { rows, cols, mines } = room.config;
-
-  // Initialize Board
-  useEffect(() => {
-    if (!room.config.mineLocations) return;
-    
-    const mineSet = new Set(room.config.mineLocations);
-    setMineLocations(mineSet);
-    
-    // Construct Grid
-    const newGrid = [];
-    for (let r = 0; r < rows; r++) {
-      const row = [];
-      for (let c = 0; c < cols; c++) {
-        row.push({ r, c });
-      }
-      newGrid.push(row);
-    }
-    setGrid(newGrid);
-    setStatus('ready');
-
-  }, [room.config]);
-  
-  // Sync Progress to Firestore
+  // Sync progress to shared local data.
   useEffect(() => {
       if (!isPlayer || status === 'loading' || room.isLocal) return; // Skip for Local/Practice games
       
@@ -422,7 +496,7 @@ const MinesweeperGame = ({ user, room, onLeave }) => {
           }
       }, 1000);
       return () => clearTimeout(timer);
-  }, [revealed.size, status]);
+  }, [cols, isPlayer, me?.progress, me?.status, mines, revealed.size, room.id, room.isLocal, room.players, rows, status, user.uid]);
 
   const getNeighbors = (r, c) => {
     const neighbors = [];
@@ -485,8 +559,7 @@ const MinesweeperGame = ({ user, room, onLeave }) => {
     }
   };
 
-  const toggleFlag = (e, r, c) => {
-      e.preventDefault();
+  const toggleFlag = (r, c) => {
       if (status === 'dead' || status === 'won' || revealed.has(`${r},${c}`)) return;
       
       const key = `${r},${c}`;
@@ -529,88 +602,34 @@ const MinesweeperGame = ({ user, room, onLeave }) => {
   };
 
   const joinGame = async () => {
-       const newPlayer = { uid: user.uid, name: user.displayName || 'User', progress: 0, status: 'playing' };
+       const newPlayer = { uid: user.uid, name: user.displayName || t('userLabel'), progress: 0, status: 'playing' };
        await updateDoc(doc(db, 'game_rooms', room.id), {
            players: arrayUnion(newPlayer)
        });
   };
 
-  // Render Cell
-  const Cell = useMemo(() => ({ r, c }) => {
-      const key = `${r},${c}`;
-      const isRevealed = revealed.has(key);
-      const isFlagged = flags.has(key);
-      const isMine = mineLocations.has(key);
-      const isExploded = explodedMine?.r === r && explodedMine?.c === c;
-      const count = !isMine ? countMines(r, c) : 0;
-      
-      let content = null;
-      let bgClass = "bg-m3-surface-container-high hover:bg-m3-surface-container-highest";
-      
-      if (status === 'dead' && isMine) { // Reveal mines on death
-           bgClass = isExploded ? "bg-google-red" : "bg-m3-surface-container-highest";
-           content = <Bomb className={`w-4 h-4 ${isExploded ? 'text-white' : 'text-google-red'}`} />;
-      } else if (isRevealed) {
-          bgClass = "bg-m3-surface-container border border-m3-outline/5";
-          if (isMine) {
-               content = <Bomb className="w-5 h-5 text-google-red" />;
-          } else if (count > 0) {
-              const colors = ["", "text-google-blue", "text-google-green", "text-google-red", "text-purple-600", "text-orange-600"];
-              content = <span className={`font-bold text-lg ${colors[count] || 'text-black'}`}>{count}</span>;
-          }
-      } else if (isFlagged) {
-          content = <Flag className="w-4 h-4 text-google-red" />;
-      }
-
-      const handlePointerDown = (e) => {
-          if(e.button === 2) return; // Ignore actual right clicks handled by contextmenu
-          const timer = setTimeout(() => {
-              toggleFlag(e, r, c); // Long press
-          }, 500);
-          setLongPressTimer(timer);
-      };
-      
-      const handlePointerUp = () => {
-          if (longPressTimer) clearTimeout(longPressTimer);
-          setLongPressTimer(null);
-      };
-
-      return (
-          <div
-            className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded cursor-pointer select-none transition-colors ${bgClass}`}
-            onClick={() => { if(!isFlagged && !isRevealed) revealCell(r,c); else if(isRevealed) handleChord(r,c); }}
-            onContextMenu={(e) => toggleFlag(e, r, c)}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-          >
-              {content}
-          </div>
-      );
-  }, [revealed, flags, status, mineLocations, explodedMine]);
-
   if (!room) return null;
 
   return (
-      <div className="flex flex-col lg:flex-row gap-6 h-full p-4 overflow-hidden">
+      <div className="flex h-full flex-col gap-6 overflow-hidden p-2 sm:p-4 lg:flex-row">
         {/* Game Area */}
         <div className="flex-1 flex flex-col items-center overflow-auto">
              <div className="flex justify-between w-full max-w-2xl mb-4 items-center">
                  <div className="flex items-center gap-2">
-                     <button onClick={onLeave} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5"/></button>
+                     <button onClick={onLeave} className="app-icon-button"><X className="w-5 h-5"/></button>
                      <div className="flex flex-col">
                         <h2 className="font-bold text-lg">{room.name}</h2>
-                        <span className="text-xs text-m3-on-surface-variant capitalize">{room.config.difficulty} Mode</span>
+                        <span className="text-xs text-m3-on-surface-variant">{difficultyLabels[room.config.difficulty] || room.config.difficulty}</span>
                      </div>
                  </div>
-                 <div className="flex gap-4">
-                     <div className="bg-m3-surface-container px-3 py-1 rounded-full flex items-center gap-2">
+                 <div className="flex flex-wrap gap-2">
+                     <div className="app-chip app-chip-red">
                          <Flag className="w-4 h-4 text-google-red"/> {mines - flags.size}
                      </div>
-                     <div className="bg-m3-surface-container px-3 py-1 rounded-full flex items-center gap-2">
+                     <div className="app-chip app-chip-blue">
                          <Clock className="w-4 h-4 text-google-blue"/> 
                          {/* Timer could be local based on start time */}
-                         Play
+                         {t('playing')}
                      </div>
                  </div>
              </div>
@@ -625,52 +644,65 @@ const MinesweeperGame = ({ user, room, onLeave }) => {
                         style={{ gridTemplateColumns: `repeat(${cols}, min-content)` }}
                      >
                         {grid.map((row, r) => row.map((cell, c) => (
-                            <Cell key={`${r}-${c}`} r={r} c={c} />
+                            <MineCell
+                              key={`${r}-${c}`}
+                              r={cell.r}
+                              c={cell.c}
+                              status={status}
+                              revealed={revealed}
+                              flags={flags}
+                              mineLocations={mineLocations}
+                              explodedMine={explodedMine}
+                              countMines={countMines}
+                              revealCell={revealCell}
+                              toggleFlag={toggleFlag}
+                              handleChord={handleChord}
+                            />
                         )))}
                      </div>
                  </div>
              ) : (
                  <div className="flex-1 flex items-center justify-center flex-col gap-4">
                      <Grid3x3 className="w-24 h-24 text-m3-on-surface-variant/20"/>
-                     <button onClick={joinGame} className="px-6 py-3 bg-google-blue text-white rounded-full font-medium shadow-lg hover:scale-105 transition-transform">
-                         Join Minesweeper
+                    <button onClick={joinGame} className="app-button-primary px-6">
+                         {t('joinMinesweeper')}
                      </button>
                  </div>
              )}
              
              {status === 'dead' && (
-                 <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mt-4 p-4 bg-red-100 text-red-800 rounded-xl flex items-center gap-3">
+                 <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-card-quiet mt-4 flex items-center gap-3 border-google-red/30 bg-google-red/10 p-4 text-google-red">
                      <AlertTriangle className="w-6 h-6"/>
                      <div>
-                         <div className="font-bold">BOOM! Game Over</div>
-                         <div className="text-sm">You cleared {Math.floor((revealed.size / ((rows*cols)-mines))*100)}%</div>
-                         <button onClick={() => setStatus('ready')} className="text-xs underline mt-1">Spectate others</button>
+                         <div className="font-bold">{t('gameOver')}</div>
+                         <div className="text-sm">{t('youCleared', { percent: Math.floor((revealed.size / ((rows*cols)-mines))*100) })}</div>
+                         <button onClick={() => setStatus('ready')} className="app-button-quiet mt-2 min-h-0 px-0 py-0 text-xs text-google-red hover:bg-transparent">{t('spectateOthers')}</button>
                      </div>
                  </motion.div>
              )}
              {status === 'won' && (
-                 <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mt-4 p-4 bg-green-100 text-green-800 rounded-xl flex items-center gap-3">
-                     <Trophy className="w-6 h-6 text-yellow-600"/>
-                     <div className="font-bold">Mission Accomplished!</div>
+                 <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="app-card-quiet mt-4 flex items-center gap-3 border-google-green/30 bg-google-green/10 p-4 text-google-green">
+                     <Trophy className="w-6 h-6 text-google-yellow"/>
+                     <div className="font-bold">{t('missionAccomplished')}</div>
                  </motion.div>
              )}
         </div>
         
         {/* Sidebar: Players List */}
-         <div className="w-full lg:w-80 bg-m3-surface-container rounded-2xl p-4 flex flex-col h-full">
-             <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> Players ({room.players?.length})</h3>
+         <div className="app-card-quiet flex h-full w-full flex-col p-4 lg:w-80">
+             <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> {t('players')} ({room.players?.length})</h3>
              <div className="flex-1 overflow-y-auto space-y-3">
                  {room.players?.sort((a,b) => (b.progress||0) - (a.progress||0)).map(p => (
-                     <div key={p.uid} className={`relative p-3 rounded-xl border ${p.status === 'dead' ? 'bg-red-50 border-red-100' : 'bg-m3-surface border-transparent'}`}>
+                     <div key={p.uid} className={`relative rounded-xl border p-3 ${p.status === 'dead' ? 'border-google-red/30 bg-google-red/10' : 'border-m3-outline-variant/30 bg-m3-surface'}`}>
                          <div className="flex justify-between items-center mb-1">
-                             <span className="font-medium text-sm truncate max-w-[120px]">{p.name} {p.uid === user.uid && '(You)'}</span>
-                             {p.status === 'dead' && <span className="text-[10px] bg-red-200 text-red-800 px-1.5 py-0.5 rounded">Failed</span>}
-                             {p.status === 'won' && <span className="text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded">Success</span>}
+                             <span className="font-medium text-sm truncate max-w-[120px]">{p.name} {p.uid === user.uid && `(${t('you')})`}</span>
+                             {p.status === 'dead' && <span className="app-chip app-chip-red min-h-0 px-2 py-0 text-[10px]">{t('failed')}</span>}
+                             {p.status === 'won' && <span className="app-chip app-chip-green min-h-0 px-2 py-0 text-[10px]">{t('success')}</span>}
                              {p.status === 'playing' && <span className="text-xs font-mono">{p.progress}%</span>}
                          </div>
                          <div className="h-2 bg-m3-surface-container-high rounded-full overflow-hidden">
                              <motion.div 
-                                className={`h-full ${p.status === 'dead' ? 'bg-red-400' : p.status === 'won' ? 'bg-green-500' : 'bg-google-blue'}`}
+                                className={`h-full ${p.status === 'dead' ? 'bg-google-red' : p.status === 'won' ? 'bg-google-green' : 'bg-google-blue'}`}
                                 initial={{ width: 0 }}
                                 animate={{ width: `${p.progress}%` }}
                              />
@@ -753,17 +785,17 @@ export default function GameHubView({ project, user, t }) {
           status: (vsComputer || selectedGame === 'mine') ? 'playing' : 'waiting', 
           players: [], 
           config,
-          createdAt: Date.now(),
+          createdAt: nowMs(),
           createdBy: user.uid
       };
       
       if (selectedGame === 'rps' && vsComputer) {
            newRoom.players = [
-               { uid: user.uid, name: user.displayName || 'You', score: 0, move: null },
-               { uid: 'computer', name: 'Bot 🤖', score: 0, move: null }
+               { uid: user.uid, name: user.displayName || t('you'), score: 0, move: null },
+               { uid: 'computer', name: t('bot'), score: 0, move: null }
            ];
            newRoom.currentRound = 1;
-           newRoom.roundStartTime = Date.now();
+           newRoom.roundStartTime = nowMs();
       }
 
       const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
@@ -775,115 +807,123 @@ export default function GameHubView({ project, user, t }) {
        setActiveRoom(room);
   };
   
-  if (activeRoom) {
-      if (activeRoom.game === 'mine') {
-          return <MinesweeperGame user={user} room={activeRoom} onLeave={() => setActiveRoom(null)} />;
+      if (activeRoom) {
+          if (activeRoom.game === 'mine') {
+              return <MinesweeperGame key={activeRoom.id} user={user} room={activeRoom} onLeave={() => setActiveRoom(null)} t={t} />;
+          }
+          return <RPSGame key={activeRoom.id} user={user} room={activeRoom} projectId={project.id} onLeave={() => setActiveRoom(null)} t={t} />;
       }
-      return <RPSGame user={user} room={activeRoom} projectId={project.id} onLeave={() => setActiveRoom(null)} />;
-  }
   
   const GAMES = [
-      { id: 'rps', label: 'Rock Paper Scissors', icon: Scissors, color: 'bg-google-blue' },
-      { id: 'mine', label: 'Minesweeper', icon: Bomb, color: 'bg-google-red' }
+      { id: 'rps', label: t('rockPaperScissors'), icon: Scissors, color: 'bg-google-blue' },
+      { id: 'mine', label: t('minesweeper'), icon: Bomb, color: 'bg-google-red' }
   ];
+  const difficultyLabels = {
+      easy: t('difficultyEasy'),
+      medium: t('difficultyMedium'),
+      hard: t('difficultyHard'),
+  };
 
   return (
-    <div className="h-full flex flex-col p-4 md:p-8 animate-fade-in">
+    <div className="flex h-full flex-col animate-fade-in">
        {/* Header */}
-       <div className="flex justify-between items-center mb-8">
-           <h1 className="text-3xl font-normal text-m3-on-surface">Game Hub</h1>
-           <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-2 px-6 py-3 bg-m3-primary-container text-m3-on-primary-container rounded-2xl font-medium hover:shadow-elevation-1 transition-all">
+       <div className="mb-6 flex items-center justify-between">
+           <h1 className="text-3xl font-medium text-m3-on-surface">{t('gameHub')}</h1>
+           <button onClick={() => setShowCreate(!showCreate)} className="app-button-tonal">
                {showCreate ? <X className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
-               {showCreate ? 'Close' : 'Create Room'}
+               {showCreate ? t('close') : t('createRoom')}
            </button>
        </div>
        
        {showCreate && (
-           <div className="mb-8 p-6 bg-m3-surface-container rounded-[28px] animate-slide-down border border-m3-outline-variant/50">
-               <h3 className="text-xl mb-6">Start a New Game</h3>
+           <div className="app-card mb-8 animate-slide-down p-5 sm:p-6">
+               <h3 className="mb-6 text-xl font-medium">{t('startNewGame')}</h3>
                <form onSubmit={handleCreateRoom} className="space-y-6">
                    <div className="flex flex-col md:flex-row gap-6">
                        {/* Game Selection */}
                        <div className="flex-1">
-                           <label className="text-xs uppercase tracking-wider text-m3-on-surface-variant font-medium mb-3 block">Select Game</label>
+                           <label className="app-label mb-3 uppercase tracking-wide">{t('selectGame')}</label>
                            <div className="grid grid-cols-2 gap-4">
                                {GAMES.map(g => (
-                                   <div 
+                                   <button
+                                      type="button"
                                       key={g.id} 
                                       onClick={() => setSelectedGame(g.id)}
-                                      className={`cursor-pointer p-4 rounded-xl border flex items-center gap-3 transition-all ${selectedGame === g.id ? 'border-google-blue bg-google-blue/5' : 'border-m3-outline-variant/30 hover:bg-m3-surface'}`}
+                                      className={`app-card flex min-h-[84px] cursor-pointer items-center gap-3 p-4 text-left ${selectedGame === g.id ? 'border-google-blue bg-google-blue/5' : 'hover:bg-m3-surface'}`}
                                    >
                                        <div className={`p-2 rounded-full ${g.color} text-white`}>
                                            <g.icon className="w-5 h-5"/>
                                        </div>
                                        <span className="font-medium">{g.label}</span>
-                                   </div>
+                                   </button>
                                ))}
                            </div>
                        </div>
                        
                        <div className="flex-1 space-y-4">
                            <div>
-                               <label className="text-xs uppercase tracking-wider text-m3-on-surface-variant font-medium mb-2 block">Room Name</label>
-                               <input type="text" placeholder="e.g. Friday Fun" value={roomName} onChange={e => setRoomName(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none focus:border-google-blue" required />
+                               <label className="app-label uppercase tracking-wide">{t('roomName')}</label>
+                               <input type="text" placeholder={t('roomNamePlaceholder')} value={roomName} onChange={e => setRoomName(e.target.value)} className="app-input" required />
                            </div>
                            
                            {/* Game Specific Config */}
                            {selectedGame === 'rps' && (
-                               <div className="flex gap-4">
-                                   <div className="flex-1">
-                                       <label className="text-xs text-m3-on-surface-variant mb-1 block">Best Of (Rounds)</label>
-                                       <select value={bestOf} onChange={e => setBestOf(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none">
-                                           <option value="1">1 (Sudden Death)</option>
-                                           <option value="3">3</option>
-                                           <option value="5">5</option>
-                                       </select>
+                               <>
+                                       <div className="flex gap-4">
+                                           <div className="flex-1">
+                                           <label className="app-label">{t('bestOfRounds')}</label>
+                                           <select value={bestOf} onChange={e => setBestOf(e.target.value)} className="app-input">
+                                               <option value="1">1 ({t('suddenDeath')})</option>
+                                               <option value="3">3</option>
+                                               <option value="5">5</option>
+                                           </select>
+                                       </div>
+                                       <div className="flex-1">
+                                            <label className="app-label">{t('turnTimeout')}</label>
+                                            <select value={timeoutSeconds} onChange={e => setTimeoutSeconds(e.target.value)} className="app-input">
+                                               <option value="15">15s</option>
+                                               <option value="30">30s</option>
+                                               <option value="60">60s</option>
+                                           </select>
+                                       </div>
                                    </div>
-                                   <div className="flex-1">
-                                        <label className="text-xs text-m3-on-surface-variant mb-1 block">Turn Timeout</label>
-                                        <select value={timeoutSeconds} onChange={e => setTimeoutSeconds(e.target.value)} className="w-full px-4 py-3 bg-m3-surface border border-m3-outline rounded-xl outline-none">
-                                           <option value="15">15s</option>
-                                           <option value="30">30s</option>
-                                           <option value="60">60s</option>
-                                       </select>
-                                   </div>
-                               </div>
-                               
-                               <div className="flex items-center gap-2 mt-4 p-3 bg-m3-surface rounded-xl border border-m3-outline-variant/30 cursor-pointer" onClick={() => setVsComputer(!vsComputer)}>
-                                   <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${vsComputer ? 'bg-google-blue border-google-blue' : 'border-m3-outline'}`}>
-                                       {vsComputer && <Check className="w-3.5 h-3.5 text-white"/>}
-                                   </div>
-                                   <span className="text-sm font-medium">Play vs Computer</span>
-                               </div>
+
+                                   <button type="button" className="app-card mt-4 flex w-full cursor-pointer items-center gap-2 p-3 text-left" onClick={() => setVsComputer(!vsComputer)}>
+                                       <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${vsComputer ? 'bg-google-blue border-google-blue' : 'border-m3-outline'}`}>
+                                           {vsComputer && <Check className="w-3.5 h-3.5 text-white"/>}
+                                       </div>
+                                       <span className="text-sm font-medium">{t('playVsComputer')}</span>
+                                   </button>
+                               </>
                            )}
                            
-                           {selectedGame === 'mine' && (
-                               <div>
-                                   <label className="text-xs text-m3-on-surface-variant mb-1 block">Difficulty</label>
+                               {selectedGame === 'mine' && (
+                                   <div>
+                                   <label className="app-label">{t('difficulty')}</label>
                                    <div className="flex gap-2">
                                        {['easy', 'medium', 'hard'].map(d => (
                                            <button 
                                               type="button" 
                                               key={d} 
                                               onClick={() => setMineDifficulty(d)}
-                                              className={`flex-1 py-2 rounded-lg border text-sm capitalize transition-colors ${mineDifficulty === d ? 'bg-m3-primary text-white border-transparent' : 'border-m3-outline hover:bg-m3-surface-container-high'}`}
+                                              className={`app-button flex-1 border text-sm capitalize ${mineDifficulty === d ? 'bg-m3-primary text-white border-transparent' : 'border-m3-outline hover:bg-m3-surface-container-high'}`}
                                            >
-                                               {d}
+                                               {difficultyLabels[d]}
                                            </button>
                                        ))}
                                    </div>
                                     <div className="text-xs text-m3-on-surface-variant mt-2">
-                                       {mineDifficulty === 'easy' && '9x9 Grid, 10 Mines'}
-                                       {mineDifficulty === 'medium' && '16x16 Grid, 40 Mines'}
-                                       {mineDifficulty === 'hard' && '30x16 Grid, 99 Mines'}
+                                       {mineDifficulty === 'easy' && t('minesEasyDesc')}
+                                       {mineDifficulty === 'medium' && t('minesMediumDesc')}
+                                       {mineDifficulty === 'hard' && t('minesHardDesc')}
                                    </div>
                                </div>
                            )}
                        </div>
                    </div>
                    <div className="flex justify-end">
-                       <button type="submit" className="px-8 py-3 bg-google-blue text-white rounded-full font-medium shadow-elevation-1 hover:shadow-elevation-2">
-                           Create Room
+                       <button type="submit" className="app-button-primary px-8">
+                           {t('createRoom')}
                        </button>
                    </div>
                </form>
@@ -891,15 +931,15 @@ export default function GameHubView({ project, user, t }) {
        )}
        
        {/* Rooms Grid */}
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           {rooms.length === 0 ? (
-               <div className="col-span-full text-center py-20 text-m3-on-surface-variant/50">
-                   <Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-50"/>
-                   No active rooms. Create one to start playing!
-               </div>
+       <div className="workspace-grid">
+               {rooms.length === 0 ? (
+                   <div className="app-card-quiet col-span-full py-20 text-center text-m3-on-surface-variant/60">
+                       <Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-50"/>
+                       {t('noActiveRooms')}
+                   </div>
            ) : (
-               rooms.map(room => (
-                   <div key={room.id} onClick={() => handleJoin(room)} className="group cursor-pointer bg-m3-surface-container hover:bg-m3-surface-container-high border border-m3-outline-variant/30 rounded-2xl p-5 transition-all hover:-translate-y-1 hover:shadow-xl relative overflow-hidden">
+                  rooms.map(room => (
+                   <button type="button" key={room.id} onClick={() => handleJoin(room)} className="app-card group relative w-full cursor-pointer overflow-hidden p-5 text-left hover:border-google-blue/30 hover:bg-m3-surface-container-high">
                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                            {room.game === 'mine' ? <Bomb className="w-24 h-24 rotate-12"/> : <Scissors className="w-24 h-24 -rotate-12"/> }
                        </div>
@@ -916,19 +956,18 @@ export default function GameHubView({ project, user, t }) {
                            
                            <h3 className="text-lg font-bold mb-1">{room.name}</h3>
                            <p className="text-sm text-m3-on-surface-variant mb-4 capitalize">
-                               {room.game === 'mine' ? `${room.config.difficulty} Mode` : `Best of ${room.config.bestOf}`}
+                               {room.game === 'mine' ? `${difficultyLabels[room.config.difficulty] || room.config.difficulty}` : `${t('bestOf')} ${room.config.bestOf}`}
                            </p>
                            
                            <div className="flex items-center gap-2 text-xs text-m3-on-surface-variant/70">
                                <User className="w-3 h-3"/>
-                               <span>Created by {room.createdBy === user.uid ? 'You' : 'User ' + room.createdBy.slice(0,4)}</span>
+                               <span>{t('createdBy')} {room.createdBy === user.uid ? t('you') : `${t('userLabel')} ${room.createdBy.slice(0,4)}`}</span>
                            </div>
                        </div>
-                   </div>
-               ))
+                   </button>
+                  ))
            )}
        </div>
     </div>
   );
 }
-

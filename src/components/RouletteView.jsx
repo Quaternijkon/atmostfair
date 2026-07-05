@@ -1,7 +1,41 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForward, RotateCcw, X, Pause } from './Icons';
 import { InfoCard } from './InfoCard';
-import { useUI } from './UIComponents';
+import { useUI } from './UIContext';
+
+const REPEAT_SEED_MODULUS = 2147483647;
+const REPEAT_SEED_MULTIPLIER = 16807;
+const DEFAULT_ROULETTE_CONFIG = {
+  mode: 'classic',
+  prizes: [],
+  survivorCount: 1,
+  order: 'fwd',
+  allowRepeat: false,
+  enableReplay: false,
+  replaySpeed: 2,
+  creatorWeightPublic: false,
+};
+
+function createInitialRouletteConfig(project) {
+  return { ...DEFAULT_ROULETTE_CONFIG, ...(project.rouletteConfig || {}) };
+}
+
+function normalizeRepeatSeed(seed) {
+  const normalized = seed % REPEAT_SEED_MODULUS;
+  return normalized > 0 ? normalized : normalized + REPEAT_SEED_MODULUS - 1;
+}
+
+function advanceRepeatSeed(seed) {
+  return (seed * REPEAT_SEED_MULTIPLIER) % REPEAT_SEED_MODULUS;
+}
+
+function getRepeatIndex(initialSeed, poolLength, drawIndex) {
+  let seed = normalizeRepeatSeed(initialSeed);
+  for (let i = 0; i <= drawIndex; i += 1) {
+      seed = advanceRepeatSeed(seed);
+  }
+  return Math.abs(seed - 1) % poolLength;
+}
 
 export default function RouletteView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const { showToast } = useUI();
@@ -11,17 +45,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   const [joinValue, setJoinValue] = useState(50);
   
   // -- Config State --
-  const [activeTab, setActiveTab] = useState('classic'); 
-  const [config, setConfig] = useState(project.rouletteConfig || {
-      mode: 'classic',
-      prizes: [],
-      survivorCount: 1,
-      order: 'fwd',
-      allowRepeat: false,
-      enableReplay: false,
-      replaySpeed: 2,
-      creatorWeightPublic: false
-  });
+  const [activeTab, setActiveTab] = useState(() => project.rouletteConfig?.mode || 'classic');
+  const [config, setConfig] = useState(() => createInitialRouletteConfig(project));
 
   // -- Replay State --
   const [replayState, setReplayState] = useState({ 
@@ -35,14 +60,6 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   const sortedParticipants = useMemo(() => [...participants].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)), [participants]);
   const hasJoined = useMemo(() => user && participants.some(p => p.uid === user.uid), [participants, user]);
   
-  // Sync config from project if not editing
-  useEffect(() => {
-     if (project.rouletteConfig) {
-         setConfig(prev => ({...prev, ...project.rouletteConfig}));
-         setActiveTab(project.rouletteConfig.mode || 'classic');
-     }
-  }, [project.rouletteConfig]);
-
   // -- Logic Helpers --
   
   // Calculate simulation steps and final results
@@ -57,21 +74,10 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       let pool = sortedParticipants.map(p => ({...p})); 
       let currentSum = initialTotal;
       
-      // For "Repeat Allowed" mode ONLY, we need a PRNG state because sum doesn't change
-      // Using standard LCG constant: 16807 (7^5)
-      let prngState = initialTotal % 2147483647;
-      if (prngState <= 0) prngState += 2147483646;
-
-      const getNextIndex = (currentPoolLength, isRepeatMode) => {
-          if (isRepeatMode) {
-              // Apply formula to shuffle ONLY if repeats allowed (preserves randomness when state doesn't change)
-              prngState = (prngState * 16807) % 2147483647;
-              return Math.abs(prngState - 1) % currentPoolLength;
-          } else {
-              // STRICTLY use Sum % Length per user request
-              // This ensures the result is purely derived from the current pool's remaining sum
-              return Math.abs(currentSum) % currentPoolLength;
-          }
+      const getNextIndex = (currentPoolLength) => {
+          // STRICTLY use Sum % Length per user request.
+          // This ensures the result is purely derived from the current pool's remaining sum.
+          return Math.abs(currentSum) % currentPoolLength;
       };
 
       const mode = config.mode || 'classic';
@@ -79,16 +85,16 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       if (mode === 'classic') {
           if (pool.length > 0) {
               // Classic Mode: Directly use Total Sum Modulo Count
-              const idx = getNextIndex(pool.length, false);
+              const idx = getNextIndex(pool.length);
               const winner = pool[idx];
               steps.push({ 
                   type: 'win', 
                   step: 1, 
                   target: winner, 
-                  label: t('winner'),
+                  label: t('rWinner'),
                   detail: `Index: ${idx} (Sum ${currentSum} % ${pool.length})` 
-              });
-              winners.push({...winner, rank: 1, prize: 'Winner'});
+	              });
+	              winners.push({...winner, rank: 1, prize: t('defaultWinner')});
           }
       } 
       else if (mode === 'multi') {
@@ -106,7 +112,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                if (pool.length === 0) break;
 
                const prizeName = prizeQueue[i];
-               const idx = getNextIndex(pool.length, isRepeat);
+               const idx = isRepeat ? getRepeatIndex(initialTotal, pool.length, i) : getNextIndex(pool.length);
                const winner = pool[idx];
 
                steps.push({
@@ -140,7 +146,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           let loopGuard = 0;
           while (pool.length > survivorsNeeded && loopGuard < 1000) {
                loopGuard++;
-               const idx = getNextIndex(pool.length, false);
+               const idx = getNextIndex(pool.length);
                const loser = pool[idx];
                
                if (!loser) break; 
@@ -164,7 +170,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           loopGuard = 0;
           while (pool.length > 0 && loopGuard < 1000) {
               loopGuard++;
-              const idx = getNextIndex(pool.length, false);
+              const idx = getNextIndex(pool.length);
               const winner = pool[idx];
               if (!winner) break;
 
@@ -231,7 +237,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   // -- Render Sections --
   
   const renderConfigPanel = () => (
-      <div className="bg-m3-surface-container p-6 rounded-[28px] mb-8 animate-fade-in border border-m3-outline-variant/30">
+      <div className="app-card mb-8 animate-fade-in p-5 sm:p-6">
           <div className="flex gap-4 mb-6 border-b border-m3-outline-variant/20 pb-2">
               {[
                   {id: 'classic', label: t('rModeClassic')}, 
@@ -241,7 +247,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                   <button 
                     key={tab.id}
                     onClick={() => { setActiveTab(tab.id); setConfig({...config, mode: tab.id}); }}
-                    className={`pb-2 px-2 text-sm font-medium transition-all relative ${activeTab === tab.id ? 'text-google-blue' : 'text-m3-on-surface-variant'}`}
+                    className={`touch-target relative px-3 pb-2 text-sm font-medium transition-all ${activeTab === tab.id ? 'text-google-blue' : 'text-m3-on-surface-variant'}`}
                   >
                      {tab.label}
                      {activeTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-google-blue rounded-t-full" />}
@@ -252,19 +258,19 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           <div className="space-y-4">
               {activeTab === 'multi' && (
                   <div className="space-y-3">
-                      <div className="flex justify-between items-center"><label className="text-sm font-medium">{t('rPrizes')}</label> <button onClick={() => setConfig({...config, prizes: [...(config.prizes||[]), {name: '', count: 1}]})} className="text-xs text-google-blue flex items-center gap-1"><Plus className="w-3 h-3"/> {t('rAddPrize')}</button></div>
+                      <div className="flex justify-between items-center"><label className="text-sm font-medium">{t('rPrizes')}</label> <button onClick={() => setConfig({...config, prizes: [...(config.prizes||[]), {name: '', count: 1}]})} className="app-button-quiet px-3 text-xs text-google-blue"><Plus className="w-3 h-3"/> {t('rAddPrize')}</button></div>
                       {(config.prizes || []).map((prize, idx) => (
                           <div key={idx} className="flex gap-2">
-                              <input type="text" value={prize.name} onChange={e => {const n=[...config.prizes]; n[idx].name=e.target.value; setConfig({...config, prizes:n})}} placeholder={t('rPrizeName')} className="flex-1 bg-m3-surface px-3 py-2 rounded-lg border border-m3-outline-variant/50 text-sm" />
-                              <input type="number" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=parseInt(e.target.value); setConfig({...config, prizes:n})}} className="w-20 bg-m3-surface px-3 py-2 rounded-lg border border-m3-outline-variant/50 text-sm" />
-                              <button onClick={() => {const n=[...config.prizes]; n.splice(idx,1); setConfig({...config, prizes:n})}} className="text-m3-on-surface-variant hover:text-google-red"><Trash2 className="w-4 h-4" /></button>
+                              <input type="text" value={prize.name} onChange={e => {const n=[...config.prizes]; n[idx].name=e.target.value; setConfig({...config, prizes:n})}} placeholder={t('rPrizeName')} className="app-input flex-1" />
+                              <input type="number" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=parseInt(e.target.value); setConfig({...config, prizes:n})}} className="app-input w-24" />
+                              <button onClick={() => {const n=[...config.prizes]; n.splice(idx,1); setConfig({...config, prizes:n})}} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-4 h-4" /></button>
                           </div>
                       ))}
                       <div className="flex gap-4 mt-4">
-                          <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded bg-m3-surface hover:bg-m3-surface-container-high">
+                          <label className="app-chip cursor-pointer bg-m3-surface hover:bg-m3-surface-container-high">
                               <input type="radio" checked={config.order !== 'rev'} onChange={() => setConfig({...config, order: 'fwd'})} /> {t('rOrderFwd')}
                           </label>
-                           <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded bg-m3-surface hover:bg-m3-surface-container-high">
+                           <label className="app-chip cursor-pointer bg-m3-surface hover:bg-m3-surface-container-high">
                               <input type="radio" checked={config.order === 'rev'} onChange={() => setConfig({...config, order: 'rev'})} /> {t('rOrderRev')}
                           </label>
                       </div>
@@ -277,7 +283,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
               {activeTab === 'elim' && (
                   <div>
                        <label className="block text-sm font-medium mb-1">{t('rWinnersCount')}</label>
-                       <input type="number" min="1" value={config.survivorCount} onChange={e => setConfig({...config, survivorCount: e.target.value})} className="w-full bg-m3-surface px-3 py-2 rounded-lg border border-m3-outline-variant/50" />
+                       <input type="number" min="1" value={config.survivorCount} onChange={e => setConfig({...config, survivorCount: e.target.value})} className="app-input" />
                   </div>
               )}
               
@@ -305,7 +311,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                     </label>
               </div>
 
-              <button onClick={handleSaveConfig} className="w-full mt-4 py-3 bg-m3-primary-container text-m3-on-primary-container rounded-full font-medium text-sm hover:shadow-elevation-1 transition-all">
+              <button onClick={handleSaveConfig} className="app-button-tonal mt-4 w-full">
                   {t('rSaveConfig')}
               </button>
           </div>
@@ -319,7 +325,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       
       return (
           <div className="fixed inset-0 z-50 bg-m3-surface flex flex-col items-center justify-center p-6 animate-fade-in">
-              <button onClick={() => setReplayState({...replayState, active: false})} className="absolute top-6 right-6 p-2 rounded-full hover:bg-m3-surface-container"><X className="w-6 h-6"/></button>
+              <button onClick={() => setReplayState({...replayState, active: false})} className="app-icon-button absolute right-6 top-6"><X className="w-6 h-6"/></button>
               
               {/* Step info */}
               <div className="text-center mb-10 w-full max-w-2xl">
@@ -330,8 +336,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                                {currentStepData.type === 'elim' ? t('rEliminating') : t('rDrawing')} {currentStepData.type !== 'elim' && (currentStepData.label || '').replace(t('rWinner')+': ', '')}
                           </div>
                           
-                          <div className="bg-m3-surface-container-high p-8 rounded-[40px] shadow-elevation-2 mb-6 transform transition-all">
-                               <div className="text-6xl font-normal mb-2">{currentStepData.target?.name}</div>
+                          <div className="app-card mb-6 p-8 transform transition-all">
+                               <div className="text-6xl font-medium mb-2">{currentStepData.target?.name}</div>
                                <div className="text-xl font-mono text-m3-on-surface-variant opacity-50">{currentStepData.detail}</div>
                           </div>
                       </div>
@@ -341,8 +347,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
               </div>
               
               {/* Controls */}
-              <div className="flex items-center gap-6 bg-m3-surface-container-low px-8 py-4 rounded-full shadow-elevation-1">
-                  <button onClick={() => setReplayState({...replayState, autoPlay: !replayState.autoPlay})} className="p-3 bg-m3-primary text-m3-on-primary rounded-full">
+              <div className="app-card flex items-center gap-6 rounded-full px-8 py-4">
+                  <button onClick={() => setReplayState({...replayState, autoPlay: !replayState.autoPlay})} className="app-icon-button border-transparent bg-m3-primary text-m3-on-primary hover:bg-m3-primary hover:text-m3-on-primary">
                       {replayState.autoPlay ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
                   </button>
                   
@@ -358,23 +364,23 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                       </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 border-l border-m3-outline-variant/30 pl-6">
-                      <span className="text-xs font-bold uppercase mr-2">Speed</span>
-                      {[1, 0.5, 0.1].map(s => (
-                          <button key={s} onClick={() => setConfig({...config, replaySpeed: s})} className={`text-xs w-8 h-8 rounded-full border ${config.replaySpeed === s ? 'bg-m3-primary-container border-transparent' : 'border-m3-outline-variant'}`}>
-                              {s === 1 ? '1x' : s === 0.5 ? '2x' : 'MAX'}
-                          </button>
-                      ))}
+                      <div className="flex items-center gap-2 border-l border-m3-outline-variant/30 pl-6">
+	                          <span className="text-xs font-bold uppercase mr-2">{t('replaySpeed')}</span>
+                          {[1, 0.5, 0.1].map(s => (
+                              <button key={s} onClick={() => setConfig({...config, replaySpeed: s})} className={`app-button min-w-12 border px-3 text-xs ${config.replaySpeed === s ? 'border-transparent bg-m3-primary-container' : 'border-m3-outline-variant'}`}>
+	                                  {s === 1 ? '1x' : s === 0.5 ? '2x' : t('replayMaxSpeed')}
+                              </button>
+                          ))}
                   </div>
 
-                  <button onClick={() => setReplayState({...replayState, stepIndex: steps.length - 1})} className="p-2 hover:bg-m3-surface-container rounded-full text-m3-on-surface-variant" title={t('rSkip')}>
+                  <button onClick={() => setReplayState({...replayState, stepIndex: steps.length - 1})} className="app-icon-button" title={t('rSkip')}>
                       <FastForward className="w-5 h-5" />
                   </button>
               </div>
               
               {isEnded && (
                   <div className="mt-8 animate-fade-in delay-500">
-                       <button onClick={() => setReplayState({...replayState, active: false})} className="px-8 py-3 bg-m3-surface-container-high border border-m3-outline-variant hover:bg-m3-surface-container-highest rounded-full font-medium">
+                       <button onClick={() => setReplayState({...replayState, active: false})} className="app-button-tonal px-8">
                            {t('rViewResults')}
                        </button>
                   </div>
@@ -387,19 +393,19 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
   const renderResults = () => (
         <div className="mb-8 space-y-6 animate-fade-in relative">
-            <div className="bg-m3-surface-container-high rounded-[32px] p-10 text-center border border-google-yellow/50 shadow-elevation-1">
+            <div className="app-card border-google-yellow/50 p-8 text-center sm:p-10">
                  <div className="mb-6"><Crown className="w-12 h-12 inline-block text-google-yellow" /></div>
-                 <h2 className="text-3xl font-normal mb-8">{t('rDrawComplete')}</h2>
+                 <h2 className="text-3xl font-medium mb-8">{t('rDrawComplete')}</h2>
                  
                  {config.enableReplay && (
-                    <button onClick={startReplay} className="mb-8 px-6 py-3 bg-m3-surface shadow-elevation-1 rounded-full flex items-center gap-2 mx-auto hover:bg-m3-surface-container-high transition-colors text-google-blue">
+                    <button onClick={startReplay} className="app-button-quiet mx-auto mb-8 bg-m3-surface text-google-blue shadow-elevation-1 hover:bg-m3-surface-container-high">
                         <RotateCcw className="w-5 h-5"/> {t('rStartReplay')}
                     </button>
                  )}
 
                  <div className="grid gap-4 max-w-2xl mx-auto">
                      {finalWinners.map((w, i) => (
-                         <div key={i} className="flex justify-between items-center bg-m3-surface p-4 rounded-xl border border-m3-outline-variant/30">
+                         <div key={i} className="app-card flex items-center justify-between p-4">
                              <div className="flex items-center gap-3">
                                  <div className="w-8 h-8 rounded-full bg-google-yellow/20 flex items-center justify-center text-google-yellow font-bold text-sm">#{w.rank || i+1}</div>
                                  <div className="text-left">
@@ -408,7 +414,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                                  </div>
                              </div>
                              <div className="text-right">
-                                 <div className="font-mono text-xl text-google-yellow">{w.prize || 'Winner'}</div>
+	                                 <div className="font-mono text-xl text-google-yellow">{w.prize || t('defaultWinner')}</div>
                              </div>
                          </div>
                      ))}
@@ -428,12 +434,12 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       {!isFinished && isOwner && renderConfigPanel()}
       
       {/* Header Stat Board (Same as before but simplified) */}
-      <div className="bg-m3-surface-container rounded-[32px] p-8 md:p-10 relative overflow-hidden">
+      <div className="app-card relative overflow-hidden p-6 md:p-10">
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="w-full md:w-auto">
-              <h2 className="text-3xl font-normal mb-2 flex items-center gap-3 text-m3-on-surface"><Dices className="w-8 h-8 text-google-yellow" /> {t('fairRoulette')}</h2>
+              <h2 className="text-3xl font-medium mb-2 flex items-center gap-3 text-m3-on-surface"><Dices className="w-8 h-8 text-google-yellow" /> {t('fairRoulette')}</h2>
               <div className="text-sm text-m3-on-surface-variant mt-2 max-w-md">{t('rouletteHelpSteps')[1]}</div>
-              <div className="flex items-center gap-4 mt-6 bg-m3-surface p-4 rounded-2xl border border-m3-outline-variant/30 overflow-x-auto">
+              <div className="app-card flex items-center gap-4 mt-6 overflow-x-auto p-4">
                 <div className="text-center px-2"><div className="text-xs font-bold uppercase text-m3-on-surface-variant">{t('total')}</div><div className="text-xl font-mono text-m3-on-surface">{simulationData.totalValue}</div></div>
                 <div className="text-m3-on-surface-variant font-light text-2xl">%</div>
                 <div className="text-center px-2"><div className="text-xs font-bold uppercase text-m3-on-surface-variant">{t('people')}</div><div className="text-xl font-mono text-m3-on-surface">{participants.length}</div></div>
@@ -441,14 +447,14 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
             </div>
             
             {isOwner && !isFinished && !isStopped && (
-                 <button onClick={handleDraw} disabled={participants.length < 1} className="w-full md:w-auto px-8 py-4 bg-google-yellow text-gray-900 font-medium rounded-2xl shadow-elevation-2 hover:shadow-elevation-3 transition-shadow flex items-center justify-center gap-2">
+                 <button onClick={handleDraw} disabled={participants.length < 1} className="app-button w-full bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2 md:w-auto">
                      <Crown className="w-5 h-5" /> {t('rStartDraw')}
                  </button>
             )}
              {isOwner && !isFinished && isStopped && (
                  <div className="text-center">
-                     <div className="mb-2 text-google-red font-bold">Project Stopped</div>
-                     <button onClick={handleDraw} className="px-6 py-2 bg-google-yellow rounded-full">{t('rStartDraw')}</button>
+	                     <div className="mb-2 text-google-red font-bold">{t('projectStopped')}</div>
+                     <button onClick={handleDraw} className="app-button bg-google-yellow px-6">{t('rStartDraw')}</button>
                  </div>
             )}
           </div>
@@ -456,26 +462,26 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
       {/* Entry Form (If active) */}
       {!isFinished && !isStopped && (
-        <div className="bg-m3-surface p-8 rounded-[28px] border border-m3-outline-variant/50 relative overflow-hidden">
+        <div className="app-card relative overflow-hidden p-6 sm:p-8">
              {hasJoined ? (
                  <div className="text-center py-8">
                      <div className="w-16 h-16 bg-google-green/20 text-google-green rounded-full flex items-center justify-center mx-auto mb-4">
                          <Lock className="w-8 h-8" />
                      </div>
-                     <h3 className="text-xl font-medium mb-2">{t('youHaveJoined') || 'You have joined'}</h3>
-                     <p className="text-m3-on-surface-variant text-sm">{t('waitForDraw') || 'Your entry has been recorded.'}</p>
+	                     <h3 className="text-xl font-medium mb-2">{t('youHaveJoined')}</h3>
+	                     <p className="text-m3-on-surface-variant text-sm">{t('waitForDraw')}</p>
                  </div>
              ) : (
              <div className="flex flex-col md:flex-row gap-8 items-start">
                 <div className="flex-1 w-full">
-                  <h3 className="font-normal text-2xl text-m3-on-surface mb-2">{t('joinToPlay')}</h3>
+                  <h3 className="font-medium text-2xl text-m3-on-surface mb-2">{t('joinToPlay')}</h3>
                   <p className="text-m3-on-surface-variant text-sm mb-6">{t('rouletteCannotChange')} <span className="text-google-red font-bold">{t('cannotBeChanged')}</span>.</p>
-                  <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} placeholder={t('entryNamePlaceholder')} className="w-full px-4 py-3 bg-m3-surface-container-high rounded-xl border border-m3-outline outline-none focus:border-google-yellow focus:border-2 text-m3-on-surface" />
+                  <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} placeholder={t('entryNamePlaceholder')} className="app-input" />
                 </div>
-                <div className="w-full md:w-1/2 bg-m3-surface-container-high rounded-2xl p-6 border border-transparent">
+                <div className="app-card-quiet w-full p-6 md:w-1/2">
                   <div className="flex justify-between items-center mb-6"><label className="font-medium text-m3-on-surface-variant">{t('valueLabel')}</label><span className="text-4xl font-normal text-google-yellow">{joinValue}</span></div>
                   <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} className="w-full h-2 bg-m3-outline-variant rounded-lg appearance-none cursor-pointer accent-google-yellow" />
-                  <button onClick={() => actions.handleJoinRoulette(project.id, joinName, joinValue)} className="w-full mt-8 bg-google-yellow text-gray-900 text-lg font-medium py-3 rounded-full hover:shadow-elevation-1 transition-shadow">{t('submitEntry')}</button>
+                  <button onClick={() => actions.handleJoinRoulette(project.id, joinName, joinValue)} className="app-button mt-8 w-full bg-google-yellow text-lg text-gray-900 hover:shadow-elevation-1">{t('submitEntry')}</button>
                 </div>
               </div>
              )}
@@ -484,16 +490,16 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
       {/* Participants List */}
       <div className="grid md:grid-cols-2 gap-6 mt-8">
-        <div className="bg-m3-surface border border-m3-outline-variant/20 rounded-[24px] overflow-hidden p-6">
+        <div className="app-card overflow-hidden p-6">
           <h3 className="font-medium text-m3-on-surface mb-4">{t('participants')} ({participants.length})</h3>
           <div className="max-h-[300px] overflow-y-auto pr-2">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs uppercase text-m3-on-surface-variant border-b border-m3-outline-variant/20"><tr><th className="px-4 py-3 font-medium">#</th><th className="px-4 py-3 font-medium">Name</th><th className="px-4 py-3 text-right font-medium">Val</th></tr></thead>
+	              <thead className="text-xs uppercase text-m3-on-surface-variant border-b border-m3-outline-variant/20"><tr><th className="px-4 py-3 font-medium">#</th><th className="px-4 py-3 font-medium">{t('nameLabel')}</th><th className="px-4 py-3 text-right font-medium">{t('shortValueLabel')}</th></tr></thead>
               <tbody>
                 {sortedParticipants.map((p, idx) => (
                   <tr key={p.id || idx} className={`border-b border-m3-outline-variant/10 last:border-0`}>
                     <td className="px-4 py-3 text-m3-on-surface-variant font-mono">{idx + 1}</td>
-                    <td className={`px-4 py-3 ${p.uid === user?.uid ? 'font-bold text-google-blue' : 'text-m3-on-surface'}`}>{p.name} <span className="text-[10px] text-m3-on-surface-variant ml-2">{p.isWinner && '🏆'}</span></td>
+                    <td className={`px-4 py-3 ${p.uid === user?.uid ? 'font-bold text-google-blue' : 'text-m3-on-surface'}`}>{p.name} {p.isWinner && <Crown className="ml-2 inline h-4 w-4 text-google-yellow" />}</td>
                     <td className="px-4 py-3 text-right font-mono font-medium text-m3-on-surface-variant">
                         {(isFinished || p.uid === user?.uid || (config.creatorWeightPublic && p.uid === project.creatorId)) ? p.value : '***'}
                     </td>
@@ -505,7 +511,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
         </div>
         
         {/* Placeholder for simple chart */}
-        <div className="bg-m3-surface-container-high rounded-[24px] p-6 text-m3-on-surface flex items-center justify-center">
+        <div className="app-card-quiet flex items-center justify-center p-6 text-m3-on-surface">
             <div className="text-center opacity-50">
                 <ChartLine className="w-12 h-12 mx-auto mb-2" />
                 <div>{t('distributionChart')}</div> 

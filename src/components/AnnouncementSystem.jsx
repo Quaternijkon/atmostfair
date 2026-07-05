@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, limit, db } from '../lib/localData';
+import { formatDate } from '../lib/locale';
 import { Flag, X, Info, AlertTriangle } from './Icons';
 
 export default function AnnouncementSystem({ t = (k) => k }) {
@@ -53,8 +53,8 @@ export default function AnnouncementSystem({ t = (k) => k }) {
     <>
       <button 
         onClick={handleOpen}
-        className="relative p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 transition-colors"
-        title={t('announcements') || 'Announcements'}
+        className="app-icon-button relative"
+        title={t('announcements')}
       >
         <Flag className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -63,14 +63,14 @@ export default function AnnouncementSystem({ t = (k) => k }) {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-           <div className="bg-m3-surface-container rounded-[28px] w-full max-w-md shadow-elevation-3 flex flex-col max-h-[80vh]">
-             <div className="p-4 border-b border-m3-outline-variant/30 flex justify-between items-center">
+        <div className="fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
+           <div className="app-dialog flex max-h-[80vh] max-w-md flex-col p-0">
+             <div className="flex items-center justify-between border-b border-m3-outline-variant/30 p-4">
                 <div className="flex items-center gap-3">
                     <Flag className="w-6 h-6 text-google-yellow" />
-                    <h3 className="text-xl font-normal text-m3-on-surface">{t('announcements') || 'Announcements'}</h3>
+                    <h3 className="text-xl font-medium text-m3-on-surface">{t('announcements')}</h3>
                 </div>
-                <button onClick={close} className="p-2 hover:bg-m3-on-surface/5 rounded-full">
+                <button onClick={close} className="app-icon-button" title={t('close')}>
                     <X className="w-5 h-5 text-m3-on-surface" />
                 </button>
              </div>
@@ -81,7 +81,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
                     if (isUnread) markAsRead(item.id); 
 
                     return (
-                        <div key={item.id} className={`p-4 rounded-xl border ${item.type === 'warning' ? 'bg-google-red/5 border-google-red/30' : 'bg-m3-surface border-m3-outline-variant/30'}`}>
+                        <div key={item.id} className={`rounded-2xl border p-4 ${item.type === 'warning' ? 'bg-google-red/5 border-google-red/30' : 'bg-m3-surface border-m3-outline-variant/30'}`}>
                             <div className="flex gap-3">
                                 <div className="mt-1">
                                     {item.type === 'warning' ? (
@@ -94,7 +94,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
                                     <h4 className="text-sm font-bold text-m3-on-surface mb-1">{item.title}</h4>
                                     <p className="text-sm text-m3-on-surface-variant leading-relaxed whitespace-pre-wrap">{item.content}</p>
                                     <span className="text-xs text-m3-on-surface-variant/70 mt-2 block">
-                                        {item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : ''}
+                                        {item.createdAt?.seconds ? formatDate(item.createdAt.seconds * 1000, t) : ''}
                                     </span>
                                 </div>
                             </div>

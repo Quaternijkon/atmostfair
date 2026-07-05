@@ -1,9 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { onAuthStateChanged, isSignInWithEmailLink, signInWithEmailLink, signOut } from 'firebase/auth';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc } from 'firebase/firestore';
-import { auth, db } from './lib/firebase';
+import { onAuthStateChanged, signOut, auth } from './lib/localAuth';
+import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc, getDocs, query, where, db } from './lib/localData';
+import { formatDate } from './lib/locale';
+import { nowMs } from './lib/time';
+import {
+  createProjectActivityData,
+  PROJECT_ACTIVITY_TYPES,
+} from './lib/activityDomain';
+import { createProjectArchivePatch } from './lib/dashboardDomain';
+import {
+  createBookingPatch,
+  createGatherSubmissionData,
+  createProjectCascadeDeleteOperations,
+  createProjectDuplicateChildOperations,
+  createProjectDuplicateData,
+  createQueueJoinData,
+  createRouletteJoinData,
+  createScheduleSubmissionWrite,
+  createTeamJoinMember,
+  createClaimToggleData,
+  createProjectStatusPatch,
+  PROJECT_CASCADE_COLLECTIONS,
+} from './lib/projectDomain';
+import {
+  createClearReadNotificationOperations,
+  createMarkNotificationsReadOperations,
+} from './lib/notificationDomain';
 import { TRANSLATIONS } from './constants/translations';
 import { LogOut, Shield, Bell, Users, X } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
@@ -32,14 +56,14 @@ const PageTransition = ({ children }) => (
 function AppContent() {
   const location = useLocation();
   const [lang, setLang] = useState(localStorage.getItem('app_lang') || 'zh');
-  const t = (key, params = {}) => {
+  const t = useCallback((key, params = {}) => {
     let str = TRANSLATIONS[lang]?.[key] || key;
     if (typeof str !== 'string') return str;
     Object.keys(params).forEach(k => {
       str = str.replace(new RegExp(`{${k}}`, 'g'), params[k]);
     });
     return str;
-  };
+  }, [lang]);
 
   const toggleLang = () => {
     const newLang = lang === 'zh' ? 'en' : 'zh';
@@ -66,25 +90,28 @@ function AppContent() {
   const [bookingSlots, setBookingSlots] = useState([]);
   const [claimItems, setClaimItems] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [projectActivities, setProjectActivities] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
   const [showFriends, setShowFriends] = useState(false);
+  const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
 
-  // Auth & Magik Link Effect
-  useEffect(() => {
-     if (isSignInWithEmailLink(auth, window.location.href)) {
-      let email = window.localStorage.getItem('emailForSignIn');
-      if (!email) email = window.prompt(t('magicLinkPrompt'));
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
-            window.localStorage.removeItem('emailForSignIn');
-            window.history.replaceState({}, document.title, window.location.pathname);
-          })
-          .catch((err) => alert(t('magicLinkError') + ' ' + err.message));
-      }
-    }
-  }, [lang]);
+  const loadProjectCascadeDocs = async (projectId) => {
+    const docsByCollection = {
+      projects: projects.filter((project) => project.id === projectId),
+    };
+
+    await Promise.all(
+      PROJECT_CASCADE_COLLECTIONS
+        .filter(({ name }) => name !== 'projects')
+        .map(async ({ name, field }) => {
+          const snapshot = await getDocs(query(collection(db, name), where(field, '==', projectId)));
+          docsByCollection[name] = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        }),
+    );
+
+    return docsByCollection;
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -95,15 +122,15 @@ function AppContent() {
              await setDoc(doc(db, 'users', u.uid), {
                  uid: u.uid,
                  email: u.email,
-                 displayName: u.displayName || u.email?.split('@')[0] || 'User',
+                 displayName: u.displayName || u.email?.split('@')[0] || t('anonymousUser'),
                  createdAt: u.metadata.creationTime,
-                 lastSeen: Date.now()
+                 lastSeen: nowMs()
              }, { merge: true });
           } catch (e) { console.error("Error syncing user profile", e); }
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [t]);
 
   // Data Sync
   useEffect(() => {
@@ -119,14 +146,34 @@ function AppContent() {
     const unsubBookingSlots = onSnapshot(collection(db, 'booking_slots'), (s) => setBookingSlots(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt)));
-    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubNotifications(); };
+    const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
+    return () => { unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubNotifications(); unsubProjectActivities(); };
   }, [user]);
+
+  const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
+    const activity = createProjectActivityData({
+      projectId,
+      type,
+      actor: user,
+      actorName: actorName || currentUserName(),
+      subject,
+      metadata,
+      createdAt: nowMs(),
+    });
+    if (!activity) return;
+    try {
+      await addDoc(collection(db, 'project_activities'), activity);
+    } catch (error) {
+      console.error('Error recording project activity', error);
+    }
+  };
 
   // Actions
   const actions = {
       handleAddItem: async (title, projectId, creatorName) => {
         if (!title.trim() || !user) return;
-        await addDoc(collection(db, 'voting_items'), { title, projectId, creatorId: user.uid, creatorName: creatorName || user.displayName || 'Anonymous', votes: [], createdAt: Date.now() });
+        await addDoc(collection(db, 'voting_items'), { title, projectId, creatorId: user.uid, creatorName: creatorName || currentUserName(), votes: [], createdAt: nowMs() });
+        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.voteItemAdded, subject: title, actorName: creatorName });
       },
       handleDeleteItem: async (itemId) => deleteDoc(doc(db, 'voting_items', itemId)),
       handleVote: async (item) => {
@@ -134,20 +181,33 @@ function AppContent() {
          const ref = doc(db, 'voting_items', item.id);
          if (item.votes?.includes(user.uid)) await updateDoc(ref, { votes: arrayRemove(user.uid) });
          else await updateDoc(ref, { votes: arrayUnion(user.uid) });
+         void recordProjectActivity({ projectId: item.projectId, type: PROJECT_ACTIVITY_TYPES.voteToggled, subject: item.title });
       },
       handleCreateRoom: async (name, maxMembers, projectId, creatorName) => {
          if (!user || !name.trim()) return;
-         await addDoc(collection(db, 'rooms'), { name, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName||user.displayName||'User', joinedAt: Date.now() }], createdAt: Date.now() });
+         await addDoc(collection(db, 'rooms'), { name, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.teamCreated, subject: name, actorName: creatorName });
       },
       handleJoinRoom: async (roomId, userName) => {
          if (!user) return;
-         await updateDoc(doc(db, 'rooms', roomId), { members: arrayUnion({ uid: user.uid, name: userName||user.displayName||'Anonymous', joinedAt: Date.now() }) });
+         const room = rooms.find((entry) => entry.id === roomId);
+         const member = createTeamJoinMember(room, user, userName || currentUserName(), nowMs());
+         if (!member) return;
+         await updateDoc(doc(db, 'rooms', roomId), { members: arrayUnion(member) });
+         void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamJoined, subject: room.name, actorName: member.name });
       },
-      handleKickMember: async (roomId, memberObject) => updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberObject) }),
+      handleKickMember: async (roomId, memberObject) => {
+        const room = rooms.find((entry) => entry.id === roomId);
+        await updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberObject) });
+        if (room) void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamMemberRemoved, subject: memberObject?.name || room.name });
+      },
       handleDeleteRoom: async (roomId) => deleteDoc(doc(db, 'rooms', roomId)),
       handleJoinQueue: async (projectId, userName, value) => {
          if (!user) return;
-         await addDoc(collection(db, 'queue_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), queueOrder: null });
+         const participant = createQueueJoinData(queueParticipants, projectId, user, userName || currentUserName(), value, nowMs());
+         if (!participant) return;
+         await addDoc(collection(db, 'queue_participants'), participant);
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueJoined, subject: participant.name, metadata: { value: participant.value }, actorName: participant.name });
       },
       handleGenerateQueue: async (projectId) => {
          if (!user) return;
@@ -176,12 +236,14 @@ function AppContent() {
          batch.update(projectRef, { status: 'finished' });
          
          await batch.commit();
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueGenerated, subject: String(updates.length), metadata: { participantCount: updates.length } });
       },
       handleJoinRoulette: async (projectId, userName, value) => {
          if (!user) return;
-         const existing = rouletteParticipants.find(p => p.projectId === projectId && p.uid === user.uid);
-         if (existing) return; 
-         await addDoc(collection(db, 'roulette_participants'), { projectId, uid: user.uid, name: userName||user.displayName, value: parseInt(value)||0, joinedAt: Date.now(), isWinner: false });
+         const participant = createRouletteJoinData(rouletteParticipants, projectId, user, userName || currentUserName(), value, nowMs());
+         if (!participant) return;
+         await addDoc(collection(db, 'roulette_participants'), participant);
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.rouletteJoined, subject: participant.name, metadata: { value: participant.value }, actorName: participant.name });
       },
       handleUpdateRouletteConfig: async (projectId, config) => {
          if (!user) return;
@@ -190,22 +252,75 @@ function AppContent() {
       handleSaveRouletteResult: async (projectId, resultData) => {
          // Saves the complex result blob and marks project finished
          await updateDoc(doc(db, 'projects', projectId), { rouletteResult: resultData, status: 'finished' });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.rouletteDrawn, subject: resultData?.winner?.name || resultData?.winnerName || '' });
       },
       handleRecordWinner: async (projectId, winnerInfo) => {
-         await updateDoc(doc(db, 'projects', projectId), { winners: arrayUnion({ ...winnerInfo, wonAt: Date.now() }), status: 'finished' });
+         await updateDoc(doc(db, 'projects', projectId), { winners: arrayUnion({ ...winnerInfo, wonAt: nowMs() }), status: 'finished' });
          if (winnerInfo.participantId) await updateDoc(doc(db, 'roulette_participants', winnerInfo.participantId), { isWinner: true });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.winnerRecorded, subject: winnerInfo.name || winnerInfo.title || winnerInfo.participantId || '' });
       },
       handleToggleProjectStatus: async (project) => {
-        if (!user || user.uid !== project.creatorId) return; 
-        const newStatus = project.status === 'active' ? 'stopped' : 'active';
-        await updateDoc(doc(db, 'projects', project.id), { status: newStatus });
+        const patch = createProjectStatusPatch(project, user, isAdmin);
+        if (!patch) return;
+        await updateDoc(doc(db, 'projects', project.id), patch);
+        void recordProjectActivity({
+          projectId: project.id,
+          type: patch.status === 'stopped' ? PROJECT_ACTIVITY_TYPES.projectPaused : PROJECT_ACTIVITY_TYPES.projectResumed,
+          subject: project.title,
+        });
       },
       handleDeleteProject: async (projectId) => {
-        await deleteDoc(doc(db, 'projects', projectId));
+        const docsByCollection = await loadProjectCascadeDocs(projectId);
+        const operations = createProjectCascadeDeleteOperations(projectId, docsByCollection);
+        const batch = writeBatch(db);
+        operations.forEach((operation) => {
+          batch.delete(doc(db, operation.collection, operation.id));
+        });
+        await batch.commit();
+      },
+      handleDuplicateProject: async (project, titleSuffix = t('copySuffix')) => {
+        if (!user || !project?.id) return null;
+        if (project.creatorId !== user.uid && !isAdmin) return null;
+        const duplicatedAt = nowMs();
+        const projectData = createProjectDuplicateData(project, user, currentUserName(), duplicatedAt, titleSuffix);
+        if (!projectData) return null;
+        const projectRef = await addDoc(collection(db, 'projects'), projectData);
+        const childOperations = createProjectDuplicateChildOperations(
+          projectRef.id,
+          {
+            voting_items: items.filter((item) => item.projectId === project.id),
+            rooms: rooms.filter((room) => room.projectId === project.id),
+            gather_fields: gatherFields.filter((field) => field.projectId === project.id),
+            booking_slots: bookingSlots.filter((slot) => slot.projectId === project.id),
+            claim_items: claimItems.filter((item) => item.projectId === project.id),
+          },
+          user,
+          currentUserName(),
+          duplicatedAt,
+        );
+        await Promise.all(
+          childOperations.map((operation) => addDoc(collection(db, operation.collection), operation.data)),
+        );
+        void recordProjectActivity({ projectId: project.id, type: PROJECT_ACTIVITY_TYPES.projectDuplicated, subject: projectData.title });
+        void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: projectData.title });
+        return projectRef.id;
+      },
+      handleArchiveProject: async (project, archived) => {
+        if (!user || !project?.id) return;
+        if (project.creatorId !== user.uid && !isAdmin) return;
+        const patch = createProjectArchivePatch(project, archived, nowMs());
+        if (!patch) return;
+        await updateDoc(doc(db, 'projects', project.id), patch);
+        void recordProjectActivity({
+          projectId: project.id,
+          type: archived ? PROJECT_ACTIVITY_TYPES.projectArchived : PROJECT_ACTIVITY_TYPES.projectRestored,
+          subject: project.title,
+        });
       },
       handleCreateGatherField: async (projectId, label) => {
         if (!user || !label.trim()) return;
-        await addDoc(collection(db, 'gather_fields'), { projectId, label, type: 'text', creatorId: user.uid, createdAt: Date.now() });
+        await addDoc(collection(db, 'gather_fields'), { projectId, label, type: 'text', creatorId: user.uid, createdAt: nowMs() });
+        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherFieldCreated, subject: label });
       },
       handleDeleteGatherField: async (fieldId) => {
         if (!user) return;
@@ -213,9 +328,10 @@ function AppContent() {
       },
       handleSubmitGather: async (projectId, data, submitterName) => {
         if (!user) return;
-        // Check if already submitted? Handled in UI, and rule (or check here)
-        // We will just add.
-        await addDoc(collection(db, 'gather_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', data, submittedAt: Date.now() });
+        const submission = createGatherSubmissionData(gatherSubmissions, projectId, user, submitterName || currentUserName(), data, nowMs());
+        if (!submission) return;
+        await addDoc(collection(db, 'gather_submissions'), submission);
+        void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherSubmitted, subject: submission.name, actorName: submission.name });
       },
       handleUpdateScheduleConfig: async (projectId, config) => {
          if (!user) return;
@@ -223,12 +339,14 @@ function AppContent() {
       },
       handleSubmitSchedule: async (projectId, availability, submitterName) => {
          if (!user) return;
-         const existing = scheduleSubmissions.find(s => s.projectId === projectId && s.uid === user.uid);
-         if (existing) {
-             await updateDoc(doc(db, 'schedule_submissions', existing.id), { availability, submittedAt: Date.now() });
+         const submissionWrite = createScheduleSubmissionWrite(scheduleSubmissions, projectId, user, submitterName || currentUserName(), availability, nowMs());
+         if (!submissionWrite) return;
+         if (submissionWrite.type === 'update') {
+             await updateDoc(doc(db, submissionWrite.collection, submissionWrite.id), submissionWrite.data);
          } else {
-             await addDoc(collection(db, 'schedule_submissions'), { projectId, uid: user.uid, name: submitterName || user.displayName || 'Anonymous', availability, submittedAt: Date.now() });
+             await addDoc(collection(db, submissionWrite.collection), submissionWrite.data);
          }
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.scheduleSubmitted, subject: submitterName || currentUserName() });
       },
       handleUpdateBookingConfig: async (projectId, config) => {
          if (!user) return;
@@ -237,25 +355,49 @@ function AppContent() {
       handleCreateBookingSlot: async (projectId, start, end, label) => {
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
-         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, createdAt: Date.now() });
+         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: label || `${start} - ${end}` });
       },
       handleDeleteBookingSlot: async (slotId) => deleteDoc(doc(db, 'booking_slots', slotId)),
       handleBookSlot: async (slotId, bookingData) => {
-         // Transactional safety would be better, but optimistic update ok for MVP
          if (!user) return;
-         await updateDoc(doc(db, 'booking_slots', slotId), { bookedBy: user.uid, bookerName: user.displayName || 'Anonymous', bookingData, bookedAt: Date.now() });
+         const slot = bookingSlots.find((entry) => entry.id === slotId);
+         const patch = createBookingPatch(slot, user, currentUserName(), bookingData, nowMs());
+         if (!patch) return;
+         await updateDoc(doc(db, 'booking_slots', slotId), patch);
+         void recordProjectActivity({ projectId: slot.projectId, type: PROJECT_ACTIVITY_TYPES.bookingBooked, subject: slot.label || `${slot.start || ''} ${slot.end || ''}` });
       },
       handleKickUser: async (slotId, recipientId, projectId, reason) => {
          if (!user) return;
          // Clear slot
          await updateDoc(doc(db, 'booking_slots', slotId), { bookedBy: null, bookerName: null, bookingData: null, bookedAt: null });
          // Notify
-         await addDoc(collection(db, 'notifications'), { recipientId, type: 'kicked', title: t('bookingCancelled'), message: reason, projectId, read: false, createdAt: Date.now() });
+         await addDoc(collection(db, 'notifications'), { recipientId, type: 'kicked', title: t('bookingCancelled'), message: reason, projectId, read: false, createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingCancelled, subject: reason || recipientId });
       },
       handleReadNotification: async (nId) => updateDoc(doc(db, 'notifications', nId), { read: true }),
+      handleMarkAllNotificationsRead: async () => {
+        const operations = createMarkNotificationsReadOperations(notifications);
+        if (operations.length === 0) return;
+        const batch = writeBatch(db);
+        operations.forEach((operation) => {
+          batch.update(doc(db, operation.collection, operation.id), operation.data);
+        });
+        await batch.commit();
+      },
+      handleClearReadNotifications: async () => {
+        const operations = createClearReadNotificationOperations(notifications);
+        if (operations.length === 0) return;
+        const batch = writeBatch(db);
+        operations.forEach((operation) => {
+          batch.delete(doc(db, operation.collection, operation.id));
+        });
+        await batch.commit();
+      },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          if (!user || !title.trim()) return;
-         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: user.displayName || 'Anonymous', createdAt: Date.now() });
+         await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.claimCreated, subject: title });
       },
       handleDeleteClaimItem: async (itemId) => {
          await deleteDoc(doc(db, 'claim_items', itemId));
@@ -263,47 +405,57 @@ function AppContent() {
       handleToggleClaim: async (item, userName) => {
          if (!user) return;
          const ref = doc(db, 'claim_items', item.id);
-         const existingClaim = item.claimants.find(c => c.uid === user.uid);
-         if (existingClaim) {
-             // Unclaim
-             await updateDoc(ref, { claimants: arrayRemove(existingClaim) });
-         } else {
-             // Claim
-             if (item.claimants.length >= item.maxClaims) return; // Full
-             const claimInfo = { uid: user.uid, name: userName||user.displayName||'User', at: Date.now() };
-             await updateDoc(ref, { claimants: arrayUnion(claimInfo) });
-         }
+         const claimWrite = createClaimToggleData(item, user, userName || currentUserName(), nowMs());
+         if (!claimWrite) return;
+         await updateDoc(ref, {
+           claimants: claimWrite.type === 'remove' ? arrayRemove(claimWrite.claimant) : arrayUnion(claimWrite.claimant),
+         });
+         void recordProjectActivity({
+           projectId: item.projectId,
+           type: claimWrite.type === 'remove' ? PROJECT_ACTIVITY_TYPES.claimDropped : PROJECT_ACTIVITY_TYPES.claimTaken,
+           subject: item.title,
+           actorName: userName || currentUserName(),
+         });
       }
   };
 
   const handleCreateProject = async (title, type, creatorName, password) => {
     if (!user || !title.trim()) return;
     try {
-      await addDoc(collection(db, 'projects'), { title, type, creatorId: user.uid, creatorName: creatorName||user.displayName||'Anonymous', password: password||'', status: 'active', createdAt: Date.now(), winners: [] });
+      const projectRef = await addDoc(collection(db, 'projects'), { title, type, creatorId: user.uid, creatorName: creatorName || currentUserName(), password: password||'', status: 'active', createdAt: nowMs(), winners: [] });
+      void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: title, actorName: creatorName });
     } catch (e) { console.error(e); }
   };
 
-  if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-m3-surface">{t('loading')}</div>;
+  if (authChecking) {
+    return (
+      <div className="app-shell flex items-center justify-center">
+        <div className="app-card px-6 py-4 text-sm font-medium text-m3-on-surface-variant">{t('loading')}</div>
+      </div>
+    );
+  }
 
   return (
-      <UIProvider>
+      <UIProvider t={t}>
         {!user ? (
           <Login lang={lang} setLang={setLang} t={t} />
         ) : (
-          <div className="min-h-screen bg-m3-surface text-m3-on-surface font-sans">
-            <nav className="bg-m3-surface-container px-6 py-3 flex justify-between items-center sticky top-0 z-20 shadow-none border-b border-white/50">
-              <Link to="/" className="flex items-center gap-2 cursor-pointer transition-opacity hover:opacity-80">
-                <AtmostfairLogo className="text-2xl" />
-              </Link>
-              <div className="flex items-center gap-4">
-                <button onClick={toggleLang} className="text-sm font-medium text-m3-on-surface-variant hover:text-google-blue px-2 transition-colors">{t('switchLang')}</button>
+          <div className="app-shell">
+            <a href="#main-content" className="skip-link">{t('skipToContent')}</a>
+            <nav className="app-topbar">
+              <div className="app-topbar-inner">
+                <Link to="/" className="touch-target flex items-center gap-2 rounded-full px-2 transition-opacity hover:opacity-80" aria-label="Atmostfair">
+                  <AtmostfairLogo className="text-2xl" />
+                </Link>
+                <div className="flex items-center gap-2 sm:gap-3">
+                <button onClick={toggleLang} className="app-button-quiet px-3 text-xs sm:text-sm">{t('switchLang')}</button>
                 
                 <AnnouncementSystem t={t} />
                 
                 <button 
                   onClick={() => setShowFriends(true)} 
-                  className="p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 transition-colors relative"
-                  title={t('friends') || 'Friends'}
+                  className="app-icon-button relative"
+                  title={t('friends')}
                 >
                   <Users className="w-5 h-5" />
                 </button>
@@ -314,26 +466,43 @@ function AppContent() {
 
                 {/* Notifications & Mailbox */}
                 <div className="relative">
-                     <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-full text-m3-on-surface-variant hover:bg-m3-on-surface/5 relative">
+                     <button onClick={() => setShowNotifications(!showNotifications)} className="app-icon-button relative" title={t('notifications')}>
                         <Bell className="w-5 h-5" />
                         {notifications.some(n => !n.read) && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-google-red"></span>}
                      </button>
                      {showNotifications && (
-                         <div className="absolute right-0 mt-2 w-80 bg-m3-surface-container-high rounded-xl shadow-elevation-3 border border-m3-outline-variant/20 overflow-hidden z-50">
-                             <div className="p-3 border-b border-m3-outline-variant/10 font-medium text-sm flex justify-between">
-                                 <span>{t('notifications')}</span>
-                                 <button onClick={() => setNotifications([])} className="text-xs text-m3-on-surface-variant hover:text-google-blue hidden">{t('clearAll')}</button>
+                         <div className="app-card absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden">
+                             <div className="border-b border-m3-outline-variant/30 p-3">
+                                 <div className="mb-2 text-sm font-medium">{t('notifications')}</div>
+                                 <div className="grid grid-cols-2 gap-2">
+                                     <button
+                                       type="button"
+                                       onClick={actions.handleMarkAllNotificationsRead}
+                                       disabled={!notifications.some(n => !n.read)}
+                                       className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
+                                     >
+                                       {t('markAllRead')}
+                                     </button>
+                                     <button
+                                       type="button"
+                                       onClick={actions.handleClearReadNotifications}
+                                       disabled={!notifications.some(n => n.read)}
+                                       className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
+                                     >
+                                       {t('clearRead')}
+                                     </button>
+                                 </div>
                              </div>
                              <div className="max-h-64 overflow-y-auto">
                                  {notifications.length === 0 ? (
                                      <div className="p-4 text-center text-xs text-m3-on-surface-variant">{t('noNotifications')}</div>
                                  ) : (
                                      notifications.map(n => (
-                                         <div key={n.id} onClick={() => actions.handleReadNotification(n.id)} className={`p-3 border-b border-m3-outline-variant/10 cursor-pointer hover:bg-white/5 ${n.read ? 'opacity-60' : 'bg-google-blue/5'}`}>
+                                         <button key={n.id} onClick={() => actions.handleReadNotification(n.id)} className={`w-full border-b border-m3-outline-variant/20 p-3 text-left transition-colors hover:bg-google-blue/5 ${n.read ? 'opacity-65' : 'bg-google-blue/5'}`}>
                                              <div className="text-sm font-medium mb-1">{n.title}</div>
                                              <div className="text-xs text-m3-on-surface-variant">{n.message}</div>
-                                             <div className="text-[10px] text-m3-on-surface-variant/60 mt-1 text-right">{new Date(n.createdAt).toLocaleDateString()}</div>
-                                         </div>
+                                             <div className="text-[10px] text-m3-on-surface-variant/60 mt-1 text-right">{formatDate(n.createdAt, t)}</div>
+                                         </button>
                                      ))
                                  )}
                              </div>
@@ -342,16 +511,17 @@ function AppContent() {
                 </div>
 
                 {isAdmin && (
-                  <button onClick={() => setShowAdmin(!showAdmin)} className={`p-2 rounded-full transition-colors ${showAdmin ? 'bg-google-blue text-white' : 'text-m3-on-surface-variant hover:bg-google-blue/10'}`} title={t('adminConsole')}>
+                  <button onClick={() => setShowAdmin(!showAdmin)} className={`app-icon-button ${showAdmin ? 'border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white' : 'hover:bg-google-blue/10'}`} title={t('adminConsole')}>
                     <Shield className="w-5 h-5" />
                   </button>
                 )}
-                <div className="text-sm text-m3-on-surface-variant hidden sm:block">{t('hello')}, {user.displayName || user.email || 'Guest'}</div>
-                <button onClick={() => signOut(auth)} className="text-m3-on-surface-variant hover:text-google-red p-2 rounded-full hover:bg-google-red/10 transition-colors" title={t('logout')}><LogOut className="w-5 h-5" /></button>
+                <div className="hidden max-w-[180px] truncate text-sm text-m3-on-surface-variant md:block">{t('hello')}, {user.displayName || user.email || t('guestName')}</div>
+                <button onClick={() => signOut(auth)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={t('logout')}><LogOut className="w-5 h-5" /></button>
+                </div>
               </div>
             </nav>
 
-            <main className="max-w-[1200px] mx-auto p-4 md:p-6 lg:p-8">
+            <main id="main-content" tabIndex={-1} className="app-main">
               {showAdmin && isAdmin ? (
                 <AdminDashboard
                     projects={projects}
@@ -369,11 +539,11 @@ function AppContent() {
                 <AnimatePresence mode="wait">
                   <Routes location={location} key={location.pathname}>
                       <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
-                      <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
-                      <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                      <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                       <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                 </AnimatePresence>

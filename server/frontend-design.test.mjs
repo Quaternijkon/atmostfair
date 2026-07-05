@@ -1,0 +1,424 @@
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
+import test from 'node:test';
+
+import { TRANSLATIONS } from '../src/constants/translations.js';
+
+const root = process.cwd();
+
+test('frontend exposes a Google Material design foundation', async () => {
+  const css = await readFile(path.join(root, 'src/index.css'), 'utf8');
+  const tailwind = await readFile(path.join(root, 'tailwind.config.js'), 'utf8');
+
+  for (const token of [
+    '--amf-blue',
+    '--amf-red',
+    '--amf-yellow',
+    '--amf-green',
+    '--amf-surface',
+    '--amf-focus-ring',
+    '--amf-ease-emphasized',
+  ]) {
+    assert.match(css, new RegExp(token), `missing design token ${token}`);
+  }
+
+  for (const utility of [
+    '.app-shell',
+    '.app-topbar',
+    '.app-card',
+    '.app-button',
+    '.app-icon-button',
+    '.app-input',
+    '.app-chip',
+    '.workspace-grid',
+    '.touch-target',
+    '.skip-link',
+  ]) {
+    assert.match(css, new RegExp(utility.replace('.', '\\.')), `missing utility ${utility}`);
+  }
+
+  assert.match(css, /prefers-reduced-motion/, 'missing reduced-motion support');
+  assert.match(css, /min-height:\s*44px/, 'missing minimum touch target height');
+  assert.match(css, /focus-visible/, 'missing keyboard focus-visible styling');
+  assert.doesNotMatch(css, /fonts\.googleapis\.com/, 'remote font imports can delay first render and should not be required');
+  assert.match(tailwind, /amf:/, 'missing Atmostfair design tokens in Tailwind config');
+  assert.match(tailwind, /system-ui/, 'font stack should include local system fallbacks');
+});
+
+test('core pages use the shared app interaction primitives', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
+  };
+
+  assert.match(files.app, /app-shell/, 'App shell should use app-shell');
+  assert.match(files.app, /app-topbar/, 'Top navigation should use app-topbar');
+  assert.match(files.app, /app-main/, 'Main content should use app-main');
+  assert.match(files.app, /href="#main-content"/, 'App shell should expose a skip link');
+  assert.match(files.app, /t\('skipToContent'\)/, 'Skip link should use localized copy');
+  assert.match(files.app, /id="main-content"/, 'Main content should be targetable by the skip link');
+  assert.equal(TRANSLATIONS.en.skipToContent, 'Skip to main content');
+  assert.equal(TRANSLATIONS.zh.skipToContent, '跳到主要内容');
+
+  for (const [name, source] of Object.entries(files)) {
+    assert.match(source, /app-button|app-icon-button/, `${name} should use shared button primitives`);
+  }
+
+  for (const [name, source] of Object.entries({
+    login: files.login,
+    dashboard: files.dashboard,
+    detail: files.detail,
+    ui: files.ui,
+  })) {
+    assert.match(source, /app-card|app-dialog/, `${name} should use shared surface primitives`);
+  }
+
+  for (const [name, source] of Object.entries({
+    login: files.login,
+    dashboard: files.dashboard,
+    detail: files.detail,
+  })) {
+    assert.match(source, /app-input/, `${name} should use shared input primitives`);
+  }
+});
+
+test('project surfaces stay compact and keyboard ergonomic', async () => {
+  const files = {
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    infoCard: await readFile(path.join(root, 'src/components/InfoCard.jsx'), 'utf8'),
+  };
+
+  assert.match(files.dashboard, /<motion\.button/, 'Dashboard project cards should be semantic buttons');
+  assert.doesNotMatch(files.dashboard, /<motion\.div[\s\S]{0,500}onClick=\{\(\) => handleProjectClick\(project\)\}/, 'Dashboard project cards should not use clickable divs');
+
+  assert.match(files.detail, /shortProjectId/, 'Project detail should derive a short scannable ID');
+  assert.match(files.detail, /project\.id\.slice\(0,\s*8\)/, 'Project detail should show a compact project ID');
+  assert.doesNotMatch(files.detail, /\{project\.id\}<\/span>/, 'Project detail should not show the full UUID in the header');
+
+  assert.match(files.infoCard, /role="note"/, 'Workspace help cards should be announced as notes');
+  assert.doesNotMatch(files.infoCard, /<ol|list-decimal/, 'Workspace help cards should use compact guidance instead of long numbered instructions');
+});
+
+test('game and booking workspaces use localized ergonomic states', async () => {
+  const files = {
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'gameHub',
+    'createRoom',
+    'startNewGame',
+    'selectGame',
+    'roomName',
+    'bestOfRounds',
+    'turnTimeout',
+    'playVsComputer',
+    'noActiveRooms',
+    'createdBy',
+    'you',
+    'bot',
+    'waitingForOpponent',
+    'joinGame',
+    'players',
+    'score',
+    'leaveRoom',
+    'previousRounds',
+    'victory',
+    'defeat',
+    'ready',
+    'gameOver',
+    'missionAccomplished',
+    'spectateOthers',
+  ]) {
+    assert.match(files.gameHub, new RegExp(`t\\('${key}'\\)`), `Game hub should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.doesNotMatch(files.gameHub, />Game Hub<|Create Room|Start a New Game|Select Game|Room Name|Waiting for opponent|Join Game|Leave Room|Previous Rounds|BOOM! Game Over|Mission Accomplished|Spectate others/, 'Game hub should avoid hardcoded visible English');
+  assert.match(files.booking, /app-card-quiet[\s\S]{0,300}configureFirst/, 'Booking unconfigured state should use a designed empty-state surface');
+});
+
+test('collaboration workspaces avoid fallback copy and clickable divs', async () => {
+  const files = {
+    friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
+    claim: await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8'),
+    gather: await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'friends',
+    'addFriend',
+    'backToList',
+    'requests',
+    'accept',
+    'ignore',
+    'searchPlaceholderUser',
+    'go',
+    'searchHint',
+    'tapToChat',
+    'noFriends',
+    'selectFriend',
+    'typeMessage',
+    'unknownUser',
+    'friendRequestSent',
+    'friendAdded',
+  ]) {
+    assert.match(files.friends, new RegExp(`t\\('${key}'\\)`), `Friend system should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.doesNotMatch(files.friends, /\|\|\s*['"][A-Za-z][^'"]*['"]/, 'Friend system should not rely on visible English fallback strings');
+  assert.match(files.friends, /<button[\s\S]{0,300}setActiveChatFriend\(f\)/, 'Friend rows should use semantic buttons');
+  assert.doesNotMatch(files.friends, /<div\s+key=\{f\.id\}[\s\S]{0,300}setActiveChatFriend\(f\)/, 'Friend rows should not use clickable divs');
+
+  assert.match(files.claim, /app-card-quiet[\s\S]{0,300}noTasks/, 'Claim empty state should use a designed surface');
+  assert.doesNotMatch(files.claim, />[^<]*only</, 'Claim filters should localize the only label');
+  assert.doesNotMatch(files.claim, /\(Open\)/, 'Claim open state should be localized');
+
+  for (const key of ['nameLabel', 'timeLabel', 'submittedOn', 'enterField', 'yourResponse']) {
+    assert.match(files.gather, new RegExp(`t\\('${key}'(?:,|\\))`), `Gather should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+  assert.doesNotMatch(files.gather, new RegExp('>Name<|>Time<|Name / Nickname|Submitted on|`Enter \\\\$\\\\{field\\\\.label\\\\}`'), 'Gather should avoid hardcoded visible English');
+});
+
+test('shared utility surfaces localize visible copy and retain ergonomic controls', async () => {
+  const files = {
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    qr: await readFile(path.join(root, 'src/components/QRCodeShare.jsx'), 'utf8'),
+    announcements: await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8'),
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+    queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+    roulette: await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8'),
+    ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
+  };
+
+  for (const [fileKey, keys] of Object.entries({
+    detail: ['copyFullProjectId', 'projectView', 'share', 'chat'],
+    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt'],
+    announcements: ['announcements'],
+    chat: ['chatRoom', 'noMessagesYet', 'messageSendFailed', 'anonymousUser', 'typeMessage'],
+    queue: ['noParticipantsYet', 'currentUserBadge'],
+    booking: ['bookingOwnerHint', 'requiredInfoPlaceholder', 'currentUserBadge'],
+    roulette: ['replaySpeed', 'replayMaxSpeed', 'defaultWinner', 'projectStopped', 'youHaveJoined', 'waitForDraw', 'nameLabel', 'shortValueLabel'],
+    ui: ['close', 'confirm', 'cancel'],
+  })) {
+    for (const key of keys) {
+      assert.match(files[fileKey], new RegExp(`t\\('${key}'(?:,|\\))`), `${fileKey} should localize ${key}`);
+      assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+      assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+    }
+  }
+
+  for (const [fileKey, source] of Object.entries(files)) {
+    assert.doesNotMatch(source, /\|\|\s*['"][A-Z][^'"]*['"]/, `${fileKey} should not rely on visible English fallback strings`);
+  }
+
+  assert.doesNotMatch(files.detail, /Copy full ID|Copy full project ID|>Project View</, 'Project detail utility copy should be localized');
+  assert.doesNotMatch(files.qr, /Link copied!|Share Project|Copy Link|alt="QR Code"/, 'QR share modal should localize all visible and accessible copy');
+  assert.doesNotMatch(files.announcements, />Announcements<|title=["']Announcements|\|\|\s*['"]Announcements/, 'Announcement launcher and dialog should localize labels');
+  assert.doesNotMatch(files.chat, /Chat Room|No messages yet|Type a message|Failed to send message|Anonymous/, 'Chat room should localize visible states and fallbacks');
+  assert.match(files.queue, /app-card-quiet[\s\S]{0,300}noParticipantsYet/, 'Queue empty state should use a designed surface');
+  assert.doesNotMatch(files.queue, /No participants yet|\(You\)/, 'Queue visible participant state should be localized');
+  assert.doesNotMatch(files.booking, /Click empty slots|Red slots|\(You\)|placeholder="e\.g\. Name, Phone"/, 'Booking hints and current-user marker should be localized');
+  assert.doesNotMatch(files.roulette, />Speed<|'MAX'|'Winner'|Project Stopped|You have joined|Your entry has been recorded|>Name<|>Val</, 'Roulette visible utility copy should be localized');
+});
+
+test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
+    schedule: await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+  };
+
+  for (const [fileKey, keys] of Object.entries({
+    app: ['anonymousUser'],
+    dashboard: ['games'],
+    admin: ['cleanOrphans', 'orphanExtraCounts'],
+    schedule: ['rangeError'],
+    booking: ['adminCancelled', 'kickConfirm', 'kickReason'],
+  })) {
+    for (const key of keys) {
+      assert.match(files[fileKey], new RegExp(`t\\('${key}'(?:,|\\))`), `${fileKey} should localize ${key}`);
+      assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+      assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+    }
+  }
+
+  assert.doesNotMatch(files.app, /\|\|\s*['"](?:User|Anonymous|Guest)['"]/, 'App data writes should not use visible English user-name fallbacks');
+  assert.doesNotMatch(files.dashboard, /\|\|\s*["']Games["']/, 'Dashboard project tab should not rely on English fallback copy');
+  assert.doesNotMatch(files.admin, /Clean Orphans|fields,|subs,|bookings,|tasks,|queue\)/, 'Admin cleanup copy should be localized as one message');
+  assert.doesNotMatch(files.schedule, /\balert\(/, 'Schedule validation should use app feedback instead of native alert');
+  assert.match(files.schedule, /app-card-quiet[\s\S]{0,400}configureFirst/, 'Schedule unconfigured state should use a designed empty-state surface');
+  assert.doesNotMatch(files.booking, /\b(?:alert|prompt)\(/, 'Booking cancellation and errors should use app surfaces instead of native dialogs');
+  assert.match(files.booking, /app-dialog[\s\S]{0,500}kickReason/, 'Booking cancellation should use a designed dialog with a reason field');
+});
+
+test('date-heavy workspaces format dates with the app locale', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
+    announcements: await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8'),
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+    gather: await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8'),
+    claim: await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8'),
+    schedule: await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+  };
+
+  for (const [fileKey, source] of Object.entries(files)) {
+    assert.match(source, /getAppLocale|formatDate/, `${fileKey} should derive visible dates from the app language`);
+    assert.doesNotMatch(source, /toLocale(?:DateString|String|TimeString)\(\s*(?:undefined)?\s*(?:,|\))/, `${fileKey} should not let browser locale override app language`);
+  }
+});
+
+test('auth and user fallbacks avoid visible English fragments', async () => {
+  const files = {
+    login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),
+    localAuth: await readFile(path.join(root, 'src/lib/localAuth.js'), 'utf8'),
+    authService: await readFile(path.join(root, 'server/auth-service.mjs'), 'utf8'),
+    gather: await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8'),
+    admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
+  };
+
+  for (const key of ['actionFailed', 'errorWithMessage', 'exportFile', 'activeStatus']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.login, /t\('actionFailed'/, 'Login failures should use a localized action-failed template');
+  assert.doesNotMatch(files.login, /['"]\s*failed:\s*['"]/, 'Login should not concatenate a hardcoded English failed label');
+  assert.doesNotMatch(files.localAuth, /Guest \$\{|['"]User['"]/, 'Local auth should not inject visible English user-name fallbacks');
+  assert.doesNotMatch(files.authService, /displayName:\s*user\.displayName\s*\|\|\s*['"]User['"]/, 'Backend public user payload should not force a visible English fallback name');
+  assert.doesNotMatch(files.gather, /submitError'\)\s*\+\s*['"]:/, 'Gather errors should use the localized error template');
+  assert.doesNotMatch(files.gather, /project\.title\s*\|\|\s*['"]export['"]/, 'CSV export fallback filename should be localized');
+  assert.match(files.admin, /activeStatus/, 'Admin project status should localize active status copy');
+});
+
+test('workspace timestamps and defaults avoid render-time unstable values', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+    friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
+    schedule: await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+    ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
+  };
+
+  for (const [fileKey, source] of Object.entries(files)) {
+    assert.match(source, /nowMs|createDefault/, `${fileKey} should use stable helper functions for time-derived values`);
+    assert.doesNotMatch(source, /Date\.now\(/, `${fileKey} should not call Date.now directly inside visual component modules`);
+    assert.doesNotMatch(source, /new Date\(Date\.now\(/, `${fileKey} should not derive default ranges during render`);
+  }
+
+  assert.match(files.schedule, /useState\(\(\) => project\.scheduleConfig \|\| createDefaultScheduleConfig\(\)\)/, 'Schedule default config should be lazily initialized');
+  assert.match(files.booking, /useState\(\(\) => project\.bookingConfig \|\| createDefaultBookingConfig\(t\)\)/, 'Booking default config should be lazily initialized');
+});
+
+test('React compiler hotspots stay derived and deterministic', async () => {
+  const files = {
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    roulette: await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8'),
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
+  };
+
+  assert.match(files.detail, /useState\(\(\) => Boolean\(location\.state\?\.\unlocked\)\)/, 'Project detail should initialize unlock state from navigation state');
+  assert.doesNotMatch(files.detail, /useEffect\([\s\S]{0,240}setUnlocked\(true\)/, 'Project detail should not synchronously set unlock state inside an effect');
+
+  assert.match(files.roulette, /advanceRepeatSeed/, 'Roulette repeat draws should advance a deterministic seed helper');
+  assert.doesNotMatch(files.roulette, /\bprngState\s*=\s*\(prngState\s*\*/, 'Roulette should not reassign PRNG state after render');
+  assert.doesNotMatch(files.roulette, /useEffect\([\s\S]{0,260}setConfig\(/, 'Roulette should not mirror project config into local state inside an effect');
+
+  assert.match(files.gameHub, /MineCell/, 'Minesweeper cells should be a stable component');
+  assert.doesNotMatch(files.gameHub, /const Cell = useMemo/, 'Minesweeper should not memoize an inline component with incomplete dependencies');
+  assert.match(files.gameHub, /function MoveIcon/, 'RPS move icons should be declared as a stable component');
+  assert.doesNotMatch(files.gameHub, /const MoveIcon = \(\{ move/, 'RPS should not create move icon components during render');
+  assert.match(files.gameHub, /selectedMoveState/, 'RPS selected move should be scoped to the current round without an effect reset');
+  assert.doesNotMatch(files.gameHub, /useEffect\([\s\S]{0,120}setSelectedMove\(null\)/, 'RPS should not synchronously reset selected move inside an effect');
+});
+
+test('React refresh and animated tab hooks keep stable module boundaries', async () => {
+  const files = {
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
+    uiContext: await readFile(path.join(root, 'src/components/UIContext.js'), 'utf8'),
+  };
+
+  assert.match(files.uiContext, /export const useUI/, 'UI hook should live outside the component-only provider module');
+  assert.doesNotMatch(files.ui, /export const useUI/, 'UI provider module should not export hooks that break Fast Refresh boundaries');
+
+  assert.match(files.dashboard, /DASHBOARD_TAB_IDS/, 'Dashboard tab ids should be a stable module constant');
+  assert.match(files.dashboard, /DASHBOARD_TAB_BG_COLORS/, 'Dashboard tab colors should be a stable module constant');
+  assert.doesNotMatch(files.dashboard, /\[projects,\s*searchTerm,\s*activeTab,\s*currentCategory\]/, 'Dashboard filtered projects should not carry an unnecessary activeTab dependency');
+});
+
+test('visible workspaces avoid legacy decorative UI fragments', async () => {
+  const sources = await readVisualSources([
+    path.join(root, 'src/components'),
+    path.join(root, 'src/pages'),
+  ]);
+
+  const structuralEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+  const legacyDecoration = /\b(?:rounded-3xl|rounded-\[[^\]]+\]|shadow-xl|shadow-2xl)\b/;
+
+  for (const [filePath, source] of sources) {
+    assert.doesNotMatch(source, structuralEmoji, `${filePath} should use vector icons instead of emoji`);
+    assert.doesNotMatch(source, legacyDecoration, `${filePath} should use shared Material surfaces instead of legacy decorative classes`);
+  }
+});
+
+test('interactive icon controls preserve ergonomic touch targets', async () => {
+  const sources = await readVisualSources([
+    path.join(root, 'src/components'),
+    path.join(root, 'src/pages'),
+  ]);
+  const undersizedIconButton = /app-icon-button[^\n]*(?:h-8|w-8|min-h-8|min-w-8|h-9|w-9|min-h-9|min-w-9)|(?:h-8|w-8|min-h-8|min-w-8|h-9|w-9|min-h-9|min-w-9)[^\n]*app-icon-button/;
+  const undersizedButton = /<button[^\n]*className=[^\n]*(?:h-8|w-8|min-h-8|min-w-8|h-9|w-9|min-h-9|min-w-9)/;
+
+  for (const [filePath, source] of sources) {
+    assert.doesNotMatch(source, undersizedIconButton, `${filePath} should not shrink shared icon-button touch targets`);
+    assert.doesNotMatch(source, undersizedButton, `${filePath} should not define undersized custom button targets`);
+  }
+});
+
+test('primary clickable regions use semantic controls', async () => {
+  const sources = await readVisualSources([
+    path.join(root, 'src/components'),
+    path.join(root, 'src/pages'),
+  ]);
+  const divClickHandler = /<div[^>\n]*onClick=/;
+
+  for (const [filePath, source] of sources) {
+    assert.doesNotMatch(source, divClickHandler, `${filePath} should use button or link semantics for clickable regions`);
+  }
+});
+
+async function readVisualSources(directories) {
+  const files = [];
+  for (const directory of directories) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) continue;
+      if (entry.name.endsWith('.jsx')) files.push(entryPath);
+    }
+  }
+
+  const result = [];
+  for (const filePath of files) {
+    result.push([path.relative(root, filePath), await readFile(filePath, 'utf8')]);
+  }
+  return result;
+}

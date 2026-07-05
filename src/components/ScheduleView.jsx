@@ -1,18 +1,33 @@
 import React, { useState, useMemo } from 'react';
-import { CalendarClock, CheckSquare, Plus, X, Search, ChartLine } from './Icons';
+import { CalendarClock, CheckSquare, Plus, X, Search, ChartLine, Lock } from './Icons';
 import { InfoCard } from './InfoCard';
+import { getAppLocale } from '../lib/locale';
+import { addDaysIsoDate, nowMs, todayIsoDate } from '../lib/time';
+import { useUI } from './UIContext';
+
+function createDefaultScheduleConfig() {
+  return {
+    mode: 'date',
+    start: todayIsoDate(),
+    end: addDaysIsoDate(7),
+    deadline: ''
+  };
+}
+
+function createTimeRange(date, ranges) {
+  const index = ranges.filter((range) => range.date === date).length + 1;
+  return { date, start: '09:00', end: '10:00', id: `${date}-range-${index}` };
+}
 
 export default function ScheduleView({ user, isAdmin, project, submissions, isStopped, isFinished, isOwner, actions, t }) {
   const [editing, setEditing] = useState(false);
   const [viewHeatmap, setViewHeatmap] = useState(false);
+  const { showToast } = useUI();
+  const appLocale = getAppLocale(t);
+  const formatDate = (date, options) => new Date(date).toLocaleDateString(appLocale, options);
 
   // Configuration State
-  const [config, setConfig] = useState(project.scheduleConfig || {
-     mode: 'date', // date, half, time
-     start: new Date().toISOString().split('T')[0],
-     end: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-     deadline: ''
-  });
+  const [config, setConfig] = useState(() => project.scheduleConfig || createDefaultScheduleConfig());
 
   // User Submission State
   const mySubmission = submissions.find(s => s.uid === user?.uid);
@@ -32,7 +47,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   }, [config.start, config.end]);
 
   const hasConfig = !!project.scheduleConfig;
-  const isDeadlinePassed = config.deadline && new Date() > new Date(config.deadline);
+  const isDeadlinePassed = config.deadline && nowMs() > new Date(config.deadline).getTime();
   const canEdit = !isStopped && !isFinished && (!isDeadlinePassed || isOwner);
 
   // --- Handlers ---
@@ -40,8 +55,14 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   const handleSaveConfig = () => {
     // Validation
     const dayCount = dates.length;
-    if (config.mode === 'date' && dayCount > 31) return alert(t('rangeError'));
-    if ((config.mode === 'half' || config.mode === 'time') && dayCount > 8) return alert(t('rangeError')); // Allow 8 days (weekly overlap)
+    if (config.mode === 'date' && dayCount > 31) {
+      showToast(t('rangeError'), 'error');
+      return;
+    }
+    if ((config.mode === 'half' || config.mode === 'time') && dayCount > 8) {
+      showToast(t('rangeError'), 'error');
+      return;
+    }
     
     actions.handleUpdateScheduleConfig(project.id, config);
     setEditing(false);
@@ -70,8 +91,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
 
   const addTimeRange = (date) => {
       if (!canEdit) return;
-      const newRange = { date, start: '09:00', end: '10:00', id: Date.now() };
-      setMyAvailability(prev => [...prev, newRange]);
+      setMyAvailability(prev => [...prev, createTimeRange(date, prev)]);
   };
 
   const removeTimeRange = (id) => {
@@ -128,12 +148,12 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
 
   if (!hasConfig && isOwner) {
       return (
-          <div className="bg-m3-surface-container p-8 rounded-[28px] animate-fade-in">
-              <h2 className="text-2xl mb-6 flex items-center gap-2"><CalendarClock className="w-6 h-6" /> {t('setupSchedule')}</h2>
+          <div className="app-card animate-fade-in p-6 sm:p-8">
+              <h2 className="text-2xl font-medium mb-6 flex items-center gap-2"><CalendarClock className="w-6 h-6" /> {t('setupSchedule')}</h2>
               <div className="space-y-4 max-w-md">
                   <div>
-                      <label className="block text-sm font-medium mb-1 text-m3-on-surface-variant">{t('scheduleMode')}</label>
-                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} className="w-full p-2 rounded-lg bg-m3-surface border border-m3-outline-variant">
+                      <label className="app-label">{t('scheduleMode')}</label>
+                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} className="app-input">
                           <option value="date">{t('modeDate')}</option>
                           <option value="half">{t('modeHalf')}</option>
                           <option value="time">{t('modeTime')}</option>
@@ -141,25 +161,37 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                       <div>
-                          <label className="block text-sm font-medium mb-1 text-m3-on-surface-variant">{t('startDate')}</label>
-                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} className="w-full p-2 rounded-lg bg-m3-surface border border-m3-outline-variant" />
+                          <label className="app-label">{t('startDate')}</label>
+                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} className="app-input" />
                       </div>
                       <div>
-                          <label className="block text-sm font-medium mb-1 text-m3-on-surface-variant">{t('endDate')}</label>
-                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} className="w-full p-2 rounded-lg bg-m3-surface border border-m3-outline-variant" />
+                          <label className="app-label">{t('endDate')}</label>
+                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} className="app-input" />
                       </div>
                   </div>
                   <div>
-                      <label className="block text-sm font-medium mb-1 text-m3-on-surface-variant">{t('deadline')}</label>
-                      <input type="datetime-local" value={config.deadline} onChange={e => setConfig({...config, deadline: e.target.value})} className="w-full p-2 rounded-lg bg-m3-surface border border-m3-outline-variant" />
+                      <label className="app-label">{t('deadline')}</label>
+                      <input type="datetime-local" value={config.deadline} onChange={e => setConfig({...config, deadline: e.target.value})} className="app-input" />
                   </div>
-                  <button onClick={handleSaveConfig} className="w-full py-3 bg-google-blue text-white rounded-full font-medium">{t('saveConfig')}</button>
+                  <button onClick={handleSaveConfig} className="app-button-primary w-full">{t('saveConfig')}</button>
               </div>
           </div>
       );
   }
 
-  if (!hasConfig) return <div className="text-center p-10 text-m3-on-surface-variant">{t('configureFirst')}</div>;
+  if (!hasConfig) {
+      return (
+          <div className="app-card-quiet flex min-h-[220px] flex-col items-center justify-center gap-3 p-8 text-center" aria-label={t('configureFirst')}>
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-google-green/10 text-google-green">
+                  <CalendarClock className="h-7 w-7" />
+              </div>
+              <div>
+                  <h3 className="text-lg font-medium text-m3-on-surface">{t('setupSchedule')}</h3>
+                  <p className="mt-1 max-w-sm text-sm text-m3-on-surface-variant">{t('configureFirst')}</p>
+              </div>
+          </div>
+      );
+  }
 
   const showStats = isOwner || isFinished || isDeadlinePassed || viewHeatmap;
 
@@ -168,12 +200,12 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
         
         {/* Header Actions */}
         <div className="flex justify-between items-center">
-            <h2 className="text-xl font-normal text-m3-on-surface flex items-center gap-2">
+            <h2 className="text-xl font-medium text-m3-on-surface flex items-center gap-2">
                 <CalendarClock className="w-6 h-6 text-google-green" /> 
                 {t('myAvailability')}
             </h2>
             {(isOwner || isDeadlinePassed) && (
-                <button onClick={() => setViewHeatmap(!viewHeatmap)} className="text-sm font-medium text-google-blue flex items-center gap-1 hover:bg-google-blue/10 px-3 py-1 rounded-full transition-colors">
+                <button onClick={() => setViewHeatmap(!viewHeatmap)} className="app-button-quiet text-google-blue hover:bg-google-blue/10">
                     <ChartLine className="w-4 h-4" /> {viewHeatmap ? t('closeHeatmap') : t('viewHeatmap')}
                 </button>
             )}
@@ -194,13 +226,13 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                           disabled={viewHeatmap}
                           onClick={() => toggleDate(date)}
                           className={`
-                             aspect-square rounded-xl flex flex-col items-center justify-center text-sm transition-all relative
-                             ${viewHeatmap ? '' : isSelected ? 'bg-google-green text-white shadow-md' : 'bg-m3-surface-container hover:bg-m3-surface-container-high'}
+                             state-layer aspect-square rounded-2xl flex flex-col items-center justify-center text-sm transition-all relative touch-target
+                             ${viewHeatmap ? '' : isSelected ? 'bg-google-green text-white shadow-elevation-1' : 'bg-m3-surface-container hover:bg-m3-surface-container-high'}
                           `}
                           style={style}
                        >
                            <span className="font-bold">{new Date(date).getDate()}</span>
-                           <span className="text-[10px] opacity-80">{new Date(date).toLocaleDateString(undefined, {weekday: 'short'})}</span>
+                           <span className="text-[10px] opacity-80">{formatDate(date, { weekday: 'short' })}</span>
                            {viewHeatmap && count > 0 && <span className="absolute bottom-1 text-[10px] font-medium bg-white/30 px-1 rounded-full">{count}</span>}
                        </button>
                    );
@@ -210,12 +242,12 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
 
         {/* --- Half-Day Mode Table --- */}
         {config.mode === 'half' && (
-            <div className="overflow-x-auto rounded-[24px] border border-m3-outline-variant/30">
+            <div className="app-card overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead>
                         <tr className="bg-m3-surface-container-high text-m3-on-surface-variant">
                             <th className="p-3"></th>
-                            {dates.map(d => <th key={d} className="p-3 min-w-[80px] font-normal">{new Date(d).toLocaleDateString(undefined, {weekday: 'short', month:'numeric', day:'numeric'})}</th>)}
+                            {dates.map(d => <th key={d} className="p-3 min-w-[80px] font-normal">{formatDate(d, { weekday: 'short', month:'numeric', day:'numeric' })}</th>)}
                         </tr>
                     </thead>
                     <tbody>
@@ -235,7 +267,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                                             <button 
                                                 disabled={viewHeatmap}
                                                 onClick={() => toggleHalfDay(d, slot)}
-                                                className={`w-full h-12 rounded-lg transition-all flex items-center justify-center
+                                                className={`state-layer flex h-12 w-full items-center justify-center rounded-xl transition-all
                                                     ${viewHeatmap ? '' : isSelected ? 'bg-google-green text-white' : 'bg-m3-surface hover:bg-m3-surface-container-high'}`}
                                                 style={style}
                                             >
@@ -257,14 +289,14 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
             <div className="space-y-4">
                 {/* Visual Timeline / Heatmap */}
                 {viewHeatmap && (
-                    <div className="bg-m3-surface text-xs overflow-x-auto rounded-xl border border-m3-outline-variant/30 p-4">
+                    <div className="app-card overflow-x-auto p-4 text-xs">
                         <div className="min-w-[600px]">
                             {['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'].map(tLabel => (
                                 <div key={tLabel} className="inline-block w-[4.16%] text-center text-m3-on-surface-variant mb-2">{tLabel}</div>
                             ))}
                             {dates.map(d => (
                                 <div key={d} className="flex items-center mb-1 h-8 bg-m3-surface-container/30 rounded text-m3-on-surface">
-                                    <div className="w-16 flex-shrink-0 text-[10px] px-1">{new Date(d).toLocaleDateString(undefined, {weekday:'short', day:'numeric'})}</div>
+                                    <div className="w-16 flex-shrink-0 text-[10px] px-1">{formatDate(d, { weekday:'short', day:'numeric' })}</div>
                                     <div className="flex-1 flex h-full relative">
                                         {/* Render 24h * 2 blocks */}
                                         {Array.from({length: 48}).map((_, i) => {
@@ -272,9 +304,9 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                                             const key = `${d}_${h}:${m}`;
                                             const count = heatmapData[key] || 0;
                                             if (h < 8 || h > 22) return null; // Crop display 8am-10pm
-                                            return (
-                                                <div key={i} className="flex-1 h-full border-r border-white/20" style={{ backgroundColor: getColor(count) }} title={`${h}:${m} - ${count} ppl`}></div>
-                                            );
+                                                return (
+                                                    <div key={i} className="flex-1 h-full border-r border-white/20" style={{ backgroundColor: getColor(count) }} title={`${h}:${m} · ${t('peopleCount', { count })}`}></div>
+                                                );
                                         })}
                                     </div>
                                 </div>
@@ -287,25 +319,25 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                 {!viewHeatmap && (
                     <div className="space-y-3">
                         {myAvailability.map((range, idx) => (
-                           <div key={range.id} className="flex flex-wrap items-center gap-2 bg-m3-surface p-3 rounded-xl border border-m3-outline-variant/50">
+                           <div key={range.id} className="app-card flex flex-wrap items-center gap-2 p-3">
                                <select 
                                   value={range.date} 
                                   onChange={e => updateTimeRange(range.id, 'date', e.target.value)}
-                                  className="bg-transparent border-none text-sm font-medium focus:ring-0"
+                                  className="app-input w-auto min-w-[9rem] border-transparent bg-transparent text-sm font-medium"
                                >
                                    {dates.map(d => <option key={d} value={d}>{d}</option>)}
                                </select>
-                               <input type="time" value={range.start} onChange={e => updateTimeRange(range.id, 'start', e.target.value)} className="bg-m3-surface-container rounded-md px-2 py-1 text-sm border-none" />
+                               <input type="time" value={range.start} onChange={e => updateTimeRange(range.id, 'start', e.target.value)} className="app-input w-auto px-3 py-2 text-sm" />
                                <span className="text-m3-on-surface-variant">-</span>
-                               <input type="time" value={range.end} onChange={e => updateTimeRange(range.id, 'end', e.target.value)} className="bg-m3-surface-container rounded-md px-2 py-1 text-sm border-none" />
-                               <button onClick={() => removeTimeRange(range.id)} className="ml-auto text-m3-on-surface-variant hover:text-google-red p-1"><X className="w-4 h-4" /></button>
+                               <input type="time" value={range.end} onChange={e => updateTimeRange(range.id, 'end', e.target.value)} className="app-input w-auto px-3 py-2 text-sm" />
+                               <button onClick={() => removeTimeRange(range.id)} className="app-icon-button ml-auto hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>
                            </div> 
                         ))}
                         <div className="flex gap-2 justify-center mt-4">
                             {dates.map(d => (
-                                <button key={d} onClick={() => addTimeRange(d)} className="text-xs px-3 py-2 rounded-full border border-m3-outline-variant hover:bg-m3-surface-container">
-                                    + {new Date(d).toLocaleDateString(undefined, {weekday:'short'})}
-                                </button>
+                                    <button key={d} onClick={() => addTimeRange(d)} className="app-button-quiet border border-m3-outline-variant px-3 text-xs">
+                                        + {formatDate(d, { weekday:'short' })}
+                                    </button>
                             ))}
                         </div>
                     </div>
@@ -317,11 +349,11 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
         {!viewHeatmap && (
             <div className={`mt-8 flex justify-end ${isDeadlinePassed ? 'opacity-50' : ''}`}>
                 {isDeadlinePassed ? (
-                     <div className="flex items-center gap-2 text-google-red font-medium px-4 py-2 bg-google-red/10 rounded-lg">
+                     <div className="app-chip app-chip-red">
                          <Lock className="w-4 h-4" /> {t('deadlinePassed')}
                      </div>
                 ) : (
-                    <button onClick={handleSubmit} className="px-6 py-3 bg-google-green text-gray-900 font-medium rounded-full shadow-elevation-1 hover:shadow-elevation-2 transition-all">
+                    <button onClick={handleSubmit} className="app-button bg-google-green px-6 text-gray-900 hover:shadow-elevation-2">
                         {mySubmission ? t('update') : t('submit')}
                     </button>
                 )}

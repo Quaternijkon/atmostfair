@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, CheckSquare, MinusCircle, UserCheck, Trash2 } from './Icons';
-import { useUI } from './UIComponents';
+import { formatDateTime } from '../lib/locale';
+import { useUI } from './UIContext';
 
 export default function ClaimView({ user, isAdmin, project, items = [], isStopped, isOwner, actions, t }) {
   const { showToast, confirm } = useUI();
@@ -39,10 +40,10 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
     <div className="w-full max-w-4xl mx-auto">
       {/* Creator Input */}
       {(isOwner || isAdmin) && !isStopped && (
-        <div className="mb-8 p-6 bg-m3-surface-container rounded-2xl animate-fade-in-up">
+        <div className="app-card mb-6 animate-fade-in-up p-5 sm:p-6">
           <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
             <CheckSquare className="w-5 h-5 text-google-red" />
-            {t('addItem') || 'Add Task'}
+            {t('addItem')}
           </h3>
           <form onSubmit={handleAddItem} className="flex flex-col md:flex-row gap-4">
              <div className="flex-1">
@@ -51,7 +52,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     value={newItem} 
                     onChange={(e) => setNewItem(e.target.value)}
                     placeholder={t('taskTitle')}
-                    className="w-full px-4 py-2 rounded-lg border border-m3-outline bg-m3-surface focus:border-google-red outline-none"
+                    className="app-input"
                 />
              </div>
              <div className="flex items-center gap-2">
@@ -62,10 +63,10 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     max="99"
                     value={maxClaims} 
                     onChange={(e) => setMaxClaims(parseInt(e.target.value))}
-                    className="w-20 px-3 py-2 rounded-lg border border-m3-outline bg-m3-surface focus:border-google-red outline-none"
+                    className="app-input w-24"
                 />
              </div>
-             <button type="submit" className="px-5 py-2 bg-google-red text-white rounded-lg hover:shadow-md transition-all flex items-center justify-center gap-2 font-medium">
+             <button type="submit" className="app-button bg-google-red text-white hover:shadow-elevation-1">
                 <Plus className="w-4 h-4" /> {t('create')}
              </button>
           </form>
@@ -92,9 +93,9 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
           <div className="flex gap-2">
               <button 
                 onClick={() => setFilterMyTasks(!filterMyTasks)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${filterMyTasks ? 'bg-google-red/10 border-google-red text-google-red' : 'bg-white border-m3-outline text-m3-on-surface hover:bg-m3-surface-container'}`}
+                className={`app-button px-4 text-sm ${filterMyTasks ? 'border border-google-red bg-google-red/10 text-google-red' : 'border border-m3-outline bg-white text-m3-on-surface hover:bg-m3-surface-container'}`}
               >
-                  {t('myTasks')} only
+                  {t('myTasksOnly')}
               </button>
           </div>
       </div>
@@ -107,7 +108,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
               const slotsLeft = item.maxClaims - item.claimants.length;
               
               return (
-                  <div key={item.id} className={`group relative bg-white rounded-xl p-4 border transition-all ${isMine ? 'border-google-red/50 bg-red-50/30' : 'border-m3-outline/20 hover:border-google-red/30'}`}>
+                  <div key={item.id} className={`app-card group relative p-4 ${isMine ? 'border-google-red/50 bg-google-red/5' : 'hover:border-google-red/30'}`}>
                       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                           <div className="flex-1">
                               <h4 className={`text-lg font-medium mb-1 ${isMine ? 'text-google-red' : 'text-m3-on-surface'}`}>{item.title}</h4>
@@ -116,7 +117,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                               {item.claimants.length > 0 && (
                                   <div className="flex flex-wrap items-center gap-2 mt-2">
                                       {item.claimants.map((c, i) => (
-                                          <div key={i} className="flex items-center gap-1.5 bg-m3-surface-container-high px-2 py-0.5 rounded-full text-xs text-m3-on-surface-variant" title={`Taken at ${new Date(c.at).toLocaleString()}`}>
+                                          <div key={i} className="flex items-center gap-1.5 bg-m3-surface-container-high px-2 py-0.5 rounded-full text-xs text-m3-on-surface-variant" title={t('takenAt', { date: formatDateTime(c.at, t) })}>
                                               <div className="w-5 h-5 rounded-full bg-google-red/20 text-google-red flex items-center justify-center font-bold text-[10px] uppercase">
                                                   {c.name.charAt(0)}
                                               </div>
@@ -133,7 +134,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                               {item.claimants.length === 0 && (
                                   <div className="mt-1 text-xs text-google-green font-medium flex items-center gap-1">
                                       <span className="w-2 h-2 rounded-full bg-google-green"></span>
-                                      {t('spotsLeft', { count: slotsLeft })} (Open)
+                                      {t('spotsLeft', { count: slotsLeft })} · {t('open')}
                                   </div>
                               )}
                           </div>
@@ -141,7 +142,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                           <div className="flex items-center gap-3">
                               {/* Edit Actions for Admin */}
                               {(isOwner || isAdmin) && (
-                                  <button onClick={() => confirm({ type: 'destructive', title: t('delete'), message: t('confirmDelete'), onConfirm: () => actions.handleDeleteClaimItem(item.id) })} className="p-2 text-m3-on-surface-variant hover:text-google-red hover:bg-google-red/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                                  <button onClick={() => confirm({ type: 'destructive', title: t('delete'), message: t('confirmDelete'), onConfirm: () => actions.handleDeleteClaimItem(item.id) })} className="app-icon-button opacity-0 hover:bg-google-red/10 hover:text-google-red group-hover:opacity-100">
                                       <Trash2 className="w-4 h-4" />
                                   </button>
                               )}
@@ -151,7 +152,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                                   isMine ? (
                                       <button 
                                           onClick={() => handleToggleClaim(item)}
-                                          className="flex items-center gap-2 px-5 py-2 rounded-full bg-m3-surface-container-high text-m3-on-surface hover:bg-google-red hover:text-white transition-all font-medium text-sm group/btn"
+                                          className="app-button bg-m3-surface-container-high text-m3-on-surface hover:bg-google-red hover:text-white group/btn"
                                       >
                                           <MinusCircle className="w-4 h-4 text-google-red group-hover/btn:text-white" />
                                           {t('unclaim')}
@@ -160,13 +161,13 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                                       !isFull ? (
                                         <button 
                                             onClick={() => handleToggleClaim(item)}
-                                            className="flex items-center gap-2 px-5 py-2 rounded-full bg-google-red text-white shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all font-medium text-sm"
+                                            className="app-button bg-google-red text-white hover:shadow-elevation-1"
                                         >
                                             <UserCheck className="w-4 h-4" />
                                             {t('claim')}
                                         </button>
                                       ) : (
-                                        <button disabled className="flex items-center gap-2 px-5 py-2 rounded-full bg-m3-surface-container text-m3-on-surface-variant/50 cursor-not-allowed font-medium text-sm">
+                                        <button disabled className="app-button bg-m3-surface-container text-m3-on-surface-variant/50">
                                             {t('full')}
                                         </button>
                                       )
@@ -177,7 +178,12 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                   </div>
               );
           })}
-          {items.length === 0 && <div className="text-center py-10 text-m3-on-surface-variant opacity-50 italic">{t('noTasks')}</div>}
+          {items.length === 0 && (
+            <div className="app-card-quiet flex flex-col items-center gap-3 p-8 text-center text-sm text-m3-on-surface-variant">
+              <CheckSquare className="h-8 w-8 text-google-red" />
+              <span>{t('noTasks')}</span>
+            </div>
+          )}
       </div>
     </div>
   );

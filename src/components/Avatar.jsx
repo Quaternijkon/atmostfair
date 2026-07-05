@@ -27,11 +27,9 @@ export default function Avatar({ name, url, size = 'md', className = '' }) {
       'bg-google-blue',
       'bg-google-green',
       'bg-google-yellow text-black',
-      'bg-purple-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-teal-500',
-      'bg-orange-500'
+      'bg-m3-primary',
+      'bg-m3-secondary text-m3-on-secondary',
+      'bg-m3-inverse-surface'
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {

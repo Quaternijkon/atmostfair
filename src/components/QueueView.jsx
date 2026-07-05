@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { ListOrdered, ClipboardList } from './Icons';
 import { InfoCard } from './InfoCard';
+import { useUI } from './UIContext';
 
 export default function QueueView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const [joinName, setJoinName] = useState(user.displayName || '');
   const [joinValue, setJoinValue] = useState(() => Math.floor(Math.random() * 101));
+  const { confirm } = useUI();
 
   // Sort: If finished, by queueOrder. Else by join time.
   const sortedParticipants = [...participants].sort((a, b) => {
@@ -16,9 +18,13 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
   const count = participants.length;
 
   const handleGenerate = () => {
-    if (confirm(t('startQueue') + '?')) {
-        actions.handleGenerateQueue(project.id);
-    }
+    confirm({
+      title: t('startQueue'),
+      message: t('startQueueConfirm'),
+      confirmText: t('startQueue'),
+      cancelText: t('cancel'),
+      onConfirm: () => actions.handleGenerateQueue(project.id),
+    });
   };
 
   return (
@@ -26,28 +32,28 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
       
       {/* Result Header */}
       {isFinished && (
-        <div className="bg-m3-surface-container-high rounded-[32px] p-8 text-center border border-google-yellow/50 shadow-elevation-1">
+        <div className="app-card border-google-yellow/50 p-8 text-center">
             <div className="inline-block p-4 rounded-full bg-google-yellow text-white mb-4 shadow-elevation-2">
                 <ListOrdered className="w-8 h-8" />
             </div>
-            <h2 className="text-3xl font-normal text-m3-on-surface mb-2">{t('queueResult')}</h2>
+            <h2 className="text-3xl font-medium text-m3-on-surface mb-2">{t('queueResult')}</h2>
             <p className="text-m3-on-surface-variant mb-6">{t('queueAlgoDesc')}</p>
         </div>
       )}
 
       {/* Main Action Area */}
       {!isFinished && (
-        <div className="bg-m3-surface-container rounded-[32px] p-8 relative overflow-hidden">
+        <div className="app-card relative overflow-hidden p-6 sm:p-8">
              <div className="flex flex-col md:flex-row justify-between items-center gap-8">
                  <div>
-                    <h2 className="text-3xl font-normal mb-2 flex items-center gap-3 text-m3-on-surface">
+                    <h2 className="text-3xl font-medium mb-2 flex items-center gap-3 text-m3-on-surface">
                         <ClipboardList className="w-8 h-8 text-google-yellow" /> {t('queue')}
                     </h2>
                     <p className="text-m3-on-surface-variant">{t('queueDesc')}</p>
                  </div>
                  
                  {(isOwner || isAdmin) && !isStopped && count > 0 && (
-                     <button onClick={handleGenerate} className="px-8 py-4 bg-google-yellow text-gray-900 font-medium rounded-2xl shadow-elevation-2 hover:shadow-elevation-3 transition-shadow">
+                     <button onClick={handleGenerate} className="app-button bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2">
                         {t('startQueue')}
                      </button>
                  )}
@@ -57,12 +63,12 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
 
       {/* Join Form */}
       {!isFinished && !myParticipant && !isStopped && (
-         <div className="bg-m3-surface p-8 rounded-[28px] border border-m3-outline-variant/50">
-             <h3 className="font-normal text-2xl text-m3-on-surface mb-6">{t('joinQueue')}</h3>
+         <div className="app-card p-6 sm:p-8">
+             <h3 className="font-medium text-2xl text-m3-on-surface mb-6">{t('joinQueue')}</h3>
              <div className="grid md:grid-cols-2 gap-6">
                  <div>
-                    <label className="text-sm font-medium text-m3-on-surface-variant mb-1 block">{t('yourNamePlaceholder')}</label>
-                    <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} className="w-full px-4 py-3 bg-m3-surface-container-high rounded-xl border-none text-m3-on-surface" placeholder={t('yourNamePlaceholder')} />
+                    <label className="app-label">{t('yourNamePlaceholder')}</label>
+                    <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} className="app-input" placeholder={t('yourNamePlaceholder')} />
                  </div>
                  <div>
                      <div className="flex justify-between mb-1">
@@ -72,14 +78,14 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
                      <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} className="w-full accent-google-yellow" />
                  </div>
              </div>
-             <button onClick={() => actions.handleJoinQueue(project.id, joinName, joinValue)} className="w-full mt-6 bg-google-yellow text-gray-900 font-medium py-3 rounded-full hover:shadow-elevation-1">
+             <button onClick={() => actions.handleJoinQueue(project.id, joinName, joinValue)} className="app-button mt-6 w-full bg-google-yellow text-gray-900 hover:shadow-elevation-1">
                 {t('submitEntry')}
              </button>
          </div>
       )}
 
       {/* List */}
-      <div className="bg-m3-surface border border-m3-outline-variant/20 rounded-[24px] overflow-hidden p-6">
+      <div className="app-card overflow-hidden p-6">
          <h3 className="font-medium text-m3-on-surface mb-4">{t('participants')} ({count})</h3>
          <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
@@ -100,14 +106,24 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
                                     idx + 1
                                 )}
                             </td>
-                            <td className="px-4 py-3 font-medium text-m3-on-surface">{p.name} {p.uid === user?.uid && '(You)'}</td>
+                            <td className="px-4 py-3 font-medium text-m3-on-surface">
+                              <span>{p.name}</span>
+                              {p.uid === user?.uid && <span className="ml-2 rounded-full bg-google-blue/10 px-2 py-0.5 text-[10px] font-medium text-google-blue">{t('currentUserBadge')}</span>}
+                            </td>
                             <td className="px-4 py-3 text-right font-mono text-google-yellow">
                                 {isFinished || p.uid === user?.uid ? p.value : '***'}
                             </td>
                         </tr>
                     ))}
                     {sortedParticipants.length === 0 && (
-                        <tr><td colSpan="3" className="px-4 py-8 text-center text-m3-on-surface-variant opacity-60">No participants yet</td></tr>
+                        <tr>
+                          <td colSpan="3" className="px-4 py-6">
+                            <div className="app-card-quiet flex items-center justify-center gap-2 p-5 text-center text-sm text-m3-on-surface-variant">
+                              <ClipboardList className="h-5 w-5 text-google-yellow" />
+                              <span>{t('noParticipantsYet')}</span>
+                            </div>
+                          </td>
+                        </tr>
                     )}
                  </tbody>
              </table>

@@ -12,22 +12,22 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
     const isRoomOwner = currentRoom.ownerId === user.uid;
     const canManage = isRoomOwner || isAdmin;
     return (
-      <div className="bg-m3-surface-container rounded-[28px] overflow-hidden shadow-elevation-1">
-        <div className="bg-google-red text-white p-6 flex justify-between items-center">
-          <div><div className="text-white/80 text-xs font-medium uppercase tracking-wider mb-1">{t('currentTeam')}</div><h2 className="text-2xl font-normal">{currentRoom.name}</h2></div>
+      <div className="app-card overflow-hidden">
+        <div className="flex items-center justify-between bg-google-red p-6 text-white">
+          <div><div className="text-white/80 text-xs font-medium uppercase tracking-wider mb-1">{t('currentTeam')}</div><h2 className="text-2xl font-medium">{currentRoom.name}</h2></div>
           <div className="flex gap-2">
-            {(canManage && !isStopped) || isAdmin ? <button onClick={() => onDelete(currentRoom.id)} className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-sm transition-colors">{t('disbandTeam')}</button> : null}
-            <button onClick={() => onKick(currentRoom.id, currentRoom.members.find((m) => m.uid === user.uid))} className="bg-white text-google-red px-4 py-2 rounded-full text-sm font-medium shadow-sm hover:shadow-md transition-shadow">{t('leave')}</button>
+            {(canManage && !isStopped) || isAdmin ? <button onClick={() => onDelete(currentRoom.id)} className="app-button bg-white/20 px-3 text-xs text-white hover:bg-white/30">{t('disbandTeam')}</button> : null}
+            <button onClick={() => onKick(currentRoom.id, currentRoom.members.find((m) => m.uid === user.uid))} className="app-button bg-white text-google-red hover:shadow-elevation-1">{t('leave')}</button>
           </div>
         </div>
         <div className="p-6 grid gap-4 sm:grid-cols-2">
           {currentRoom.members.map((m) => (
-            <div key={m.joinedAt} className="flex justify-between items-center p-4 bg-m3-surface rounded-xl border border-m3-outline-variant/50">
+            <div key={m.joinedAt} className="flex items-center justify-between rounded-2xl border border-m3-outline-variant/50 bg-m3-surface p-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-google-red/20 text-google-red flex items-center justify-center font-bold text-xs">{m.name.charAt(0)}</div>
                 <div className="text-m3-on-surface font-medium">{m.name} {m.uid === currentRoom.ownerId && <span className="text-xs font-normal text-m3-on-surface-variant ml-1">({t('leader')})</span>}</div>
               </div>
-              {canManage && m.uid !== user.uid && (!isStopped || isAdmin) && <button onClick={() => onKick(currentRoom.id, m)} className="text-m3-error hover:bg-m3-error/10 p-2 rounded-full"><X className="w-4 h-4" /></button>}
+              {canManage && m.uid !== user.uid && (!isStopped || isAdmin) && <button onClick={() => onKick(currentRoom.id, m)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>}
             </div>
           ))}
         </div>
@@ -37,23 +37,23 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
   return (
     <div>
       {!isStopped && (
-        <div className="mb-8 bg-m3-surface-container rounded-[24px] p-6 flex flex-col sm:flex-row gap-4 border border-m3-outline-variant/30">
-          <input type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder={t('teamNamePlaceholder')} className="flex-1 px-4 py-3 bg-m3-surface rounded-xl border border-m3-outline outline-none focus:border-google-red focus:border-2 text-m3-on-surface" />
-          <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNicknamePlaceholder')} className="w-full sm:w-48 px-4 py-3 bg-m3-surface rounded-xl border border-m3-outline outline-none focus:border-google-red focus:border-2 text-m3-on-surface" />
-          <button onClick={() => { if (newRoomName.trim()) { onCreate(newRoomName, 4, myName); setNewRoomName(''); } }} className="bg-google-red text-white px-8 py-3 rounded-full font-medium shadow-elevation-1 hover:shadow-elevation-2">{t('createTeam')}</button>
+        <div className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
+          <input type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder={t('teamNamePlaceholder')} className="app-input flex-1" />
+          <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNicknamePlaceholder')} className="app-input w-full sm:w-48" />
+          <button onClick={() => { if (newRoomName.trim()) { onCreate(newRoomName, 4, myName); setNewRoomName(''); } }} className="app-button bg-google-red px-8 text-white hover:shadow-elevation-1">{t('createTeam')}</button>
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="workspace-grid">
         {sortedRooms.map((room) => (
-          <div key={room.id} className="bg-m3-surface-container-high p-6 rounded-[24px] border border-transparent transition-all">
+          <div key={room.id} className="app-card p-6">
             <div className="flex justify-between items-start mb-4">
               <h4 className="font-medium text-lg text-m3-on-surface">{room.name}</h4>
               <div className="bg-m3-surface text-xs font-medium px-2 py-1 rounded-md text-m3-on-surface-variant border border-m3-outline-variant/50">{room.members.length} / {room.maxMembers}</div>
             </div>
             {!isStopped && room.members.length < room.maxMembers ? (
-              <button onClick={() => onJoin(room.id, user.displayName)} className="w-full border border-m3-outline-variant text-google-red font-medium py-2.5 rounded-full hover:bg-google-red/5 transition-colors">{t('joinTeam')}</button>
+              <button onClick={() => onJoin(room.id, user.displayName)} className="app-button w-full border border-m3-outline-variant text-google-red hover:bg-google-red/5">{t('joinTeam')}</button>
             ) : (
-              <button disabled className="w-full bg-m3-surface-container text-m3-on-surface-variant py-2.5 rounded-full text-sm cursor-not-allowed">{t('fullOrClosed')}</button>
+              <button disabled className="app-button w-full bg-m3-surface-container text-m3-on-surface-variant">{t('fullOrClosed')}</button>
             )}
           </div>
         ))}
