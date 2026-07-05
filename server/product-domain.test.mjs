@@ -974,6 +974,54 @@ test('project duplication keeps reusable configuration and resets runtime state'
   ]);
 });
 
+test('project duplication rolls back the new project when copied child writes fail', async () => {
+  const commitProjectDuplicateWithRollback = projectDomain.commitProjectDuplicateWithRollback;
+  assert.equal(typeof commitProjectDuplicateWithRollback, 'function');
+
+  const addCalls = [];
+  const deletedRefs = [];
+  let copiedIntoProjectId = null;
+  const childFailure = new Error('child copy failed');
+  const db = {};
+  const collection = (_db, name) => ({ collection: name });
+  const addDoc = async (collectionRef, data) => {
+    addCalls.push({ collection: collectionRef.collection, data });
+    if (collectionRef.collection === 'projects') {
+      return { collection: 'projects', id: 'project-copy' };
+    }
+    if (data.title === 'Broken child') throw childFailure;
+    return { collection: collectionRef.collection, id: `${collectionRef.collection}-copy` };
+  };
+  const deleteDoc = async (ref) => {
+    deletedRefs.push(`${ref.collection}/${ref.id}`);
+  };
+
+  await assert.rejects(
+    () => commitProjectDuplicateWithRollback({
+      db,
+      collection,
+      addDoc,
+      deleteDoc,
+      projectData: { title: 'Source Copy', type: 'vote' },
+      createChildOperations: (projectRef) => {
+        copiedIntoProjectId = projectRef.id;
+        return [
+          { type: 'add', collection: 'voting_items', data: { title: 'Copied child' } },
+          { type: 'add', collection: 'rooms', data: { title: 'Broken child' } },
+        ];
+      },
+    }),
+    childFailure,
+  );
+
+  assert.equal(copiedIntoProjectId, 'project-copy');
+  assert.deepEqual(
+    addCalls.map((call) => call.collection),
+    ['projects', 'voting_items', 'rooms'],
+  );
+  assert.deepEqual(deletedRefs, ['voting_items/voting_items-copy', 'projects/project-copy']);
+});
+
 test('project cascade deletion covers every project-owned collection', () => {
   const docsByCollection = {
     projects: [{ id: 'project-1' }],
@@ -1091,6 +1139,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createProjectCreateData',
     'createProjectDuplicateData',
     'createProjectDuplicateChildOperations',
+    'commitProjectDuplicateWithRollback',
     'createProjectCascadeDeleteOperations',
     'PROJECT_CASCADE_COLLECTIONS',
   ]) {
@@ -1112,6 +1161,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /createRouletteResultData/, 'Roulette drawing should derive result and audit steps through the domain helper');
   assert.match(app, /rouletteResult:\s*rouletteResult/, 'Roulette drawing should persist replayable result data on the project');
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
+  assert.match(app, /commitProjectDuplicateWithRollback\(/, 'Project duplication should roll back the new project if child copies fail');
+  assert.doesNotMatch(app, /Promise\.all\([\s\S]{0,240}childOperations[\s\S]{0,240}addDoc/, 'Project duplication should not leave partial copies through concurrent child writes');
   assert.match(app, /const LOCKED_PROJECT_STATUSES = new Set\(\['stopped', 'finished'\]\);/, 'App should define locked project statuses once');
   assert.match(app, /const isProjectWritable = \(projectId\) => \{[\s\S]{0,260}!LOCKED_PROJECT_STATUSES\.has\(project\.status\)/, 'App should expose a shared stopped/finished write guard');
   for (const action of [

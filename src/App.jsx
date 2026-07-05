@@ -22,6 +22,7 @@ import {
   createProjectCreateData,
   createProjectDuplicateChildOperations,
   createProjectDuplicateData,
+  commitProjectDuplicateWithRollback,
   createQueueJoinData,
   createQueueResultData,
   createRouletteJoinData,
@@ -339,23 +340,26 @@ function AppContent() {
         const duplicatedAt = nowMs();
         const projectData = createProjectDuplicateData(project, user, currentUserName(), duplicatedAt, titleSuffix);
         if (!projectData) return null;
-        const projectRef = await addDoc(collection(db, 'projects'), projectData);
-        const childOperations = createProjectDuplicateChildOperations(
-          projectRef.id,
-          {
-            voting_items: items.filter((item) => item.projectId === project.id),
-            rooms: rooms.filter((room) => room.projectId === project.id),
-            gather_fields: gatherFields.filter((field) => field.projectId === project.id),
-            booking_slots: bookingSlots.filter((slot) => slot.projectId === project.id),
-            claim_items: claimItems.filter((item) => item.projectId === project.id),
-          },
-          user,
-          currentUserName(),
-          duplicatedAt,
-        );
-        await Promise.all(
-          childOperations.map((operation) => addDoc(collection(db, operation.collection), operation.data)),
-        );
+        const projectRef = await commitProjectDuplicateWithRollback({
+          db,
+          collection,
+          addDoc,
+          deleteDoc,
+          projectData,
+          createChildOperations: (projectRef) => createProjectDuplicateChildOperations(
+            projectRef.id,
+            {
+              voting_items: items.filter((item) => item.projectId === project.id),
+              rooms: rooms.filter((room) => room.projectId === project.id),
+              gather_fields: gatherFields.filter((field) => field.projectId === project.id),
+              booking_slots: bookingSlots.filter((slot) => slot.projectId === project.id),
+              claim_items: claimItems.filter((item) => item.projectId === project.id),
+            },
+            user,
+            currentUserName(),
+            duplicatedAt,
+          ),
+        });
         void recordProjectActivity({ projectId: project.id, type: PROJECT_ACTIVITY_TYPES.projectDuplicated, subject: projectData.title });
         void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: projectData.title });
         return projectRef.id;

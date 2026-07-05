@@ -741,6 +741,36 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
   return operations;
 }
 
+export async function commitProjectDuplicateWithRollback({
+  db,
+  collection,
+  addDoc,
+  deleteDoc,
+  projectData,
+  createChildOperations,
+  childOperations,
+}) {
+  const projectRef = await addDoc(collection(db, 'projects'), projectData);
+  const createdChildRefs = [];
+
+  try {
+    const operations = typeof createChildOperations === 'function'
+      ? createChildOperations(projectRef)
+      : childOperations;
+    for (const operation of operations || []) {
+      if (operation?.type !== 'add') continue;
+      const childRef = await addDoc(collection(db, operation.collection), operation.data);
+      createdChildRefs.push(childRef);
+    }
+    return projectRef;
+  } catch (error) {
+    const refsToDelete = [...createdChildRefs].reverse();
+    refsToDelete.push(projectRef);
+    await Promise.allSettled(refsToDelete.map((ref) => deleteDoc(ref)));
+    throw error;
+  }
+}
+
 export function createProjectCascadeDeleteOperations(projectId, docsByCollection) {
   if (!projectId) return [];
   const operations = [];
