@@ -1491,6 +1491,160 @@ test('HTTP data API restricts managed child creation to project owners and norma
   });
 });
 
+test('HTTP data API restricts claim item updates to current-user claim toggles', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Claim rules', type: 'claim', status: 'active', createdAt: 1 } },
+      });
+
+      const claim = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'claim_items',
+          data: {
+            projectId: project.doc.id,
+            title: 'Bring snacks',
+            maxClaims: 1,
+            creatorId: bob.user.uid,
+            claimants: [{ uid: bob.user.uid, name: 'Bob', at: 2 }],
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(claim.doc.creatorId, owner.user.uid);
+      assert.deepEqual(claim.doc.claimants, []);
+
+      const memberMetadataUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { title: 'Hijacked title', maxClaims: 99 },
+        },
+      });
+      assert.equal(memberMetadataUpdate.status, 403);
+      assert.equal(memberMetadataUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('claim_items', claim.doc.id)).title, 'Bring snacks');
+
+      const forgedDirectClaimants = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: [{ uid: alice.user.uid, name: 'Alice', at: 3 }, { uid: bob.user.uid, name: 'Bob', at: 3 }] },
+        },
+      });
+      assert.equal(forgedDirectClaimants.status, 403);
+      assert.equal(forgedDirectClaimants.body.error.code, 'data/forbidden');
+
+      const forgedOtherClaim = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayUnion({ uid: bob.user.uid, name: 'Bob', at: 4 }) },
+        },
+      });
+      assert.equal(forgedOtherClaim.status, 403);
+      assert.equal(forgedOtherClaim.body.error.code, 'data/forbidden');
+
+      const aliceClaimant = { uid: alice.user.uid, name: 'Alice', at: 5 };
+      const aliceClaim = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayUnion(aliceClaimant) },
+        },
+      });
+      assert.deepEqual(aliceClaim.doc.claimants, [aliceClaimant]);
+
+      const overCapacityClaim = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayUnion({ uid: bob.user.uid, name: 'Bob', at: 6 }) },
+        },
+      });
+      assert.equal(overCapacityClaim.status, 409);
+      assert.equal(overCapacityClaim.body.error.code, 'data/claim-full');
+      assert.deepEqual((await store.get('claim_items', claim.doc.id)).claimants, [aliceClaimant]);
+
+      const forgedRemoval = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayRemove(aliceClaimant) },
+        },
+      });
+      assert.equal(forgedRemoval.status, 403);
+      assert.equal(forgedRemoval.body.error.code, 'data/forbidden');
+      assert.deepEqual((await store.get('claim_items', claim.doc.id)).claimants, [aliceClaimant]);
+
+      const aliceDrop = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { claimants: arrayRemove(aliceClaimant) },
+        },
+      });
+      assert.deepEqual(aliceDrop.doc.claimants, []);
+
+      const ownerMetadataUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'claim_items',
+          id: claim.doc.id,
+          data: { title: 'Updated snacks', maxClaims: 2 },
+        },
+      });
+      assert.equal(ownerMetadataUpdate.doc.title, 'Updated snacks');
+      assert.equal(ownerMetadataUpdate.doc.maxClaims, 2);
+      assert.deepEqual(ownerMetadataUpdate.doc.claimants, []);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts voting item writes to current-user vote toggles', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

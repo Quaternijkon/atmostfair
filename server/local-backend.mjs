@@ -484,6 +484,10 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
     return normalizeManagedProjectChildCreateData({ user, collection, data });
   }
 
+  if (collection === 'claim_items') {
+    return authorizeClaimItemOperation({ user, type, data, existing, project });
+  }
+
   return preserveImmutableField(data, existing, 'projectId', type);
 }
 
@@ -516,6 +520,90 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   }
 
   return data || {};
+}
+
+function authorizeClaimItemOperation({ user, type, data, existing, project }) {
+  const protectedData = preserveImmutableField(data, existing, 'projectId', type);
+  if (Object.hasOwn(protectedData || {}, 'claimants')) {
+    return authorizeClaimantsPatch({ user, type, data: protectedData, existing });
+  }
+
+  if (!canWriteProject(project, user)) forbidden();
+  assertImmutableField(protectedData, existing, 'creatorId');
+  assertImmutableField(protectedData, existing, 'creatorName');
+  if (type === 'set') {
+    return {
+      ...(protectedData || {}),
+      projectId: existing.projectId,
+      creatorId: existing.creatorId,
+      creatorName: existing.creatorName,
+      claimants: Array.isArray(existing.claimants) ? existing.claimants : [],
+    };
+  }
+  return protectedData || {};
+}
+
+function authorizeClaimantsPatch({ user, type, data, existing }) {
+  if (type !== 'update') forbidden();
+
+  const mutableKeys = Object.keys(data || {}).filter((key) => key !== 'projectId');
+  if (mutableKeys.length !== 1 || mutableKeys[0] !== 'claimants') forbidden();
+
+  const transform = data.claimants || {};
+  const values = Array.isArray(transform.values) ? transform.values : [];
+  if (values.length !== 1 || !values[0] || typeof values[0] !== 'object') forbidden();
+
+  if (transform.__type === 'arrayUnion') {
+    return authorizeClaimantAdd({ user, data, existing, claimant: values[0] });
+  }
+
+  if (transform.__type === 'arrayRemove') {
+    return authorizeClaimantRemove({ user, data, existing, claimant: values[0] });
+  }
+
+  forbidden();
+}
+
+function authorizeClaimantAdd({ user, data, existing, claimant }) {
+  if (claimant.uid !== user.uid) forbidden();
+
+  const claimants = Array.isArray(existing.claimants) ? existing.claimants : [];
+  if (claimants.some((entry) => entry?.uid === user.uid)) {
+    throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
+  }
+
+  const maxClaims = Number.parseInt(existing.maxClaims, 10) || 1;
+  if (claimants.length >= maxClaims) {
+    throwDataError(409, 'data/claim-full', 'Claim item is full.');
+  }
+
+  return {
+    ...(data || {}),
+    claimants: {
+      __type: 'arrayUnion',
+      values: [{
+        ...claimant,
+        uid: user.uid,
+        name: cleanUserProvidedName(claimant.name, user),
+      }],
+    },
+  };
+}
+
+function authorizeClaimantRemove({ user, data, existing, claimant }) {
+  if (claimant.uid !== user.uid) forbidden();
+
+  const claimants = Array.isArray(existing.claimants) ? existing.claimants : [];
+  const existingClaim = claimants.find((entry) => entry?.uid === user.uid && deepEqualData(entry, claimant));
+  if (!existingClaim) forbidden();
+
+  return {
+    ...(data || {}),
+    claimants: {
+      __type: 'arrayRemove',
+      values: [existingClaim],
+    },
+  };
 }
 
 async function authorizeProjectUserEntryOperation({
