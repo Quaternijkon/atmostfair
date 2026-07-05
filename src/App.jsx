@@ -92,6 +92,7 @@ function AppContent() {
   const isAdmin = user && (ADMIN_EMAILS.includes(user.email) || ADMIN_EMAILS.length === 0);
 
   const [projects, setProjects] = useState([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [items, setItems] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
@@ -128,6 +129,7 @@ function AppContent() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      setProjectsLoaded(false);
       setAuthChecking(false);
       if (u) {
           try {
@@ -147,7 +149,10 @@ function AppContent() {
   // Data Sync
   useEffect(() => {
     if (!user) return;
-    const unsubProjects = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
+    const unsubProjects = onSnapshot(collection(db, 'projects'), (s) => {
+      setProjects(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
+      setProjectsLoaded(true);
+    });
     const unsubItems = onSnapshot(collection(db, 'voting_items'), (s) => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRooms = onSnapshot(collection(db, 'rooms'), (s) => setRooms(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRoulette = onSnapshot(collection(db, 'roulette_participants'), (s) => setRouletteParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -592,11 +597,11 @@ function AppContent() {
                   <AnimatePresence mode="wait">
                     <Routes location={location} key={location.pathname}>
                         <Route path="/" element={<PageTransition><Dashboard projects={projects} onCreateProject={handleCreateProject} defaultName={user.displayName || ''} t={t} /></PageTransition>} />
-                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </AnimatePresence>

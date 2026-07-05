@@ -104,6 +104,28 @@ test('project surfaces stay compact and keyboard ergonomic', async () => {
   assert.doesNotMatch(files.infoCard, /<ol|list-decimal/, 'Workspace help cards should use compact guidance instead of long numbered instructions');
 });
 
+test('project detail distinguishes loading from missing projects with recovery copy', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+  };
+
+  for (const key of ['projectNotFound', 'projectNotFoundDesc', 'backToDash']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.app, /\[projectsLoaded,\s*setProjectsLoaded\]\s*=\s*useState\(false\)/, 'App should track whether the projects snapshot has loaded');
+  assert.match(files.app, /setProjectsLoaded\(true\)/, 'App should mark the projects snapshot as loaded after it arrives');
+  assert.match(files.app, /projectsLoaded=\{projectsLoaded\}/, 'Project detail routes should receive the project snapshot loaded state');
+
+  assert.match(files.detail, /projectsLoaded\s*=\s*false/, 'Project detail should default to a loading state before snapshot evidence arrives');
+  assert.match(files.detail, /if \(!project && !projectsLoaded\)[\s\S]{0,240}t\('loading'\)/, 'Missing projects before data load should still show loading');
+  assert.match(files.detail, /if \(!project\)[\s\S]{0,520}t\('projectNotFound'\)/, 'Missing projects after data load should show a not-found state');
+  assert.match(files.detail, /t\('projectNotFoundDesc'\)/, 'Project not-found detail copy should be localized');
+  assert.doesNotMatch(files.detail, /<h2[^>]*>\{t\('loading'\)\}<\/h2>[\s\S]{0,160}<button/, 'Project detail should not show an infinite loading state with only a dashboard button');
+});
+
 test('game and booking workspaces use localized ergonomic states', async () => {
   const files = {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),

@@ -52,7 +52,7 @@ function ActivityTimeline({ activities, t }) {
   );
 }
 
-export default function ProjectDetail({ projects, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, projectActivities, actions, t }) {
+export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, projectActivities, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,11 +66,25 @@ export default function ProjectDetail({ projects, user, isAdmin, items, rooms, r
 
   const project = projects.find(p => p.id === id);
 
-  if (!project) {
+  if (!project && !projectsLoaded) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-m3-on-surface-variant">
         <h2 className="text-xl mb-4">{t('loading')}</h2>
-        <button onClick={() => navigate('/')} className="app-button-quiet text-google-blue">{t('backToDash')}</button>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="app-card flex max-w-md flex-col items-center p-8 text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-google-blue/10 text-google-blue">
+            <Info className="h-7 w-7" />
+          </div>
+          <h2 className="mb-2 text-2xl font-medium text-m3-on-surface">{t('projectNotFound')}</h2>
+          <p className="mb-6 text-sm text-m3-on-surface-variant">{t('projectNotFoundDesc')}</p>
+          <button onClick={() => navigate('/')} className="app-button-tonal">{t('backToDash')}</button>
+        </div>
       </div>
     );
   }
