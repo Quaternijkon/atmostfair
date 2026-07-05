@@ -386,6 +386,10 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     return authorizeRoomOperation({ user, type, data, existing, project });
   }
 
+  if (collection === 'project_chats') {
+    return authorizeProjectChatOperation({ user, type, data, existing });
+  }
+
   if (
     collection === 'queue_participants'
     || collection === 'roulette_participants'
@@ -529,6 +533,26 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   }
 
   return data || {};
+}
+
+function authorizeProjectChatOperation({ user, data, existing }) {
+  if (!existing) {
+    return normalizeProjectChatCreateData(data, user);
+  }
+
+  forbidden();
+}
+
+function normalizeProjectChatCreateData(data, user) {
+  const text = typeof data?.text === 'string' ? data.text.trim() : '';
+  if (!text) throwDataError(400, 'data/invalid-message', 'Message text is required.');
+
+  return {
+    ...(data || {}),
+    text,
+    uid: user.uid,
+    name: cleanUserProvidedName('', user),
+  };
 }
 
 function authorizeRoomOperation({ user, type, data, existing, project }) {

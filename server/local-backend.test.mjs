@@ -1030,6 +1030,129 @@ test('HTTP data API rejects child writes against stopped and finished projects w
   });
 });
 
+test('HTTP data API normalizes project chat messages and keeps them append-only', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Chat rules', type: 'project', status: 'active', createdAt: 1 } },
+      });
+
+      const aliceMessage = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_chats',
+          data: {
+            projectId: project.doc.id,
+            uid: bob.user.uid,
+            name: 'Bob',
+            text: '  Hello team  ',
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(aliceMessage.doc.uid, alice.user.uid);
+      assert.equal(aliceMessage.doc.name, 'alice');
+      assert.equal(aliceMessage.doc.text, 'Hello team');
+      assert.equal(aliceMessage.doc.createdAt, 2);
+
+      const blankMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'project_chats',
+          data: { projectId: project.doc.id, uid: bob.user.uid, name: 'Bob', text: '   ', createdAt: 3 },
+        },
+      });
+      assert.equal(blankMessage.status, 400);
+      assert.equal(blankMessage.body.error.code, 'data/invalid-message');
+      assert.equal((await store.list('project_chats')).length, 1);
+
+      const bobDeletesAlice = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'project_chats', id: aliceMessage.doc.id },
+      });
+      assert.equal(bobDeletesAlice.status, 403);
+      assert.equal(bobDeletesAlice.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('project_chats', aliceMessage.doc.id), null);
+
+      const aliceEdit = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_chats',
+          id: aliceMessage.doc.id,
+          data: { text: 'Edited message' },
+        },
+      });
+      assert.equal(aliceEdit.status, 403);
+      assert.equal(aliceEdit.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('project_chats', aliceMessage.doc.id)).text, 'Hello team');
+
+      const ownerSet = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'project_chats',
+          id: aliceMessage.doc.id,
+          data: { projectId: project.doc.id, uid: owner.user.uid, name: 'Owner', text: 'Moderated', createdAt: 4 },
+        },
+      });
+      assert.equal(ownerSet.status, 403);
+      assert.equal(ownerSet.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('project_chats', aliceMessage.doc.id)).text, 'Hello team');
+
+      const bobMessage = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'project_chats',
+          data: { projectId: project.doc.id, uid: alice.user.uid, name: 'Alice', text: 'Hi Alice', createdAt: 5 },
+        },
+      });
+      assert.equal(bobMessage.doc.uid, bob.user.uid);
+      assert.equal(bobMessage.doc.name, 'bob');
+      assert.equal(bobMessage.doc.text, 'Hi Alice');
+
+      const ownerDeletesBob = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'project_chats', id: bobMessage.doc.id },
+      });
+      assert.equal(ownerDeletesBob.ok, true);
+      assert.equal(await store.get('project_chats', bobMessage.doc.id), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API normalizes participant identities and rejects duplicate direct entries', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
