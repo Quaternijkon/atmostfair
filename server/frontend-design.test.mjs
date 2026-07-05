@@ -328,6 +328,33 @@ test('queue workspace exposes localized replayable audit steps', async () => {
   assert.doesNotMatch(files.queue, />Audit|>Formula|>Step|No audit/i, 'Queue audit visible copy should be localized');
 });
 
+test('roulette workspace exposes localized replayable audit steps', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    roulette: await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'rouletteAuditTrail',
+    'rouletteAuditFormula',
+    'rouletteAuditStep',
+    'rouletteAuditEmpty',
+    'rouletteAuditWinner',
+    'rouletteAuditEliminated',
+  ]) {
+    assert.match(files.roulette, new RegExp(`t\\('${key}'(?:,|\\))`), `Roulette should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.roulette, /project\.rouletteResult\?\.steps/, 'Roulette should read persisted replay steps from the project result');
+  assert.match(files.roulette, /rouletteAuditSteps\.map/, 'Roulette should render replay steps from persisted audit data');
+  assert.match(files.roulette, /app-card[\s\S]{0,500}rouletteAuditTrail/, 'Roulette audit should use the shared app surface');
+  assert.match(files.app, /createRouletteResultData/, 'App should derive roulette result through the domain helper');
+  assert.match(files.app, /rouletteResult:\s*rouletteResult/, 'App should persist rouletteResult on the project');
+  assert.doesNotMatch(files.roulette, />Audit|>Formula|>Step|No audit/i, 'Roulette audit visible copy should be localized');
+});
+
 test('booking workspace exposes localized waitlist states for full slots', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

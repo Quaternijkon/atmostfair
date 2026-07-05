@@ -201,22 +201,34 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   
   const handleDraw = () => {
       if (sortedParticipants.length === 0) return;
-      
-      // Save result to project (locks it)
-      const resultData = {
-          winners: simulationData.winners,
-          steps: simulationData.steps,
-          seed: simulationData.totalValue,
-          configSnapshot: config
-      };
-      
-      actions.handleSaveRouletteResult(project.id, resultData);
+      actions.handleSaveRouletteResult(project.id, { ...config, mode: activeTab });
   };
   
   // Use project result if available, otherwise simulation
   const resultSource = project.rouletteResult ? project.rouletteResult : simulationData;
   const steps = resultSource.steps || [];
   const finalWinners = resultSource.winners || [];
+  const rouletteAuditSteps = project.rouletteResult?.steps || steps;
+
+  const getRouletteStepLabel = (step) => (
+    step?.type === 'elim' ? t('rouletteAuditEliminated') : t('rouletteAuditWinner')
+  );
+
+  const formatRouletteStepDetail = (step) => {
+    if (!step) return '';
+    if (
+      Number.isFinite(Number(step.selectedIndex))
+      && Number.isFinite(Number(step.sum))
+      && Number.isFinite(Number(step.remainingCount))
+    ) {
+      return t('rouletteAuditFormula', {
+        index: step.selectedIndex,
+        sum: step.sum,
+        count: step.remainingCount,
+      });
+    }
+    return step.detail || '';
+  };
   
   // Replay Logic
   useEffect(() => {
@@ -333,12 +345,12 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                       <div className="animate-scale-in">
                           <div className="text-sm uppercase tracking-widest text-m3-on-surface-variant mb-2">{t('rStep')} {replayState.stepIndex + 1} / {steps.length}</div>
                           <div className={`text-3xl font-light mb-4 capitalize ${currentStepData.type === 'elim' ? 'text-google-red' : 'text-google-green'}`}>
-                               {currentStepData.type === 'elim' ? t('rEliminating') : t('rDrawing')} {currentStepData.type !== 'elim' && (currentStepData.label || '').replace(t('rWinner')+': ', '')}
+                               {currentStepData.type === 'elim' ? t('rEliminating') : t('rDrawing')} {currentStepData.type !== 'elim' && (currentStepData.prize || (currentStepData.label || '').replace(t('rWinner')+': ', ''))}
                           </div>
                           
                           <div className="app-card mb-6 p-8 transform transition-all">
-                               <div className="text-6xl font-medium mb-2">{currentStepData.target?.name}</div>
-                               <div className="text-xl font-mono text-m3-on-surface-variant opacity-50">{currentStepData.detail}</div>
+                               <div className="text-6xl font-medium mb-2">{currentStepData.participantName || currentStepData.target?.name}</div>
+                               <div className="text-xl font-mono text-m3-on-surface-variant opacity-50">{formatRouletteStepDetail(currentStepData)}</div>
                           </div>
                       </div>
                   ) : (
@@ -419,6 +431,43 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                          </div>
                      ))}
                  </div>
+            </div>
+
+            <div className="app-card p-5 text-left sm:p-6">
+                 <div className="mb-4 flex flex-col gap-1">
+                     <h3 className="text-lg font-medium text-m3-on-surface">{t('rouletteAuditTrail')}</h3>
+                     <div className="text-xs text-m3-on-surface-variant">{t('rouletteAuditFormula', { index: 'i', sum: 'S', count: 'N' })}</div>
+                 </div>
+
+                 {rouletteAuditSteps.length === 0 ? (
+                     <div className="rounded-lg border border-dashed border-m3-outline-variant/50 px-4 py-5 text-center text-sm text-m3-on-surface-variant">
+                         {t('rouletteAuditEmpty')}
+                     </div>
+                 ) : (
+                     <div className="grid gap-3">
+                         {rouletteAuditSteps.map((step, index) => {
+                             const actionLabel = getRouletteStepLabel(step);
+                             const participantName = step.participantName || step.target?.name || '';
+                             const participantValue = step.participantValue ?? step.target?.value ?? '';
+                             return (
+                                 <div key={`${step.participantId || step.target?.id || index}-${step.step || index}`} className="rounded-lg border border-m3-outline-variant/30 bg-m3-surface-container/40 px-4 py-3">
+                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                         <div>
+                                             <div className="text-xs font-medium uppercase text-m3-on-surface-variant">{t('rouletteAuditStep', { step: step.step || index + 1 })}</div>
+                                             <div className="mt-1 text-sm font-medium text-m3-on-surface">
+                                                 {actionLabel}: {participantName}
+                                             </div>
+                                         </div>
+                                         <div className="text-left text-xs text-m3-on-surface-variant sm:text-right">
+                                             <div>{formatRouletteStepDetail(step)}</div>
+                                             <div className="font-mono">{participantValue}</div>
+                                         </div>
+                                     </div>
+                                 </div>
+                             );
+                         })}
+                     </div>
+                 )}
             </div>
             
             <InfoCard title={t('distributionChart')} steps={[t('availAfterResults')]} />

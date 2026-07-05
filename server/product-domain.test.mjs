@@ -326,6 +326,83 @@ test('roulette join guard creates one participant per project and user', () => {
   );
 });
 
+test('roulette result data records deterministic winners and replayable audit steps', () => {
+  const createRouletteResultData = projectDomain.createRouletteResultData;
+  assert.equal(typeof createRouletteResultData, 'function');
+
+  const participants = [
+    { id: 'r3', projectId: 'project-1', uid: 'u3', name: 'Cy', value: 4, joinedAt: 30 },
+    { id: 'r1', projectId: 'project-1', uid: 'u1', name: 'Ana', value: 1, joinedAt: 10 },
+    { id: 'r2', projectId: 'project-1', uid: 'u2', name: 'Bo', value: 2, joinedAt: 20 },
+  ];
+
+  assert.deepEqual(
+    createRouletteResultData(participants, {
+      mode: 'multi',
+      prizes: [{ name: 'Gold', count: 1 }, { name: 'Silver', count: 1 }],
+      order: 'fwd',
+      allowRepeat: false,
+      enableReplay: true,
+    }, 4100),
+    {
+      generatedAt: 4100,
+      participantCount: 3,
+      seed: 7,
+      totalValue: 7,
+      configSnapshot: {
+        mode: 'multi',
+        prizes: [{ name: 'Gold', count: 1 }, { name: 'Silver', count: 1 }],
+        order: 'fwd',
+        allowRepeat: false,
+        enableReplay: true,
+      },
+      winnerUpdates: [
+        { id: 'r2', isWinner: true },
+        { id: 'r3', isWinner: true },
+      ],
+      winners: [
+        { id: 'r2', participantId: 'r2', uid: 'u2', name: 'Bo', value: 2, rank: 1, prize: 'Gold' },
+        { id: 'r3', participantId: 'r3', uid: 'u3', name: 'Cy', value: 4, rank: 2, prize: 'Silver' },
+      ],
+      steps: [
+        {
+          type: 'win',
+          step: 1,
+          rank: 1,
+          sum: 7,
+          remainingCount: 3,
+          selectedIndex: 1,
+          participantId: 'r2',
+          participantName: 'Bo',
+          participantUid: 'u2',
+          participantValue: 2,
+          prize: 'Gold',
+          repeat: false,
+          target: { id: 'r2', uid: 'u2', name: 'Bo', value: 2, joinedAt: 20 },
+        },
+        {
+          type: 'win',
+          step: 2,
+          rank: 2,
+          sum: 5,
+          remainingCount: 2,
+          selectedIndex: 1,
+          participantId: 'r3',
+          participantName: 'Cy',
+          participantUid: 'u3',
+          participantValue: 4,
+          prize: 'Silver',
+          repeat: false,
+          target: { id: 'r3', uid: 'u3', name: 'Cy', value: 4, joinedAt: 30 },
+        },
+      ],
+    },
+  );
+
+  assert.equal(createRouletteResultData([], { mode: 'classic' }, 4101), null);
+  assert.equal(createRouletteResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], { mode: 'classic' }, 4102), null);
+});
+
 test('schedule submission guard updates an existing response instead of duplicating it', () => {
   const createScheduleSubmissionWrite = projectDomain.createScheduleSubmissionWrite;
   assert.equal(typeof createScheduleSubmissionWrite, 'function');
@@ -617,6 +694,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createGatherFieldData',
     'createGatherSubmissionData',
     'createRouletteJoinData',
+    'createRouletteResultData',
     'createScheduleSubmissionWrite',
     'createVoteToggleOperations',
     'createClaimToggleData',
@@ -634,6 +712,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
   assert.match(app, /createQueueResultData/, 'Queue generation should derive result and audit steps through the domain helper');
   assert.match(app, /queueResult/, 'Queue generation should persist replayable result data on the project');
+  assert.match(app, /createRouletteResultData/, 'Roulette drawing should derive result and audit steps through the domain helper');
+  assert.match(app, /rouletteResult:\s*rouletteResult/, 'Roulette drawing should persist replayable result data on the project');
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
   assert.match(app, /const projectFields = gatherFields\.filter/, 'Gather submissions should load project field definitions before writing');
   assert.match(app, /createGatherSubmissionData\([\s\S]{0,500}projectFields/, 'Gather submissions should validate against field definitions before writing');

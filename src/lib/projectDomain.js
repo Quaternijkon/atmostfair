@@ -17,6 +17,8 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
+const REPEAT_SEED_MODULUS = 2147483647;
+const REPEAT_SEED_MULTIPLIER = 16807;
 
 export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
@@ -190,6 +192,114 @@ export function createRouletteJoinData(existingParticipants, projectId, user, us
     value: Number.parseInt(value, 10) || 0,
     joinedAt,
     isWinner: false,
+  };
+}
+
+export function createRouletteResultData(participants, config = {}, generatedAt) {
+  const pool = normalizedRouletteParticipants(participants);
+  if (pool.length === 0 || !generatedAt) return null;
+
+  const participantCount = pool.length;
+  const configSnapshot = clonePlainValue(config || {});
+  const initialTotal = pool.reduce((acc, participant) => acc + participant.value, 0);
+  const steps = [];
+  const winners = [];
+  let currentSum = initialTotal;
+
+  const selectByCurrentSum = (currentPoolLength) => Math.abs(currentSum) % currentPoolLength;
+  const addWinner = (participant, rank, prize) => {
+    winners.push(createRouletteWinner(participant, rank, prize));
+  };
+  const addStep = (type, step, participant, selectedIndex, remainingCount, rank, prize, repeat = false) => {
+    steps.push({
+      type,
+      step,
+      rank,
+      sum: currentSum,
+      remainingCount,
+      selectedIndex,
+      participantId: participant.id,
+      participantName: participant.name,
+      participantUid: participant.uid,
+      participantValue: participant.value,
+      ...(prize !== undefined ? { prize } : {}),
+      repeat,
+      target: createRouletteTarget(participant),
+    });
+  };
+
+  const mode = configSnapshot.mode || 'classic';
+
+  if (mode === 'classic') {
+    const selectedIndex = selectByCurrentSum(pool.length);
+    const winner = pool[selectedIndex];
+    addStep('win', 1, winner, selectedIndex, pool.length, 1, undefined, false);
+    addWinner(winner, 1);
+  } else if (mode === 'multi') {
+    const prizeQueue = createRoulettePrizeQueue(configSnapshot);
+    const allowRepeat = Boolean(configSnapshot.allowRepeat);
+
+    for (let index = 0; index < prizeQueue.length; index += 1) {
+      if (pool.length === 0) break;
+      const prize = prizeQueue[index];
+      const selectedIndex = allowRepeat
+        ? getRepeatIndex(initialTotal, pool.length, index)
+        : selectByCurrentSum(pool.length);
+      const winner = pool[selectedIndex];
+      const rank = index + 1;
+      addStep('win', rank, winner, selectedIndex, pool.length, rank, prize, allowRepeat);
+      addWinner(winner, rank, prize);
+
+      if (!allowRepeat) {
+        currentSum -= winner.value;
+        pool.splice(selectedIndex, 1);
+      }
+    }
+  } else if (mode === 'elim') {
+    let survivorsNeeded = Number.parseInt(configSnapshot.survivorCount, 10) || 1;
+    if (survivorsNeeded < 1) survivorsNeeded = 1;
+    if (survivorsNeeded >= pool.length && pool.length > 0) survivorsNeeded = Math.max(1, pool.length - 1);
+
+    let step = 1;
+    let loopGuard = 0;
+    while (pool.length > survivorsNeeded && loopGuard < 1000) {
+      loopGuard += 1;
+      const selectedIndex = selectByCurrentSum(pool.length);
+      const eliminated = pool[selectedIndex];
+      addStep('elim', step, eliminated, selectedIndex, pool.length, undefined, undefined, false);
+      step += 1;
+      currentSum -= eliminated.value;
+      pool.splice(selectedIndex, 1);
+    }
+
+    loopGuard = 0;
+    while (pool.length > 0 && loopGuard < 1000) {
+      loopGuard += 1;
+      const selectedIndex = selectByCurrentSum(pool.length);
+      const winner = pool[selectedIndex];
+      const rank = winners.length + 1;
+      addStep('win', step, winner, selectedIndex, pool.length, rank, undefined, false);
+      addWinner(winner, rank);
+      step += 1;
+      currentSum -= winner.value;
+      pool.splice(selectedIndex, 1);
+    }
+  }
+
+  const winnerUpdates = [...new Map(winners.map((winner) => [winner.participantId, {
+    id: winner.participantId,
+    isWinner: true,
+  }])).values()];
+
+  return {
+    generatedAt,
+    participantCount,
+    seed: initialTotal,
+    totalValue: initialTotal,
+    configSnapshot,
+    winnerUpdates,
+    winners,
+    steps,
   };
 }
 
@@ -527,6 +637,71 @@ function normalizedQueueParticipants(participants) {
       joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
     }))
     .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+}
+
+function normalizedRouletteParticipants(participants) {
+  if (!Array.isArray(participants)) return [];
+  return participants
+    .filter((participant) => participant?.id)
+    .map((participant) => ({
+      id: participant.id,
+      uid: participant.uid || '',
+      name: String(participant.name || '').trim(),
+      value: Number.parseInt(participant.value, 10) || 0,
+      joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
+    }))
+    .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+}
+
+function createRouletteTarget(participant) {
+  return {
+    id: participant.id,
+    uid: participant.uid,
+    name: participant.name,
+    value: participant.value,
+    joinedAt: participant.joinedAt,
+  };
+}
+
+function createRouletteWinner(participant, rank, prize) {
+  return {
+    id: participant.id,
+    participantId: participant.id,
+    uid: participant.uid,
+    name: participant.name,
+    value: participant.value,
+    rank,
+    ...(prize !== undefined ? { prize } : {}),
+  };
+}
+
+function createRoulettePrizeQueue(config) {
+  let prizeQueue = [];
+  for (const prize of Array.isArray(config.prizes) ? config.prizes : []) {
+    const count = Number.parseInt(prize?.count, 10) || 0;
+    for (let index = 0; index < count; index += 1) {
+      prizeQueue.push(String(prize?.name || '').trim());
+    }
+  }
+  if (config.order === 'rev') prizeQueue = prizeQueue.reverse();
+  return prizeQueue;
+}
+
+function normalizeRepeatSeed(seed) {
+  const normalized = seed % REPEAT_SEED_MODULUS;
+  return normalized > 0 ? normalized : normalized + REPEAT_SEED_MODULUS - 1;
+}
+
+function advanceRepeatSeed(seed) {
+  return (seed * REPEAT_SEED_MULTIPLIER) % REPEAT_SEED_MODULUS;
+}
+
+function getRepeatIndex(initialSeed, poolLength, drawIndex) {
+  let seed = normalizeRepeatSeed(initialSeed);
+  for (let index = 0; index <= drawIndex; index += 1) {
+    seed = advanceRepeatSeed(seed);
+  }
+  return Math.abs(seed - 1) % poolLength;
 }
 
 function isValidDateOnly(value) {

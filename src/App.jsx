@@ -22,6 +22,7 @@ import {
   createQueueJoinData,
   createQueueResultData,
   createRouletteJoinData,
+  createRouletteResultData,
   createScheduleSubmissionWrite,
   createTeamJoinMember,
   createVoteToggleOperations,
@@ -252,10 +253,26 @@ function AppContent() {
          if (!user) return;
          await updateDoc(doc(db, 'projects', projectId), { rouletteConfig: config });
       },
-      handleSaveRouletteResult: async (projectId, resultData) => {
-         // Saves the complex result blob and marks project finished
-         await updateDoc(doc(db, 'projects', projectId), { rouletteResult: resultData, status: 'finished' });
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.rouletteDrawn, subject: resultData?.winner?.name || resultData?.winnerName || '' });
+      handleSaveRouletteResult: async (projectId, config) => {
+         if (!user) return;
+         const parts = rouletteParticipants.filter(p => p.projectId === projectId);
+         const rouletteResult = createRouletteResultData(parts, config, nowMs());
+         if (!rouletteResult) return;
+
+         const batch = writeBatch(db);
+         const projectRef = doc(db, 'projects', projectId);
+         batch.update(projectRef, { rouletteResult: rouletteResult, status: 'finished' });
+         rouletteResult.winnerUpdates.forEach((winnerUpdate) => {
+            batch.update(doc(db, 'roulette_participants', winnerUpdate.id), { isWinner: winnerUpdate.isWinner });
+         });
+
+         await batch.commit();
+         void recordProjectActivity({
+            projectId,
+            type: PROJECT_ACTIVITY_TYPES.rouletteDrawn,
+            subject: rouletteResult.winners.map((winner) => winner.name).join(', '),
+            metadata: { participantCount: rouletteResult.participantCount, winnerCount: rouletteResult.winners.length },
+         });
       },
       handleRecordWinner: async (projectId, winnerInfo) => {
          await updateDoc(doc(db, 'projects', projectId), { winners: arrayUnion({ ...winnerInfo, wonAt: nowMs() }), status: 'finished' });
