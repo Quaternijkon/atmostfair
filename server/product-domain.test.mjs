@@ -6,6 +6,8 @@ import test from 'node:test';
 import { TRANSLATIONS } from '../src/constants/translations.js';
 import {
   createBookingPatch,
+  createBookingReleasePatch,
+  createBookingWaitlistPatch,
   createProjectCascadeDeleteOperations,
   createGatherFieldData,
   createQueueJoinData,
@@ -81,6 +83,78 @@ test('booking guard refuses already booked or stale slots', () => {
 
   assert.equal(createBookingPatch({ ...emptySlot, bookedBy: 'u3' }, user, 'Lin', {}, 3001), null);
   assert.equal(createBookingPatch(null, user, 'Lin', {}, 3002), null);
+});
+
+test('booking waitlist guard toggles full-slot waitlist entries and blocks invalid users', () => {
+  const user = { uid: 'u2', displayName: 'Lin' };
+  const fullSlot = {
+    id: 'slot-1',
+    projectId: 'project-1',
+    bookedBy: 'u1',
+    waitlist: [{ uid: 'u3', name: 'Grace', bookingData: { phone: '555' }, joinedAt: 3000 }],
+  };
+
+  assert.deepEqual(createBookingWaitlistPatch(fullSlot, user, 'Lin', { phone: '123' }, 3001), {
+    type: 'add',
+    waitlist: [
+      { uid: 'u3', name: 'Grace', bookingData: { phone: '555' }, joinedAt: 3000 },
+      { uid: 'u2', name: 'Lin', bookingData: { phone: '123' }, joinedAt: 3001 },
+    ],
+  });
+
+  assert.deepEqual(createBookingWaitlistPatch({
+    ...fullSlot,
+    waitlist: [
+      ...fullSlot.waitlist,
+      { uid: 'u2', name: 'Lin', bookingData: { phone: '123' }, joinedAt: 3001 },
+    ],
+  }, user, 'Lin', { phone: '999' }, 3002), {
+    type: 'remove',
+    waitlist: fullSlot.waitlist,
+  });
+
+  assert.equal(createBookingWaitlistPatch({ ...fullSlot, bookedBy: null }, user, 'Lin', {}, 3003), null);
+  assert.equal(createBookingWaitlistPatch(fullSlot, { uid: 'u1', displayName: 'Booked User' }, 'Booked User', {}, 3004), null);
+  assert.equal(createBookingWaitlistPatch(null, user, 'Lin', {}, 3005), null);
+});
+
+test('booking release patch promotes the first waitlisted participant without dropping the queue', () => {
+  const slot = {
+    id: 'slot-1',
+    projectId: 'project-1',
+    bookedBy: 'u1',
+    bookerName: 'Booked User',
+    bookingData: { phone: '111' },
+    bookedAt: 3000,
+    waitlist: [
+      { uid: 'u2', name: 'Lin', bookingData: { phone: '222' }, joinedAt: 3001 },
+      { uid: 'u3', name: 'Grace', bookingData: { phone: '333' }, joinedAt: 3002 },
+    ],
+  };
+
+  assert.deepEqual(createBookingReleasePatch(slot, 3010), {
+    patch: {
+      bookedBy: 'u2',
+      bookerName: 'Lin',
+      bookingData: { phone: '222' },
+      bookedAt: 3010,
+      waitlist: [{ uid: 'u3', name: 'Grace', bookingData: { phone: '333' }, joinedAt: 3002 }],
+    },
+    promoted: { uid: 'u2', name: 'Lin', bookingData: { phone: '222' }, joinedAt: 3001 },
+  });
+
+  assert.deepEqual(createBookingReleasePatch({ ...slot, waitlist: [] }, 3011), {
+    patch: {
+      bookedBy: null,
+      bookerName: null,
+      bookingData: null,
+      bookedAt: null,
+      waitlist: [],
+    },
+    promoted: null,
+  });
+
+  assert.equal(createBookingReleasePatch(null, 3012), null);
 });
 
 test('gather submission guard creates one response per project and user', () => {
@@ -426,7 +500,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
     {
       type: 'add',
       collection: 'booking_slots',
-      data: { projectId: 'project-copy', start: '2026-07-06', end: '2026-07-06', label: 'Monday', bookedBy: null, createdAt: 5100 },
+      data: { projectId: 'project-copy', start: '2026-07-06', end: '2026-07-06', label: 'Monday', bookedBy: null, waitlist: [], createdAt: 5100 },
     },
     {
       type: 'add',
@@ -486,6 +560,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createTeamJoinMember',
     'createQueueJoinData',
     'createBookingPatch',
+    'createBookingWaitlistPatch',
+    'createBookingReleasePatch',
     'createGatherFieldData',
     'createGatherSubmissionData',
     'createRouletteJoinData',
@@ -507,6 +583,9 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
   assert.match(app, /const projectFields = gatherFields\.filter/, 'Gather submissions should load project field definitions before writing');
   assert.match(app, /createGatherSubmissionData\([\s\S]{0,500}projectFields/, 'Gather submissions should validate against field definitions before writing');
+  assert.match(app, /handleToggleBookingWaitlist/, 'Booking should expose a waitlist action for full slots');
+  assert.match(app, /createBookingWaitlistPatch/, 'Booking waitlist writes should go through the domain guard');
+  assert.match(app, /createBookingReleasePatch/, 'Booking release should promote waitlisted users through the domain guard');
 });
 
 test('project detail exposes localized project duplication', async () => {

@@ -12,6 +12,8 @@ import {
 import { createProjectArchivePatch } from './lib/dashboardDomain';
 import {
   createBookingPatch,
+  createBookingReleasePatch,
+  createBookingWaitlistPatch,
   createGatherFieldData,
   createGatherSubmissionData,
   createProjectCascadeDeleteOperations,
@@ -370,7 +372,7 @@ function AppContent() {
       handleCreateBookingSlot: async (projectId, start, end, label) => {
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
-         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, createdAt: nowMs() });
+         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, waitlist: [], createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: label || `${start} - ${end}` });
       },
       handleDeleteBookingSlot: async (slotId) => deleteDoc(doc(db, 'booking_slots', slotId)),
@@ -382,12 +384,33 @@ function AppContent() {
          await updateDoc(doc(db, 'booking_slots', slotId), patch);
          void recordProjectActivity({ projectId: slot.projectId, type: PROJECT_ACTIVITY_TYPES.bookingBooked, subject: slot.label || `${slot.start || ''} ${slot.end || ''}` });
       },
+      handleToggleBookingWaitlist: async (slotId, bookingData = {}) => {
+         if (!user) return null;
+         const slot = bookingSlots.find((entry) => entry.id === slotId);
+         const waitlistPatch = createBookingWaitlistPatch(slot, user, currentUserName(), bookingData, nowMs());
+         if (!waitlistPatch) return null;
+         await updateDoc(doc(db, 'booking_slots', slotId), { waitlist: waitlistPatch.waitlist });
+         return waitlistPatch;
+      },
       handleKickUser: async (slotId, recipientId, projectId, reason) => {
          if (!user) return;
-         // Clear slot
-         await updateDoc(doc(db, 'booking_slots', slotId), { bookedBy: null, bookerName: null, bookingData: null, bookedAt: null });
-         // Notify
+         const slot = bookingSlots.find((entry) => entry.id === slotId);
+         const release = createBookingReleasePatch(slot, nowMs());
+         if (!release) return;
+         await updateDoc(doc(db, 'booking_slots', slotId), release.patch);
          await addDoc(collection(db, 'notifications'), { recipientId, type: 'kicked', title: t('bookingCancelled'), message: reason, projectId, read: false, createdAt: nowMs() });
+         if (release.promoted?.uid) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: release.promoted.uid,
+              type: 'booking_promoted',
+              title: t('waitlistPromoted'),
+              message: slot?.label || `${slot?.start || ''} ${slot?.end || ''}`.trim(),
+              projectId,
+              read: false,
+              createdAt: nowMs(),
+            });
+            void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingBooked, subject: release.promoted.name || release.promoted.uid });
+         }
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingCancelled, subject: reason || recipientId });
       },
       handleReadNotification: async (nId) => updateDoc(doc(db, 'notifications', nId), { read: true }),

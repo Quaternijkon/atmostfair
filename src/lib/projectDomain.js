@@ -56,6 +56,60 @@ export function createBookingPatch(slot, user, userName, bookingData, bookedAt) 
   };
 }
 
+export function createBookingWaitlistPatch(slot, user, userName, bookingData, joinedAt) {
+  if (!slot?.id || !user?.uid || !slot.bookedBy || slot.bookedBy === user.uid) return null;
+  const waitlist = normalizeBookingWaitlist(slot.waitlist);
+  const existingEntry = waitlist.find((entry) => entry.uid === user.uid);
+  if (existingEntry) {
+    return {
+      type: 'remove',
+      waitlist: waitlist.filter((entry) => entry.uid !== user.uid),
+    };
+  }
+
+  return {
+    type: 'add',
+    waitlist: [
+      ...waitlist,
+      {
+        uid: user.uid,
+        name: cleanName(userName, user),
+        bookingData: bookingData || {},
+        joinedAt,
+      },
+    ],
+  };
+}
+
+export function createBookingReleasePatch(slot, releasedAt) {
+  if (!slot?.id) return null;
+  const waitlist = normalizeBookingWaitlist(slot.waitlist);
+  const [promoted, ...remainingWaitlist] = waitlist;
+  if (!promoted) {
+    return {
+      patch: {
+        bookedBy: null,
+        bookerName: null,
+        bookingData: null,
+        bookedAt: null,
+        waitlist: [],
+      },
+      promoted: null,
+    };
+  }
+
+  return {
+    patch: {
+      bookedBy: promoted.uid,
+      bookerName: promoted.name,
+      bookingData: promoted.bookingData || {},
+      bookedAt: releasedAt,
+      waitlist: remainingWaitlist,
+    },
+    promoted,
+  };
+}
+
 export function createGatherSubmissionData(existingSubmissions, projectId, user, userName, data, submittedAt, fields = []) {
   if (!projectId || !user?.uid) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
@@ -324,6 +378,7 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
         end: slot.end,
         label: slot.label,
         bookedBy: null,
+        waitlist: [],
         createdAt,
       },
     });
@@ -413,6 +468,18 @@ function normalizeGatherOptions(options) {
     normalized.push(value);
   }
   return normalized;
+}
+
+function normalizeBookingWaitlist(waitlist) {
+  if (!Array.isArray(waitlist)) return [];
+  return waitlist
+    .filter((entry) => entry?.uid)
+    .map((entry) => ({
+      uid: entry.uid,
+      name: entry.name || '',
+      bookingData: entry.bookingData || {},
+      joinedAt: entry.joinedAt,
+    }));
 }
 
 function isValidDateOnly(value) {

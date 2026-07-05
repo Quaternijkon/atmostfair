@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { CalendarCheck, CheckSquare, Plus, X, Search, UserMinus } from './Icons';
+import { CalendarCheck, CheckSquare, Plus, UserMinus } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
 import { addDaysIsoDate, todayIsoDate } from '../lib/time';
@@ -15,8 +15,9 @@ function createDefaultBookingConfig(t) {
 }
 
 export default function BookingView({ user, isAdmin, project, slots, isStopped, isFinished, isOwner, actions, t }) {
-  const { confirm, showToast } = useUI();
+  const { showToast } = useUI();
   const [showBookModal, setShowBookModal] = useState(null); // slot object
+  const [bookModalMode, setBookModalMode] = useState('book');
   const [kickModal, setKickModal] = useState(null);
   const [kickReason, setKickReason] = useState(t('adminCancelled'));
   const [bookingForm, setBookingForm] = useState({});
@@ -41,14 +42,18 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
   const hasConfig = !!project.bookingConfig;
   const reqFields = (config.requiredFields || '').split(/[，,]/).map(s => s.trim()).filter(s => s);
+  const getWaitlist = (slot) => Array.isArray(slot?.waitlist) ? slot.waitlist : [];
+  const canInteract = !isStopped && !isFinished;
 
   // --- Handlers ---
 
   const handleSaveConfig = () => {
+    if (!canInteract) return;
     actions.handleUpdateBookingConfig(project.id, config);
   };
 
   const toggleSlot = (start, end, label) => {
+      if (!canInteract) return;
       // For owner: Create or Delete slot doc
       const existing = slots.find(s => s.start === start && s.end === end);
       if (existing) {
@@ -62,7 +67,19 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
       }
   };
 
+  const openBookingModal = (slot, mode) => {
+      setBookModalMode(mode);
+      setShowBookModal(slot);
+  };
+
+  const resetBookingModal = () => {
+      setShowBookModal(null);
+      setBookingForm({});
+      setBookModalMode('book');
+  };
+
   const handleBookSubmit = async () => {
+      if (!canInteract) return;
       // Validate form
       for (let f of reqFields) {
 	          if (!bookingForm[f]) {
@@ -71,13 +88,32 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 	          }
       }
       try {
-          await actions.handleBookSlot(showBookModal.id, bookingForm);
-          setShowBookModal(null);
-          setBookingForm({});
-          showToast(t('bookingSuccess'), 'success');
+          if (bookModalMode === 'waitlist') {
+              const waitlistPatch = await actions.handleToggleBookingWaitlist(showBookModal.id, bookingForm);
+              if (!waitlistPatch) throw new Error('waitlist failed');
+              resetBookingModal();
+              showToast(t('waitlistJoined'), 'success');
+          } else {
+              await actions.handleBookSlot(showBookModal.id, bookingForm);
+              resetBookingModal();
+              showToast(t('bookingSuccess'), 'success');
+          }
       } catch (e) {
           console.error(e);
 	          showToast(t('bookingFailed'), 'error');
+      }
+  };
+
+  const handleToggleBookingWaitlist = async (slot) => {
+      if (!canInteract) return;
+      if (!slot) return;
+      try {
+          const waitlistPatch = await actions.handleToggleBookingWaitlist(slot.id);
+          if (!waitlistPatch) throw new Error('waitlist failed');
+          showToast(waitlistPatch.type === 'remove' ? t('waitlistLeft') : t('waitlistJoined'), 'success');
+      } catch (e) {
+          console.error(e);
+          showToast(t('bookingFailed'), 'error');
       }
   };
 
@@ -87,6 +123,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   };
 
   const handleKickSubmit = () => {
+      if (!canInteract) return;
       if (!kickModal) return;
       actions.handleKickUser(kickModal.id, kickModal.bookedBy, project.id, kickReason.trim() || t('adminCancelled'));
       setKickModal(null);
@@ -161,7 +198,10 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                         const existing = slots.find(s => s.start === slotStart); // For date mode, simple match
                         const isBooked = existing?.bookedBy;
                         const isMine = existing?.bookedBy === user?.uid;
-                        const isInteractive = isOwner ? !isBooked : Boolean(existing && !isBooked);
+                        const waitlist = getWaitlist(existing);
+                        const waitlistSize = waitlist.length;
+                        const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
+                        const isInteractive = canInteract && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
                         const SlotShell = isInteractive ? 'button' : 'div';
 
                     // Owner logic: Click to create/delete availability
@@ -169,12 +209,14 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                     
                     const handleClick = () => {
                         if (isOwner) toggleSlot(slotStart, slotEnd, formatDate(date));
-                        else if (existing && !isBooked) setShowBookModal(existing);
+                        else if (existing && !isBooked) openBookingModal(existing, 'book');
+                        else if (existing && isBooked && !isMine && isWaitlisted) handleToggleBookingWaitlist(existing);
+                        else if (existing && isBooked && !isMine) openBookingModal(existing, 'waitlist');
                     };
 
                     let bgClass = 'bg-m3-surface-container hover:bg-m3-surface-container-high'; // Default unavailable (User pov)
                     if (isOwner) bgClass = existing ? (isBooked ? 'bg-m3-primary-container ring-2 ring-google-blue' : 'bg-google-green text-white') : 'bg-m3-surface-container opacity-50';
-                    else bgClass = existing ? (isBooked ? (isMine ? 'bg-google-green text-white' : 'bg-m3-surface-container-high opacity-50 cursor-not-allowed') : 'bg-white border-2 border-google-green text-google-green hover:bg-google-green hover:text-white') : 'bg-m3-surface-container opacity-30 cursor-not-allowed';
+                    else bgClass = existing ? (isBooked ? (isMine ? 'bg-google-green text-white' : isWaitlisted ? 'border-2 border-google-yellow bg-google-yellow/10 text-[#8a5a00] hover:bg-google-yellow/20' : 'border border-google-yellow/40 bg-m3-surface-container-high text-m3-on-surface-variant hover:bg-google-yellow/10') : 'bg-white border-2 border-google-green text-google-green hover:bg-google-green hover:text-white') : 'bg-m3-surface-container opacity-30 cursor-not-allowed';
 
                         return (
                             <SlotShell key={date}
@@ -186,11 +228,15 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                             {isBooked && (
                                 <div className="text-xs truncate">
                                     <div className="font-bold">{existing.bookerName}</div>
+                                    {waitlistSize > 0 && <div className="mt-1 text-[10px] font-medium">{t('waitlistCount', { count: waitlistSize })}</div>}
                                     {isOwner && <button onClick={(e) => { e.stopPropagation(); handleKick(existing); }} className="app-icon-button mt-1 border-transparent bg-white/20 text-white hover:bg-google-red hover:text-white"><UserMinus className="w-4 h-4" /></button>}
                                 </div>
                                 )}
                                 {!existing && isOwner && <Plus className="w-4 h-4 self-end opacity-50" />}
                                 {existing && !isBooked && !isOwner && <span className="text-xs self-end font-bold">{t('book')}</span>}
+                                {existing && isBooked && !isOwner && !isMine && (
+                                    <span className="text-xs self-end font-bold">{isWaitlisted ? `${t('waitlisted')} · ${t('leaveWaitlist')}` : t('joinWaitlist')}</span>
+                                )}
                             </SlotShell>
                         );
                     })}
@@ -248,12 +294,17 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                         const existing = slots.find(s => s.start === slotStart);
                                         const isBooked = existing?.bookedBy;
                                         const isMine = existing?.bookedBy === user?.uid;
-                                        const isInteractive = isOwner ? !isBooked : Boolean(existing && !isBooked);
+                                        const waitlist = getWaitlist(existing);
+                                        const waitlistSize = waitlist.length;
+                                        const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
+                                        const isInteractive = canInteract && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
                                         const CellShell = isInteractive ? 'button' : 'div';
 
                                         const handleClick = () => {
                                             if (isOwner) toggleSlot(slotStart, slotStart, period);
-                                            else if (existing && !isBooked) setShowBookModal(existing);
+                                            else if (existing && !isBooked) openBookingModal(existing, 'book');
+                                            else if (existing && isBooked && !isMine && isWaitlisted) handleToggleBookingWaitlist(existing);
+                                            else if (existing && isBooked && !isMine) openBookingModal(existing, 'waitlist');
                                         };
 
                                         // Styling Logic (Copied and adapted for Table Cell)
@@ -267,6 +318,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                                 content = (
                                                     <>
                                                         <div className="font-bold truncate w-full text-center">{existing.bookerName}</div>
+                                                        {waitlistSize > 0 && <div className="mt-1 text-[10px] font-medium">{t('waitlistCount', { count: waitlistSize })}</div>}
                                                         <button onClick={(e) => { e.stopPropagation(); handleKick(existing); }} className="app-icon-button mt-1 hover:bg-google-red hover:text-white"><UserMinus className="w-4 h-4" /></button>
                                                     </>
                                                 );
@@ -286,8 +338,17 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                                     cellClass += "bg-google-green text-white border-transparent shadow-elevation-1";
 	                                                    content = <><span className="font-bold">{t('booked')}</span><div className="text-[10px] opacity-80">{t('currentUserBadge')}</div></>;
                                                 } else {
-                                                    cellClass += "bg-m3-surface-container-high border-transparent text-m3-on-surface-variant opacity-50 cursor-not-allowed";
-                                                    content = <div className="flex flex-col items-center"><span className="line-through">{t('booked')}</span><span className="text-[9px] truncate w-[80px] text-center">{existing.bookerName}</span></div>;
+                                                    cellClass += isWaitlisted
+                                                        ? "bg-google-yellow/10 border-google-yellow/50 text-[#8a5a00] hover:bg-google-yellow/20"
+                                                        : "bg-m3-surface-container-high border-google-yellow/30 text-m3-on-surface-variant hover:bg-google-yellow/10";
+                                                    content = (
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <span className="line-through">{t('booked')}</span>
+                                                            <span className="text-[9px] truncate w-[80px] text-center">{existing.bookerName}</span>
+                                                            <span className="font-bold">{isWaitlisted ? `${t('waitlisted')} · ${t('leaveWaitlist')}` : t('joinWaitlist')}</span>
+                                                            {waitlistSize > 0 && <span className="text-[9px]">{t('waitlistCount', { count: waitlistSize })}</span>}
+                                                        </div>
+                                                    );
                                                 }
                                             } else {
                                                 cellClass += "bg-white border-google-green text-google-green hover:bg-google-green hover:text-white shadow-sm";
@@ -322,7 +383,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 	        {showBookModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
                 <div className="app-dialog animate-scale-in">
-                    <h3 className="text-xl font-medium mb-4">{t('confirmBooking')}</h3>
+                    <h3 className="text-xl font-medium mb-4">{bookModalMode === 'waitlist' ? t('joinWaitlist') : t('confirmBooking')}</h3>
                     <div className="mb-4 text-sm text-m3-on-surface-variant flex items-center gap-2">
                          <CalendarCheck className="w-4 h-4" />
                          <span>{showBookModal.label}</span>
@@ -343,8 +404,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                     </div>
 
                     <div className="flex gap-3">
-                        <button onClick={() => { setShowBookModal(null); setBookingForm({}); }} className="app-button-quiet flex-1">{t('cancel')}</button>
-                        <button onClick={handleBookSubmit} className="app-button-primary flex-1">{t('bookSlot')}</button>
+                        <button onClick={resetBookingModal} className="app-button-quiet flex-1">{t('cancel')}</button>
+                        <button onClick={handleBookSubmit} className="app-button-primary flex-1">{bookModalMode === 'waitlist' ? t('joinWaitlist') : t('bookSlot')}</button>
                     </div>
                 </div>
             </div>

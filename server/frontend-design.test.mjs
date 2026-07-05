@@ -303,6 +303,37 @@ test('schedule workspace exposes localized owner recommendation summary', async 
   assert.doesNotMatch(schedule, />Recommendations<|>Best time<|>No recommendations/, 'Schedule recommendation copy should be localized');
 });
 
+test('booking workspace exposes localized waitlist states for full slots', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    booking: await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'joinWaitlist',
+    'leaveWaitlist',
+    'waitlistCount',
+    'waitlisted',
+    'waitlistPromoted',
+    'waitlistJoined',
+    'waitlistLeft',
+  ]) {
+    assert.match(files.booking + files.app, new RegExp(`t\\('${key}'(?:,|\\))`), `Booking waitlist should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.booking, /handleToggleBookingWaitlist/, 'Booking view should call the waitlist action for full slots');
+  assert.match(files.booking, /waitlist\.some/, 'Booking view should derive whether the current user is already waitlisted');
+  assert.match(files.booking, /waitlistCount/, 'Booking view should show the waitlist size');
+  assert.match(files.booking, /bookModalMode/, 'Booking modal should distinguish direct booking from waitlist join');
+  assert.match(files.booking, /const canInteract = !isStopped && !isFinished;/, 'Booking should derive a stopped/finished interaction guard');
+  assert.match(files.booking, /isInteractive = canInteract &&/, 'Booking slot interactions should respect stopped and finished state');
+  assert.match(files.app, /createBookingWaitlistPatch/, 'App waitlist action should use the domain helper');
+  assert.match(files.app, /createBookingReleasePatch/, 'App release action should use the promotion helper');
+  assert.doesNotMatch(files.booking, />Join waitlist<|>Leave waitlist<|>Waitlisted<|waitlist:/i, 'Booking waitlist visible copy should be localized');
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
