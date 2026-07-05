@@ -854,11 +854,21 @@ function authorizeMineRoomUpdate({ user, data, existing }) {
   const progress = Number.parseInt(after.progress, 10);
   if (!Number.isInteger(progress) || progress < 0 || progress > 100) forbidden();
   if (!MINE_PLAYER_STATUSES.has(after.status)) forbidden();
+  assertValidMinePlayerTransition(before, after, progress);
 
   const expectedPlayers = existingPlayers.map((player) => (
     player.uid === user.uid ? { ...player, progress, status: after.status } : player
   ));
   return { players: expectedPlayers };
+}
+
+function assertValidMinePlayerTransition(before, after, progress) {
+  const beforeStatus = MINE_PLAYER_STATUSES.has(before.status) ? before.status : 'playing';
+  const beforeProgress = Number.parseInt(before.progress, 10) || 0;
+  if (['dead', 'won'].includes(beforeStatus)) forbidden();
+  if (progress < beforeProgress) forbidden();
+  if (after.status === 'won' && progress !== 100) forbidden();
+  if (progress === 100 && after.status !== 'won') forbidden();
 }
 
 function assertOnlyGameRoomFields(data, fields) {

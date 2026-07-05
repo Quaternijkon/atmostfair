@@ -2276,6 +2276,72 @@ test('HTTP data API restricts game room writes to current-player transitions', a
         },
       });
       assert.equal(bobProgress.doc.players[1].progress, 42);
+
+      const bobLowersProgress = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+              { uid: bob.user.uid, name: 'Bob', progress: 12, status: 'playing' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobLowersProgress.status, 403);
+      assert.equal((await store.get('game_rooms', mineRoom.id)).players[1].progress, 42);
+
+      const bobWinsEarly = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+              { uid: bob.user.uid, name: 'Bob', progress: 99, status: 'won' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobWinsEarly.status, 403);
+
+      const bobWins = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+              { uid: bob.user.uid, name: 'Bob', progress: 100, status: 'won' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobWins.doc.players[1].status, 'won');
+      assert.equal(bobWins.doc.players[1].progress, 100);
+
+      const bobRevives = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: mineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 0, status: 'playing' },
+              { uid: bob.user.uid, name: 'Bob', progress: 100, status: 'playing' },
+            ],
+          },
+        },
+      });
+      assert.equal(bobRevives.status, 403);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
