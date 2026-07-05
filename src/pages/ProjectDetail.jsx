@@ -138,7 +138,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const location = useLocation();
   const { confirm, showToast } = useUI();
   
-  const [unlockedProjectId, setUnlockedProjectId] = useState(() => (location.state?.unlocked ? id : null));
+  const [unlockedProjectId, setUnlockedProjectId] = useState(() => (location.state?.unlockedProjectId === id ? id : null));
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -169,7 +169,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     );
   }
 
-  const isLocallyUnlocked = unlockedProjectId === project.id || Boolean(location.state?.unlocked);
+  const isLocallyUnlocked = unlockedProjectId === project.id;
   const isProjectLocked = hasProjectPassword(project) && !project.accessGranted && !isLocallyUnlocked;
   const handleUnlockProject = async (e) => {
     e.preventDefault();

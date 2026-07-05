@@ -139,6 +139,16 @@ test('password-protected project unlocks use server access grants', async () => 
   assert.match(files.detail, /unlockProjectAccess/, 'Project detail password guard should request a server grant');
   assert.match(files.dashboard, /hasProjectPassword/, 'Dashboard should use lock metadata instead of raw project passwords');
   assert.match(files.detail, /hasProjectPassword/, 'Project detail should use lock metadata instead of raw project passwords');
+  assert.match(
+    files.dashboard,
+    /state:\s*\{\s*unlockedProjectId:\s*project\.id\s*\}/,
+    'Dashboard should pass a project-scoped unlock state after a successful grant',
+  );
+  assert.doesNotMatch(
+    files.dashboard,
+    /state:\s*\{\s*unlocked:\s*true\s*\}/,
+    'Dashboard should not pass a reusable boolean unlock state',
+  );
   assert.doesNotMatch(
     files.dashboard,
     /inputPassword\s*===\s*passwordPromptProject\.password/,
@@ -715,8 +725,9 @@ test('React compiler hotspots stay derived and deterministic', async () => {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
   };
 
-  assert.match(files.detail, /useState\(\(\) => \(location\.state\?\.unlocked \? id : null\)\)/, 'Project detail should initialize route unlock state for the current project id');
-  assert.match(files.detail, /unlockedProjectId === project\.id \|\| Boolean\(location\.state\?\.unlocked\)/, 'Project detail should scope local unlock state to the current project');
+  assert.match(files.detail, /useState\(\(\) => \(location\.state\?\.unlockedProjectId === id \? id : null\)\)/, 'Project detail should initialize route unlock state only when it matches the current project id');
+  assert.match(files.detail, /unlockedProjectId === project\.id/, 'Project detail should scope local unlock state to the current project');
+  assert.doesNotMatch(files.detail, /Boolean\(location\.state\?\.unlocked\)/, 'Project detail should not trust a reusable boolean unlock state');
   assert.doesNotMatch(files.detail, /useEffect\([\s\S]{0,240}setUnlockedProjectId/, 'Project detail should not synchronously set unlock state inside an effect');
 
   assert.match(files.roulette, /advanceRepeatSeed/, 'Roulette repeat draws should advance a deterministic seed helper');

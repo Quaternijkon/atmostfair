@@ -141,7 +141,7 @@ export default function Dashboard({ projects, onCreateProject, defaultName, t })
     try {
       const project = passwordPromptProject;
       await unlockProjectAccess(project.id, inputPassword);
-      navigateToProject(project, { state: { unlocked: true } });
+      navigateToProject(project, { state: { unlockedProjectId: project.id } });
       setPasswordPromptProject(null);
     } catch {
       setPasswordError(true);
