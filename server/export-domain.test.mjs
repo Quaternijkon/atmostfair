@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  createProjectActivityExport,
   createProjectParticipantExport,
   formatCsvCell,
 } from '../src/lib/exportDomain.js';
@@ -19,6 +20,13 @@ const LABELS = {
   exportBookedBy: 'Booked By',
   exportClaimCount: 'Claim Count',
   exportClaimants: 'Claimants',
+  exportActivities: 'Export activity',
+  exportActivityActor: 'Actor',
+  exportActivityMessage: 'Message',
+  exportActivityMetadata: 'Metadata',
+  exportActivitySubject: 'Subject',
+  exportActivityTime: 'Time',
+  exportActivityType: 'Type',
   exportFile: 'export',
   exportFinishedAt: 'Finished At',
   exportGameRoom: 'Room',
@@ -50,6 +58,8 @@ const LABELS = {
   playing: 'Playing',
   rockPaperScissors: 'Rock Paper Scissors',
   waitlisted: 'Waitlisted',
+  activityQueueJoined: '{actor} joined queue as {subject}',
+  activityUpdated: '{actor} updated {subject}',
 };
 
 function t(key, params = {}) {
@@ -220,6 +230,42 @@ test('participant export preserves zero timestamps instead of treating them as e
   assert.match(queueExport.csv, /Zero,0,1,1970-01-01T00:00:00.000Z/);
 });
 
+test('project activity export builds a localized audit CSV', () => {
+  const activityExport = createProjectActivityExport({
+    id: 'p8',
+    title: 'Audit / Trail',
+  }, [
+    {
+      id: 'old',
+      type: 'unknown_action',
+      actorName: 'Bo',
+      subject: 'Fallback',
+      createdAt: 1714550000000,
+      metadata: { nested: { ok: true } },
+    },
+    {
+      id: 'new',
+      type: 'queue_joined',
+      actorName: 'Ana, "A"',
+      subject: 'Main queue',
+      createdAt: 1714554000000,
+      metadata: { value: 7 },
+    },
+  ], t);
+
+  assert.equal(activityExport.filename, 'Audit-Trail_activity.csv');
+  assert.match(activityExport.csv, /^Time,Actor,Type,Subject,Message,Metadata\n/);
+  assert.match(
+    activityExport.csv,
+    /2024-05-01T09:00:00.000Z,"Ana, ""A""",queue_joined,Main queue,"Ana, ""A"" joined queue as Main queue","{""value"":7}"/,
+  );
+  assert.match(
+    activityExport.csv,
+    /2024-05-01T07:53:20.000Z,Bo,unknown_action,Fallback,Bo updated Fallback,"{""nested"":{""ok"":true}}"/,
+  );
+  assert.equal(createProjectActivityExport({ title: 'Empty' }, [], t), null);
+});
+
 test('project detail exposes owner/admin participant export without native dialogs', async () => {
   const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
 
@@ -259,4 +305,30 @@ test('project detail exposes owner/admin participant export without native dialo
   assert.match(detail, /getDocs\(query\(collection\(db, 'game_rooms'\), where\('projectId', '==', project\.id\)\)\)/, 'Game hub export should load live game rooms before exporting');
   assert.match(detail, /gameRooms:\s*projectGameRooms/, 'Project detail should pass game rooms into participant export');
   assert.match(detail, /catch \(error\) \{[\s\S]{0,260}showToast\(t\('actionFailed'/, 'Game hub export failures should use app toast feedback');
+});
+
+test('project detail exposes owner/admin activity export from the activity timeline', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.match(detail, /createProjectActivityExport/, 'Project detail should use the activity export domain');
+  assert.match(detail, /handleExportActivities/, 'Project detail should wire an activity export click handler');
+  assert.match(detail, /ActivityTimeline[\s\S]{0,700}onExportActivities/, 'Activity timeline should receive the export action');
+  assert.match(detail, /canExportActivities=\{hasAdminRights\}/, 'Activity export should only be exposed to owner/admin users');
+  assert.match(detail, /showToast\(t\('noActivityData'\)/, 'No-activity export attempts should use app toast feedback');
+  assert.match(detail, /catch \(error\) \{[\s\S]{0,260}showToast\(t\('actionFailed'/, 'Activity export failures should use app toast feedback');
+  assert.doesNotMatch(detail, /\b(?:alert|prompt)\(/, 'Activity export should not use native browser dialogs');
+
+  for (const key of [
+    'exportActivities',
+    'exportActivityActor',
+    'exportActivityMessage',
+    'exportActivityMetadata',
+    'exportActivitySubject',
+    'exportActivityTime',
+    'exportActivityType',
+    'noActivityData',
+  ]) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
 });

@@ -5,7 +5,7 @@ import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
 import { createProjectShareUrl, getProjectRoutePrefix } from '../lib/dashboardDomain';
-import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
+import { createProjectActivityExport, createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
 import { PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
@@ -21,14 +21,39 @@ import QRCodeShare from '../components/QRCodeShare';
 import ChatRoom from '../components/ChatRoom';
 import GameHubView from '../components/GameHubView';
 
-function ActivityTimeline({ activities, t }) {
+function downloadCsvExport(exportData) {
+  const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = exportData.filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, t }) {
   const visibleActivities = (activities || []).slice(0, 8);
 
   return (
     <aside className="app-card p-4" aria-label={t('activityTimeline')}>
-      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
-        <Activity className="h-4 w-4 text-google-blue" />
-        <span>{t('activityTimeline')}</span>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+          <Activity className="h-4 w-4 text-google-blue" />
+          <span>{t('activityTimeline')}</span>
+        </div>
+        {canExportActivities && (
+          <button
+            type="button"
+            onClick={onExportActivities}
+            className="app-icon-button"
+            title={t('exportActivities')}
+            aria-label={t('exportActivities')}
+          >
+            <Download className="h-4 w-4" />
+          </button>
+        )}
       </div>
       {visibleActivities.length === 0 ? (
         <div className="rounded-lg border border-dashed border-m3-outline-variant/40 px-3 py-4 text-center text-xs text-m3-on-surface-variant">
@@ -307,17 +332,23 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
         return;
       }
 
-      const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = exportData.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadCsvExport(exportData);
     } catch (error) {
       showToast(t('actionFailed', { action: t('exportParticipants'), message: error?.message || t('failed') }), 'error');
+    }
+  };
+
+  const handleExportActivities = () => {
+    try {
+      const exportData = createProjectActivityExport(project, projectActivityItems, t);
+      if (!exportData) {
+        showToast(t('noActivityData'), 'info');
+        return;
+      }
+
+      downloadCsvExport(exportData);
+    } catch (error) {
+      showToast(t('actionFailed', { action: t('exportActivities'), message: error?.message || t('failed') }), 'error');
     }
   };
 
@@ -422,7 +453,12 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
             }}
             t={t}
           />
-          <ActivityTimeline activities={projectActivityItems} t={t} />
+          <ActivityTimeline
+            activities={projectActivityItems}
+            canExportActivities={hasAdminRights}
+            onExportActivities={handleExportActivities}
+            t={t}
+          />
           {showChat && (
              <div className="animate-fade-in">
                  <ChatRoom projectId={project.id} currentUser={user} isStopped={isStopped || isFinished} t={t} />

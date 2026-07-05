@@ -1,4 +1,5 @@
 import { createGameRoomSummary } from './projectDomain.js';
+import { getActivityMessageKey } from './activityDomain.js';
 
 const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim', 'game_hub']);
 
@@ -33,6 +34,42 @@ export function createProjectParticipantExport(project, datasets = {}, t = (key)
   return {
     filename: `${sanitizeFilename(project.title || t('exportFile'))}_${result.suffix}.csv`,
     csv: serializeCsv([result.headers, ...result.rows]),
+  };
+}
+
+export function createProjectActivityExport(project, activities = [], t = (key) => key) {
+  const rows = (Array.isArray(activities) ? [...activities] : [])
+    .filter((activity) => activity?.projectId === project?.id || !activity?.projectId)
+    .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0))
+    .map((activity) => {
+      const actor = activity.actorName || t('unknownUser');
+      const subject = activity.subject || t('project');
+      const message = t(getActivityMessageKey(activity.type), { actor, subject });
+      return [
+        formatExportDate(activity.createdAt),
+        actor,
+        activity.type || '',
+        activity.subject || '',
+        message,
+        formatActivityMetadata(activity.metadata),
+      ];
+    });
+
+  if (!rows.length) return null;
+
+  return {
+    filename: `${sanitizeFilename(project?.title || t('exportFile'))}_activity.csv`,
+    csv: serializeCsv([
+      [
+        t('exportActivityTime'),
+        t('exportActivityActor'),
+        t('exportActivityType'),
+        t('exportActivitySubject'),
+        t('exportActivityMessage'),
+        t('exportActivityMetadata'),
+      ],
+      ...rows,
+    ]),
   };
 }
 
@@ -234,6 +271,11 @@ function collectDynamicKeys(records) {
 
 function hasKeys(value) {
   return Boolean(value && typeof value === 'object' && Object.keys(value).length);
+}
+
+function formatActivityMetadata(metadata) {
+  if (!hasKeys(metadata)) return '';
+  return JSON.stringify(metadata);
 }
 
 function formatGameName(game, t) {
