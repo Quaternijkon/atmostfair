@@ -478,12 +478,14 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
     admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
   };
 
-  for (const key of ['actionFailed', 'errorWithMessage', 'exportFile', 'activeStatus']) {
+  for (const key of ['actionFailed', 'authServiceUnavailable', 'errorWithMessage', 'exportFile', 'activeStatus']) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
 
   assert.match(files.login, /t\('actionFailed'/, 'Login failures should use a localized action-failed template');
+  assert.match(files.login, /status\s*>=\s*500[\s\S]{0,160}t\('authServiceUnavailable'\)/, 'Login should replace server outage responses with localized service-unavailable copy');
+  assert.doesNotMatch(files.login, /setError\(e\.message\)/, 'Login should not expose raw transport errors such as Request failed with status 502');
   assert.doesNotMatch(files.login, /['"]\s*failed:\s*['"]/, 'Login should not concatenate a hardcoded English failed label');
   assert.doesNotMatch(files.localAuth, /Guest \$\{|['"]User['"]/, 'Local auth should not inject visible English user-name fallbacks');
   assert.doesNotMatch(files.authService, /displayName:\s*user\.displayName\s*\|\|\s*['"]User['"]/, 'Backend public user payload should not force a visible English fallback name');

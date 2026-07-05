@@ -16,7 +16,7 @@ export default function Login({ lang, setLang, t }) {
   const [loading, setLoading] = useState(false);
   const authErrorMessage = (action, authError) => t('actionFailed', {
     action,
-    message: authError?.message || t('failed')
+    message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
   });
 
   // Standard Email/Pass with Auto-Registration
@@ -43,7 +43,7 @@ export default function Login({ lang, setLang, t }) {
       } else if (e.code === 'auth/wrong-password') {
         setError(t('passwordError'));
       } else {
-        setError(e.message);
+        setError(authErrorMessage(t('signIn'), e));
       }
     } finally {
       setLoading(false);
