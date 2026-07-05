@@ -378,7 +378,7 @@ function AppContent() {
         await updateDoc(doc(db, 'projects', project.id), patch);
         void recordProjectActivity({
           projectId: project.id,
-          type: 'project_brief_updated',
+          type: PROJECT_ACTIVITY_TYPES.projectBriefUpdated,
           subject: t('projectBrief'),
         });
         return true;

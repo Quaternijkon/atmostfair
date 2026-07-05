@@ -7,6 +7,7 @@ import test from 'node:test';
 import { createAuthService } from './auth-service.mjs';
 import { arrayRemove, arrayUnion, createDataStore } from './data-store.mjs';
 import { createLocalBackendServer } from './local-backend.mjs';
+import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { createProjectCascadeDeleteOperations } from '../src/lib/projectDomain.js';
 
 async function withTempStore(fn) {
@@ -369,7 +370,16 @@ test('HTTP data API protects project documents from non-owner writes', async () 
         token: viewer.token,
         body: {
           operations: [
-            { type: 'add', collection: 'project_activities', data: { projectId: created.doc.id, subject: 'partial write' } },
+            {
+              type: 'add',
+              collection: 'project_activities',
+              data: {
+                projectId: created.doc.id,
+                type: PROJECT_ACTIVITY_TYPES.projectBriefUpdated,
+                subject: 'partial write',
+                createdAt: 2,
+              },
+            },
             { type: 'update', collection: 'projects', id: created.doc.id, data: { title: 'Batch Hijacked' } },
           ],
         },
@@ -596,12 +606,27 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       assert.equal(userUpdate.body.error.code, 'data/forbidden');
       assert.equal((await store.get('announcements', adminAdd.doc.id)).title, 'Release');
 
+      const visibleProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: user.token,
+        body: { collection: 'projects', data: { title: 'Visible', status: 'active', createdAt: 3 } },
+      });
+
       const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
         method: 'POST',
         token: user.token,
         body: {
           operations: [
-            { type: 'add', collection: 'project_activities', data: { projectId: 'visible', subject: 'partial' } },
+            {
+              type: 'add',
+              collection: 'project_activities',
+              data: {
+                projectId: visibleProject.doc.id,
+                type: PROJECT_ACTIVITY_TYPES.projectCreated,
+                subject: 'partial',
+                createdAt: 4,
+              },
+            },
             { type: 'add', collection: 'announcements', data: { title: 'Batch forged', createdAt: 3 } },
           ],
         },
@@ -816,7 +841,16 @@ test('HTTP data API restricts notification creation to verified app events', asy
         token: bob.token,
         body: {
           operations: [
-            { type: 'add', collection: 'project_activities', data: { projectId: project.doc.id, subject: 'partial' } },
+            {
+              type: 'add',
+              collection: 'project_activities',
+              data: {
+                projectId: project.doc.id,
+                type: PROJECT_ACTIVITY_TYPES.bookingCancelled,
+                subject: 'partial',
+                createdAt: 11,
+              },
+            },
             {
               type: 'add',
               collection: 'notifications',
@@ -1021,7 +1055,12 @@ test('HTTP data API rejects child writes against stopped and finished projects w
         token: member.token,
         body: {
           collection: 'project_activities',
-          data: { projectId: stoppedProject.doc.id, subject: 'pause audit' },
+          data: {
+            projectId: stoppedProject.doc.id,
+            type: PROJECT_ACTIVITY_TYPES.projectPaused,
+            subject: 'pause audit',
+            createdAt: 4,
+          },
         },
       });
       assert.equal(auditActivity.doc.projectId, stoppedProject.doc.id);
@@ -1148,6 +1187,139 @@ test('HTTP data API normalizes project chat messages and keeps them append-only'
       });
       assert.equal(ownerDeletesBob.ok, true);
       assert.equal(await store.get('project_chats', bobMessage.doc.id), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API normalizes project activity records and keeps them append-only', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice Actual' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob Actual' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Activity rules', type: 'queue', status: 'active', createdAt: 1 } },
+      });
+
+      const activity = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_activities',
+          data: {
+            projectId: project.doc.id,
+            type: PROJECT_ACTIVITY_TYPES.queueJoined,
+            actorId: bob.user.uid,
+            actorName: 'Bob Actual',
+            subject: '  Queue spot  ',
+            createdAt: 2,
+            metadata: { value: 7 },
+          },
+        },
+      });
+      assert.equal(activity.doc.projectId, project.doc.id);
+      assert.equal(activity.doc.type, PROJECT_ACTIVITY_TYPES.queueJoined);
+      assert.equal(activity.doc.actorId, alice.user.uid);
+      assert.equal(activity.doc.actorName, 'Alice Actual');
+      assert.equal(activity.doc.subject, 'Queue spot');
+      assert.deepEqual(activity.doc.metadata, { value: 7 });
+      assert.equal(activity.doc.createdAt, 2);
+
+      const unknownType = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_activities',
+          data: {
+            projectId: project.doc.id,
+            type: 'mystery_event',
+            actorId: alice.user.uid,
+            actorName: 'Alice Actual',
+            subject: 'Mystery',
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(unknownType.status, 400);
+      assert.equal(unknownType.body.error.code, 'data/invalid-activity');
+      assert.equal((await store.list('project_activities')).length, 1);
+
+      const aliceEdit = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_activities',
+          id: activity.doc.id,
+          data: { subject: 'Edited audit' },
+        },
+      });
+      assert.equal(aliceEdit.status, 403);
+      assert.equal(aliceEdit.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('project_activities', activity.doc.id)).subject, 'Queue spot');
+
+      const bobDeletesAlice = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'project_activities', id: activity.doc.id },
+      });
+      assert.equal(bobDeletesAlice.status, 403);
+      assert.equal(bobDeletesAlice.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('project_activities', activity.doc.id), null);
+
+      const stoppedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Paused', type: 'queue', status: 'stopped', createdAt: 4 } },
+      });
+      const lockedActivity = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_activities',
+          data: {
+            projectId: stoppedProject.doc.id,
+            type: PROJECT_ACTIVITY_TYPES.projectPaused,
+            actorId: bob.user.uid,
+            actorName: 'Bob Actual',
+            subject: ' Paused ',
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(lockedActivity.doc.projectId, stoppedProject.doc.id);
+      assert.equal(lockedActivity.doc.actorId, alice.user.uid);
+
+      const ownerDeletesAlice = await fetchJson(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'project_activities', id: activity.doc.id },
+      });
+      assert.equal(ownerDeletesAlice.ok, true);
+      assert.equal(await store.get('project_activities', activity.doc.id), null);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

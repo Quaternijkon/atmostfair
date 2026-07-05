@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createAuthService } from './auth-service.mjs';
 import { createDataStore } from './data-store.mjs';
+import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -34,6 +35,7 @@ const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
+const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
 const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
 const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['voting_items', 'projectId'],
@@ -47,6 +49,7 @@ const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['claim_items', 'projectId'],
   ['project_chats', 'projectId'],
   ['game_rooms', 'projectId'],
+  ['project_activities', 'projectId'],
 ]);
 
 export function createLocalBackendServer({
@@ -365,6 +368,10 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     throwDataError(404, 'data/project-not-found', 'Project not found.');
   }
 
+  if (collection === 'project_activities') {
+    return authorizeProjectActivityOperation({ user, type, data, project });
+  }
+
   if (type === 'delete') {
     if (isProjectLocked(project)) {
       if (canWriteProject(project, user)) return undefined;
@@ -552,6 +559,40 @@ function normalizeProjectChatCreateData(data, user) {
     text,
     uid: user.uid,
     name: cleanUserProvidedName('', user),
+  };
+}
+
+function authorizeProjectActivityOperation({ user, type, data, project }) {
+  if (type === 'add') {
+    return normalizeProjectActivityCreateData(data, user);
+  }
+
+  if (type === 'delete') {
+    if (!canWriteProject(project, user)) forbidden();
+    return undefined;
+  }
+
+  forbidden();
+}
+
+function normalizeProjectActivityCreateData(data, user) {
+  const projectId = typeof data?.projectId === 'string' ? data.projectId.trim() : '';
+  const type = typeof data?.type === 'string' ? data.type.trim() : '';
+  const createdAt = data?.createdAt;
+
+  if (!projectId || !PROJECT_ACTIVITY_TYPE_VALUES.has(type) || createdAt === undefined || createdAt === null) {
+    throwDataError(400, 'data/invalid-activity', 'Activity project, type, and time are required.');
+  }
+
+  return {
+    ...(data || {}),
+    projectId,
+    type,
+    actorId: user.uid,
+    actorName: cleanUserProvidedName('', user),
+    subject: String(data?.subject || '').trim(),
+    metadata: normalizePlainObject(data?.metadata),
+    createdAt,
   };
 }
 
@@ -841,6 +882,11 @@ function normalizeBookingWaitlistData(waitlist) {
 function normalizeBookingData(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
   return data;
+}
+
+function normalizePlainObject(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  return cloneDataValue(data);
 }
 
 function authorizeClaimItemOperation({ user, type, data, existing, project }) {

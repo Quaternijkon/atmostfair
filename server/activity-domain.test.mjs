@@ -46,6 +46,27 @@ test('project activity records are structured, localized, and project-scoped', (
   }
 });
 
+test('project activity domain includes project brief update events', () => {
+  assert.equal(PROJECT_ACTIVITY_TYPES.projectBriefUpdated, 'project_brief_updated');
+  assert.equal(
+    getActivityMessageKey(PROJECT_ACTIVITY_TYPES.projectBriefUpdated),
+    'activityProjectBriefUpdated',
+  );
+
+  const activity = createProjectActivityData({
+    projectId: 'project-1',
+    type: PROJECT_ACTIVITY_TYPES.projectBriefUpdated,
+    actor: { uid: 'user-1', displayName: 'Alice' },
+    subject: '  Brief  ',
+    createdAt: 1700000000000,
+  });
+
+  assert.equal(activity.type, 'project_brief_updated');
+  assert.equal(activity.subject, 'Brief');
+  assert.ok(TRANSLATIONS.en.activityProjectBriefUpdated);
+  assert.ok(TRANSLATIONS.zh.activityProjectBriefUpdated);
+});
+
 test('app records project activity without blocking primary actions', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
 
