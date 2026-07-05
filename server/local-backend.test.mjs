@@ -407,6 +407,211 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
+test('HTTP data API filters private notifications and friend records by current user', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+      const charlie = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'charlie@example.com', password: 'secret123', displayName: 'Charlie' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123', displayName: 'Admin' },
+      });
+
+      const aliceNotification = await store.add('notifications', {
+        recipientId: alice.user.uid,
+        title: 'Alice only',
+        read: false,
+      });
+      const bobNotification = await store.add('notifications', {
+        recipientId: bob.user.uid,
+        title: 'Bob only',
+        read: false,
+      });
+      const aliceBobFriendship = await store.add('friendships', {
+        members: [alice.user.uid, bob.user.uid],
+        names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
+        status: 'confirmed',
+        initiator: alice.user.uid,
+        createdAt: 1,
+      });
+      const bobCharlieFriendship = await store.add('friendships', {
+        members: [bob.user.uid, charlie.user.uid],
+        names: { [bob.user.uid]: 'Bob', [charlie.user.uid]: 'Charlie' },
+        status: 'confirmed',
+        initiator: bob.user.uid,
+        createdAt: 2,
+      });
+      const aliceMessage = await store.add('friend_messages', {
+        chatId: aliceBobFriendship.id,
+        senderId: alice.user.uid,
+        text: 'secret for Bob',
+        createdAt: 3,
+      });
+      await store.add('friend_messages', {
+        chatId: bobCharlieFriendship.id,
+        senderId: bob.user.uid,
+        text: 'secret for Charlie',
+        createdAt: 4,
+      });
+
+      const aliceNotifications = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'notifications', query: {} },
+      });
+      assert.deepEqual(aliceNotifications.docs.map((entry) => entry.id), [aliceNotification.id]);
+
+      const aliceReadBobNotification = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'notifications', id: bobNotification.id },
+      });
+      assert.equal(aliceReadBobNotification.doc, null);
+
+      const aliceUpdatesBobNotification = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'notifications', id: bobNotification.id, data: { read: true } },
+      });
+      assert.equal(aliceUpdatesBobNotification.status, 403);
+      assert.equal(aliceUpdatesBobNotification.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('notifications', bobNotification.id)).read, false);
+
+      const aliceFriendships = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friendships', query: {} },
+      });
+      assert.deepEqual(aliceFriendships.docs.map((entry) => entry.id), [aliceBobFriendship.id]);
+
+      const aliceReadForeignFriendship = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friendships', id: bobCharlieFriendship.id },
+      });
+      assert.equal(aliceReadForeignFriendship.doc, null);
+
+      const forgedFriendship = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [bob.user.uid, charlie.user.uid],
+            status: 'confirmed',
+            initiator: bob.user.uid,
+          },
+        },
+      });
+      assert.equal(forgedFriendship.status, 403);
+      assert.equal(forgedFriendship.body.error.code, 'data/forbidden');
+
+      const validFriendRequest = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, charlie.user.uid],
+            names: { [alice.user.uid]: 'Alice', [charlie.user.uid]: 'Charlie' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(validFriendRequest.doc.status, 'pending');
+      assert.equal(validFriendRequest.doc.initiator, alice.user.uid);
+
+      const selfConfirm = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friendships', id: validFriendRequest.doc.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(selfConfirm.status, 403);
+      assert.equal(selfConfirm.body.error.code, 'data/forbidden');
+
+      const recipientConfirm = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: charlie.token,
+        body: { collection: 'friendships', id: validFriendRequest.doc.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(recipientConfirm.doc.status, 'confirmed');
+
+      const aliceMessages = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friend_messages', query: {} },
+      });
+      assert.deepEqual(aliceMessages.docs.map((entry) => entry.id), [aliceMessage.id]);
+
+      const forgedMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: {
+            chatId: bobCharlieFriendship.id,
+            senderId: bob.user.uid,
+            text: 'forged',
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(forgedMessage.status, 403);
+      assert.equal(forgedMessage.body.error.code, 'data/forbidden');
+
+      const sentMessage = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friend_messages',
+          data: {
+            chatId: aliceBobFriendship.id,
+            senderId: bob.user.uid,
+            text: 'from Alice',
+            createdAt: 6,
+          },
+        },
+      });
+      assert.equal(sentMessage.doc.senderId, alice.user.uid);
+
+      const adminNotifications = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: admin.token,
+        body: { collection: 'notifications', query: {} },
+      });
+      assert.deepEqual(
+        adminNotifications.docs.map((entry) => entry.id).sort(),
+        [aliceNotification.id, bobNotification.id].sort(),
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP backend translates auth failures into HTTP responses', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

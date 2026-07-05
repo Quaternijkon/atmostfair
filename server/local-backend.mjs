@@ -131,14 +131,16 @@ async function handleDataApi({ request, response, url, store, body, user }) {
 
   if (url.pathname === '/api/data/list') {
     const collection = validateDataCollection(body.collection);
-    const docs = await store.list(collection, body.query || {});
+    const rawDocs = await store.list(collection, body.query || {});
+    const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs });
     return sendJson(response, 200, { docs });
   }
 
   if (url.pathname === '/api/data/get') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    const doc = await store.get(collection, id);
+    const rawDoc = await store.get(collection, id);
+    const doc = await canReadDataDoc({ store, user, collection, doc: rawDoc }) ? rawDoc : null;
     return sendJson(response, 200, { doc });
   }
 
@@ -242,6 +244,18 @@ async function authorizeDataOperations({ store, user, operations }) {
 }
 
 async function authorizeDataOperation({ store, user, type, collection, id, data }) {
+  if (collection === 'notifications') {
+    return authorizeNotificationOperation({ store, user, type, id, data });
+  }
+
+  if (collection === 'friendships') {
+    return authorizeFriendshipOperation({ store, user, type, id, data });
+  }
+
+  if (collection === 'friend_messages') {
+    return authorizeFriendMessageOperation({ store, user, type, id, data });
+  }
+
   if (collection !== 'projects') return data;
 
   if (type === 'add') {
@@ -260,6 +274,129 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
 
   if (type === 'delete') return undefined;
   return preserveProjectOwner(data, existing, type);
+}
+
+async function filterReadableDocs({ store, user, collection, docs }) {
+  if (isAdminUser(user)) return docs;
+  if (!['notifications', 'friendships', 'friend_messages'].includes(collection)) return docs;
+
+  const visible = [];
+  for (const doc of docs || []) {
+    if (await canReadDataDoc({ store, user, collection, doc })) visible.push(doc);
+  }
+  return visible;
+}
+
+async function canReadDataDoc({ store, user, collection, doc }) {
+  if (!doc) return true;
+  if (isAdminUser(user)) return true;
+  if (collection === 'notifications') return doc.recipientId === user.uid;
+  if (collection === 'friendships') return hasMember(doc, user.uid);
+  if (collection === 'friend_messages') return canAccessFriendMessage(store, user, doc);
+  return true;
+}
+
+async function authorizeNotificationOperation({ store, user, type, id, data }) {
+  if (type === 'add') return data || {};
+
+  const existing = await store.get('notifications', id);
+  if (!existing) {
+    if (type === 'set') return data?.recipientId === user.uid || isAdminUser(user) ? data || {} : forbidden();
+    throwDataError(404, 'data/not-found', 'Notification not found.');
+  }
+  if (!canWriteNotification(existing, user)) forbidden();
+
+  if (type === 'delete') return undefined;
+  return preserveImmutableField(data, existing, 'recipientId', type);
+}
+
+async function authorizeFriendshipOperation({ store, user, type, id, data }) {
+  if (type === 'add') return normalizeFriendshipCreateData(data, user);
+
+  const existing = await store.get('friendships', id);
+  if (!existing) {
+    if (type === 'set') return normalizeFriendshipCreateData(data, user);
+    throwDataError(404, 'data/not-found', 'Friendship not found.');
+  }
+
+  if (!hasMember(existing, user.uid) && !isAdminUser(user)) forbidden();
+  if (type === 'delete') return undefined;
+  if (isAdminUser(user)) return data || {};
+  if (type === 'set') forbidden();
+
+  const patch = data || {};
+  const patchKeys = Object.keys(patch);
+  if (
+    patch.status === 'confirmed'
+    && patchKeys.length === 1
+    && existing.status === 'pending'
+    && existing.initiator !== user.uid
+  ) {
+    return { status: 'confirmed' };
+  }
+
+  forbidden();
+}
+
+async function authorizeFriendMessageOperation({ store, user, type, id, data }) {
+  if (type === 'add') return normalizeFriendMessageCreateData(store, data, user);
+
+  const existing = await store.get('friend_messages', id);
+  if (!existing) {
+    if (type === 'set') return normalizeFriendMessageCreateData(store, data, user);
+    throwDataError(404, 'data/not-found', 'Friend message not found.');
+  }
+
+  if (isAdminUser(user)) return type === 'delete' ? undefined : data || {};
+  if (existing.senderId !== user.uid) forbidden();
+  if (type === 'delete') return undefined;
+  return preserveImmutableField(preserveImmutableField(data, existing, 'chatId', type), existing, 'senderId', type);
+}
+
+function normalizeFriendshipCreateData(data, user) {
+  const members = Array.isArray(data?.members) ? [...new Set(data.members)] : [];
+  if (members.length !== 2 || !members.includes(user.uid)) forbidden();
+  if (data?.initiator !== undefined && data.initiator !== user.uid) forbidden();
+  if (data?.status !== undefined && data.status !== 'pending') forbidden();
+  return {
+    ...(data || {}),
+    members,
+    status: 'pending',
+    initiator: user.uid,
+  };
+}
+
+async function normalizeFriendMessageCreateData(store, data, user) {
+  const relationship = await store.get('friendships', data?.chatId);
+  if (relationship?.status !== 'confirmed' || !hasMember(relationship, user.uid)) forbidden();
+  return {
+    ...(data || {}),
+    senderId: user.uid,
+  };
+}
+
+function canWriteNotification(notification, user) {
+  return notification.recipientId === user.uid || isAdminUser(user);
+}
+
+async function canAccessFriendMessage(store, user, message) {
+  const relationship = await store.get('friendships', message.chatId);
+  return relationship?.status === 'confirmed' && hasMember(relationship, user.uid);
+}
+
+function hasMember(record, uid) {
+  return Array.isArray(record?.members) && record.members.includes(uid);
+}
+
+function preserveImmutableField(data, existing, field, type) {
+  if (Object.hasOwn(data || {}, field) && data[field] !== existing[field]) forbidden();
+  if (type === 'set') {
+    return {
+      ...(data || {}),
+      [field]: existing[field],
+    };
+  }
+  return data || {};
 }
 
 function normalizeProjectCreateData(data, user) {
@@ -307,6 +444,10 @@ function throwDataError(status, code, message) {
   error.status = status;
   error.code = code;
   throw error;
+}
+
+function forbidden() {
+  throwDataError(403, 'data/forbidden', 'You do not have permission to access this record.');
 }
 
 async function requireUser(request, auth) {
