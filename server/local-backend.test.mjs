@@ -309,6 +309,104 @@ test('HTTP data API rejects missing document ids without partial writes', async 
   });
 });
 
+test('HTTP data API protects project documents from non-owner writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123' },
+      });
+
+      const created = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Owned Project',
+            creatorId: viewer.user.uid,
+            createdAt: 1,
+          },
+        },
+      });
+      assert.equal(created.doc.creatorId, owner.user.uid);
+
+      const hijack = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          collection: 'projects',
+          id: created.doc.id,
+          data: { title: 'Hijacked' },
+        },
+      });
+      assert.equal(hijack.status, 403);
+      assert.equal(hijack.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('projects', created.doc.id)).title, 'Owned Project');
+
+      const batchHijack = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          operations: [
+            { type: 'add', collection: 'project_activities', data: { projectId: created.doc.id, subject: 'partial write' } },
+            { type: 'update', collection: 'projects', id: created.doc.id, data: { title: 'Batch Hijacked' } },
+          ],
+        },
+      });
+      assert.equal(batchHijack.status, 403);
+      assert.equal(batchHijack.body.error.code, 'data/forbidden');
+      assert.equal((await store.list('project_activities')).length, 0);
+      assert.equal((await store.get('projects', created.doc.id)).title, 'Owned Project');
+
+      const ownerReplace = await fetchJson(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: created.doc.id,
+          data: { title: 'Owner Replaced' },
+        },
+      });
+      assert.equal(ownerReplace.doc.title, 'Owner Replaced');
+      assert.equal(ownerReplace.doc.creatorId, owner.user.uid);
+
+      const adminUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'projects',
+          id: created.doc.id,
+          data: { title: 'Admin Updated' },
+        },
+      });
+      assert.equal(adminUpdate.doc.title, 'Admin Updated');
+      assert.equal(adminUpdate.doc.creatorId, owner.user.uid);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP backend translates auth failures into HTTP responses', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

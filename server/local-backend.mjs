@@ -31,6 +31,7 @@ const DATA_API_COLLECTIONS = new Set([
   'friend_messages',
 ]);
 const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
+const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 
 export function createLocalBackendServer({
   store,
@@ -115,15 +116,15 @@ async function handleApi({ request, response, url, auth, store }) {
   }
 
   if (url.pathname.startsWith('/api/data/')) {
-    await requireUser(request, auth);
+    const user = await requireUser(request, auth);
     const body = await readJson(request);
-    return handleDataApi({ request, response, url, store, body });
+    return handleDataApi({ request, response, url, store, body, user });
   }
 
   return sendJson(response, 404, { error: { code: 'not-found', message: 'API route not found.' } });
 }
 
-async function handleDataApi({ request, response, url, store, body }) {
+async function handleDataApi({ request, response, url, store, body, user }) {
   if (request.method !== 'POST') {
     return sendJson(response, 405, { error: { code: 'method-not-allowed', message: 'Method not allowed.' } });
   }
@@ -143,34 +144,39 @@ async function handleDataApi({ request, response, url, store, body }) {
 
   if (url.pathname === '/api/data/add') {
     const collection = validateDataCollection(body.collection);
-    const doc = await store.add(collection, body.data || {});
+    const data = await authorizeDataOperation({ store, user, type: 'add', collection, data: body.data || {} });
+    const doc = await store.add(collection, data);
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/set') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    const doc = await store.set(collection, id, body.data || {}, body.options || {});
+    const data = await authorizeDataOperation({ store, user, type: 'set', collection, id, data: body.data || {} });
+    const doc = await store.set(collection, id, data, body.options || {});
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/update') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
-    const doc = await store.update(collection, id, body.data || {});
+    const data = await authorizeDataOperation({ store, user, type: 'update', collection, id, data: body.data || {} });
+    const doc = await store.update(collection, id, data);
     return sendJson(response, 200, { doc });
   }
 
   if (url.pathname === '/api/data/delete') {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
+    await authorizeDataOperation({ store, user, type: 'delete', collection, id });
     await store.delete(collection, id);
     return sendJson(response, 200, { ok: true });
   }
 
   if (url.pathname === '/api/data/batch') {
     const operations = validateDataBatchOperations(body.operations || []);
-    const results = await store.batch(operations);
+    const authorizedOperations = await authorizeDataOperations({ store, user, operations });
+    const results = await store.batch(authorizedOperations);
     return sendJson(response, 200, { results });
   }
 
@@ -217,6 +223,90 @@ function validateDataBatchOperations(operations) {
   }
 
   return operations;
+}
+
+async function authorizeDataOperations({ store, user, operations }) {
+  const authorizedOperations = [];
+  for (const operation of operations) {
+    const data = await authorizeDataOperation({
+      store,
+      user,
+      type: operation.type,
+      collection: operation.collection,
+      id: operation.id,
+      data: operation.data || {},
+    });
+    authorizedOperations.push(data === undefined ? operation : { ...operation, data });
+  }
+  return authorizedOperations;
+}
+
+async function authorizeDataOperation({ store, user, type, collection, id, data }) {
+  if (collection !== 'projects') return data;
+
+  if (type === 'add') {
+    return normalizeProjectCreateData(data, user);
+  }
+
+  const existing = await store.get(collection, id);
+  if (!existing) {
+    if (type === 'set') return normalizeProjectCreateData(data, user);
+    throwDataError(404, 'data/not-found', 'Project not found.');
+  }
+
+  if (!canWriteProject(existing, user)) {
+    throwDataError(403, 'data/forbidden', 'You do not have permission to modify this project.');
+  }
+
+  if (type === 'delete') return undefined;
+  return preserveProjectOwner(data, existing, type);
+}
+
+function normalizeProjectCreateData(data, user) {
+  return {
+    ...(data || {}),
+    creatorId: user.uid,
+  };
+}
+
+function preserveProjectOwner(data, existing, type) {
+  if (Object.hasOwn(data || {}, 'creatorId') && data.creatorId !== existing.creatorId) {
+    throwDataError(403, 'data/forbidden', 'Project ownership cannot be changed.');
+  }
+  if (type === 'set') {
+    return {
+      ...(data || {}),
+      creatorId: existing.creatorId,
+    };
+  }
+  return data || {};
+}
+
+function canWriteProject(project, user) {
+  return project.creatorId === user.uid || isAdminUser(user);
+}
+
+function isAdminUser(user) {
+  const email = normalizeEmail(user?.email);
+  if (!email) return false;
+  return adminEmails().includes(email);
+}
+
+function adminEmails() {
+  const raw = process.env.ATMOSTFAIR_ADMIN_EMAILS;
+  if (raw === undefined) return DEFAULT_ADMIN_EMAILS;
+  return raw.split(',').map(normalizeEmail).filter(Boolean);
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function throwDataError(status, code, message) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  throw error;
 }
 
 async function requireUser(request, auth) {
