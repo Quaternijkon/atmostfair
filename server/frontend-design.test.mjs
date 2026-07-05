@@ -582,6 +582,56 @@ test('paused and finished game and chat workspaces keep direct writes read-only'
   assert.match(files.chat, /disabled=\{isStopped \|\| !inputText\.trim\(\)\}/, 'Chat send control should be disabled for stopped or finished projects');
 });
 
+test('read-only project write attempts show localized app feedback', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    ui: await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8'),
+  };
+
+  assert.ok(TRANSLATIONS.en.projectReadOnly, 'missing English project read-only feedback');
+  assert.ok(TRANSLATIONS.zh.projectReadOnly, 'missing Chinese project read-only feedback');
+  assert.match(
+    files.ui,
+    /typeof children === ['"]function['"][\s\S]{0,160}children\(contextValue\)/,
+    'UIProvider should support render-prop children so app-level actions can use toast feedback',
+  );
+  assert.match(
+    files.app,
+    /const requireProjectWritable = \(projectId, showToast\) => \{[\s\S]{0,360}isProjectWritable\(projectId\)[\s\S]{0,360}showToast\(t\('projectReadOnly'\), 'info'\)[\s\S]{0,120}return false;/,
+    'App should centralize project read-only feedback instead of silently returning',
+  );
+  assert.match(
+    files.app,
+    /<UIProvider t=\{t\}>\s*\{\(\{ showToast \}\) =>/,
+    'App should receive toast feedback from UIProvider where actions are assembled',
+  );
+
+  for (const action of [
+    'handleAddItem',
+    'handleUpdateVotingConfig',
+    'handleCreateRoom',
+    'handleJoinQueue',
+    'handleGenerateQueue',
+    'handleJoinRoulette',
+    'handleUpdateRouletteConfig',
+    'handleSaveRouletteResult',
+    'handleRecordWinner',
+    'handleCreateGatherField',
+    'handleSubmitGather',
+    'handleUpdateScheduleConfig',
+    'handleSubmitSchedule',
+    'handleUpdateBookingConfig',
+    'handleCreateBookingSlot',
+    'handleCreateClaimItem',
+  ]) {
+    assert.match(
+      files.app,
+      new RegExp(`${action}: async[\\s\\S]{0,280}requireProjectWritable\\(projectId, showToast\\)`),
+      `${action} should show app feedback when a project is read-only`,
+    );
+  }
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

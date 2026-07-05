@@ -96,6 +96,7 @@ export const TRANSLATIONS = {
     pinProject: "Pin {title}",
     unpinProject: "Unpin {title}",
     pinnedProject: "Pinned project",
+    projectReadOnly: "This project is read-only. Resume or restore it before making changes.",
     // Voting Module
     voting: "Collect",
     votingDesc: "Real-time polls & ranked choices",
@@ -610,6 +611,7 @@ export const TRANSLATIONS = {
     pinProject: "置顶 {title}",
     unpinProject: "取消置顶 {title}",
     pinnedProject: "已置顶项目",
+    projectReadOnly: "该项目当前为只读状态，请先恢复或取消归档后再修改。",
     // Voting Module
     voting: "Collect",
     votingDesc: "实时投票与排序选择",

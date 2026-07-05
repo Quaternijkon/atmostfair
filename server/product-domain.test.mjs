@@ -1165,6 +1165,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.doesNotMatch(app, /Promise\.all\([\s\S]{0,240}childOperations[\s\S]{0,240}addDoc/, 'Project duplication should not leave partial copies through concurrent child writes');
   assert.match(app, /const LOCKED_PROJECT_STATUSES = new Set\(\['stopped', 'finished'\]\);/, 'App should define locked project statuses once');
   assert.match(app, /const isProjectWritable = \(projectId\) => \{[\s\S]{0,260}!project\.archived[\s\S]{0,160}!LOCKED_PROJECT_STATUSES\.has\(project\.status\)/, 'App should expose a shared archived/stopped/finished write guard');
+  assert.match(app, /const requireProjectWritable = \(projectId, showToast\) => \{[\s\S]{0,260}isProjectWritable\(projectId\)/, 'App should route user-triggered write guards through a shared feedback helper');
   for (const action of [
     'handleAddItem',
     'handleUpdateVotingConfig',
@@ -1183,7 +1184,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'handleCreateBookingSlot',
     'handleCreateClaimItem',
   ]) {
-    assert.match(app, new RegExp(`${action}: async[\\s\\S]{0,260}isProjectWritable\\(projectId\\)`), `${action} should reject stopped or finished projects before writing`);
+    assert.match(app, new RegExp(`${action}: async[\\s\\S]{0,280}requireProjectWritable\\(projectId, showToast\\)`), `${action} should reject stopped or finished projects before writing`);
   }
   for (const [action, collection, projectExpression] of [
     ['handleDeleteItem', 'items', 'item\\.projectId'],
@@ -1201,7 +1202,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   ]) {
     assert.match(
       app,
-      new RegExp(`${action}: async[\\s\\S]{0,320}${collection}\\.find[\\s\\S]{0,320}isProjectWritable\\(${projectExpression}\\)`),
+      new RegExp(`${action}: async[\\s\\S]{0,320}${collection}\\.find[\\s\\S]{0,320}requireProjectWritable\\(${projectExpression}, showToast\\)`),
       `${action} should resolve the child document project and reject stopped or finished projects before writing`,
     );
   }

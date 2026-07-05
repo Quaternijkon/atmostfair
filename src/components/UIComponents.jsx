@@ -97,9 +97,12 @@ export const UIProvider = ({ children, t = (key) => key }) => {
         setDialog(prev => ({ ...prev, isOpen: false }));
     }, []);
 
+    const contextValue = { showToast, confirm, closeDialog };
+    const renderedChildren = typeof children === 'function' ? children(contextValue) : children;
+
     return (
-        <UIContext.Provider value={{ showToast, confirm, closeDialog }}>
-            {children}
+        <UIContext.Provider value={contextValue}>
+            {renderedChildren}
             {/* Render Toasts */}
             <div className="fixed bottom-0 left-0 right-0 pointer-events-none flex flex-col items-center gap-2 p-4 z-[100]">
                 {toasts.map(toast => (
