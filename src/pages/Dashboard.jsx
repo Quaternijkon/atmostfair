@@ -48,6 +48,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const [newPassword, setNewPassword] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [isTitleTouched, setIsTitleTouched] = useState(false);
   
   // Unlock Password State
   const [passwordPromptProject, setPasswordPromptProject] = useState(null);
@@ -130,6 +131,9 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
     sortKey,
   });
 
+  const createTitleError = selectedModule && (isTitleTouched || newTitle.length > 0) && !newTitle.trim()
+    ? t('projectTitleRequired')
+    : '';
   const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
   const handleClearFilters = () => {
     setSearchTerm('');
@@ -157,6 +161,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
       setNewTitle('');
       setNewPassword('');
       setSelectedModule(null);
+      setIsTitleTouched(false);
     } catch {
       setCreateError(t('createProjectFailed'));
     } finally {
@@ -417,7 +422,24 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                  <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1">
                     <label className="app-label">{t('projTitle')}</label>
-                    <input type="text" placeholder={t('projTitlePlaceholder')} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="app-input" required maxLength={PROJECT_TITLE_MAX_LENGTH} disabled={isCreatingProject} />
+                    <input
+                      type="text"
+                      placeholder={t('projTitlePlaceholder')}
+                      value={newTitle}
+                      onChange={e => { setNewTitle(e.target.value); setCreateError(''); }}
+                      onBlur={() => setIsTitleTouched(true)}
+                      className="app-input"
+                      required
+                      maxLength={PROJECT_TITLE_MAX_LENGTH}
+                      disabled={isCreatingProject}
+                      aria-invalid={Boolean(createTitleError)}
+                      aria-describedby={createTitleError ? 'create-project-title-error' : undefined}
+                    />
+                    {createTitleError && (
+                      <p id="create-project-title-error" role="alert" aria-live="assertive" className="mt-2 text-xs font-medium text-google-red">
+                        {createTitleError}
+                      </p>
+                    )}
                   </div>
                   <div className="w-full md:w-1/3">
                     <label className="app-label">{t('creatorName')}</label>
@@ -433,7 +455,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                     {isCreatingProject ? t('processing') : t('createBtn', { label: selectedModule.label })}
                   </button>
                 </div>
-                {createError && <p className="text-sm font-medium text-google-red">{createError}</p>}
+                {createError && <p id="create-project-error" role="alert" aria-live="assertive" className="text-sm font-medium text-google-red">{createError}</p>}
               </div>
             )}
           </form>

@@ -307,6 +307,26 @@ test('dashboard create flow prevents duplicate submissions and preserves drafts 
   assert.match(files.app, /return \{ ok: false \}/, 'Failed project creation should report failure to keep the dashboard draft open');
 });
 
+test('dashboard create form exposes recoverable and accessible validation errors', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  for (const key of ['projectTitleRequired', 'createProjectFailed']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(dashboard, /\[isTitleTouched,\s*setIsTitleTouched\]\s*=\s*useState\(false\)/, 'Dashboard should track whether the project title was reviewed');
+  assert.match(dashboard, /const createTitleError = selectedModule[\s\S]{0,220}t\('projectTitleRequired'\)/, 'Whitespace-only project titles should produce a localized inline error');
+  assert.match(dashboard, /onBlur=\{\(\) => setIsTitleTouched\(true\)\}/, 'Title validation should run when the user leaves the title field');
+  assert.match(dashboard, /aria-invalid=\{Boolean\(createTitleError\)\}/, 'Title input should expose invalid state');
+  assert.match(dashboard, /aria-describedby=\{createTitleError \? 'create-project-title-error' : undefined\}/, 'Title input should reference the inline validation error');
+  assert.match(dashboard, /id="create-project-title-error" role="alert" aria-live="assertive"/, 'Title validation error should be announced');
+  assert.match(dashboard, /id="create-project-error" role="alert" aria-live="assertive"/, 'Create failure should be announced');
+  assert.match(dashboard, /setCreateError\(''\)/, 'Create form edits should be able to clear a stale create failure');
+  assert.doesNotMatch(dashboard, /alert\(/, 'Create flow should not use native alerts');
+  assert.doesNotMatch(dashboard, /prompt\(/, 'Create flow should not use native prompts');
+});
+
 test('dashboard opens the newly created project after a successful create', async () => {
   const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
 
