@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { CalendarClock, CheckSquare, Plus, X, Search, ChartLine, Lock } from './Icons';
+import { CalendarClock, CheckSquare, X, ChartLine, Lock } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
+import { createScheduleRecommendationSummary } from '../lib/projectDomain';
 import { addDaysIsoDate, nowMs, todayIsoDate } from '../lib/time';
 import { useUI } from './UIContext';
 
@@ -20,7 +21,6 @@ function createTimeRange(date, ranges) {
 }
 
 export default function ScheduleView({ user, isAdmin, project, submissions, isStopped, isFinished, isOwner, actions, t }) {
-  const [editing, setEditing] = useState(false);
   const [viewHeatmap, setViewHeatmap] = useState(false);
   const { showToast } = useUI();
   const appLocale = getAppLocale(t);
@@ -65,7 +65,6 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
     }
     
     actions.handleUpdateScheduleConfig(project.id, config);
-    setEditing(false);
   };
 
   const handleSubmit = () => {
@@ -136,11 +135,22 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   }, [submissions, config.mode]);
 
   const maxCount = Math.max(...Object.values(heatmapData), 1);
-  const getOpactiy = (count) => count ? (count / maxCount) : 0;
   const getColor = (count) => {
       if (!count) return 'bg-m3-surface-container';
       const alpha = Math.max(0.1, count / maxCount);
       return `rgba(66, 133, 244, ${alpha})`; // Google Blue with alpha
+  };
+
+  const scheduleSummary = useMemo(
+      () => createScheduleRecommendationSummary(submissions, config, 3),
+      [submissions, config],
+  );
+
+  const formatRecommendationLabel = (recommendation) => {
+      const dateLabel = formatDate(recommendation.date, { weekday: 'short', month: 'numeric', day: 'numeric' });
+      if (config.mode === 'half') return `${dateLabel} · ${t(recommendation.slot)}`;
+      if (config.mode === 'time') return `${dateLabel} · ${recommendation.start} - ${recommendation.end}`;
+      return dateLabel;
   };
 
 
@@ -193,7 +203,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
       );
   }
 
-  const showStats = isOwner || isFinished || isDeadlinePassed || viewHeatmap;
+  const showStats = isOwner || isAdmin || isFinished || isDeadlinePassed || viewHeatmap;
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -209,7 +219,45 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                     <ChartLine className="w-4 h-4" /> {viewHeatmap ? t('closeHeatmap') : t('viewHeatmap')}
                 </button>
             )}
-        </div>
+            </div>
+
+            {showStats && (
+                <section className="app-card p-4 sm:p-5" aria-label={t('scheduleRecommendations')}>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                        <h3 className="flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+                            <ChartLine className="h-4 w-4 text-google-blue" />
+                            {t('scheduleRecommendations')}
+                        </h3>
+                        <span className="app-chip app-chip-blue py-1 text-xs">{scheduleSummary.participantCount}</span>
+                    </div>
+                    {scheduleSummary.recommendations.length > 0 ? (
+                        <div className="grid gap-2 sm:grid-cols-3">
+                            {scheduleSummary.recommendations.map((recommendation, index) => {
+                                const percent = Math.round(recommendation.coverage * 100);
+                                return (
+                                    <div key={recommendation.key} className="rounded-xl border border-m3-outline-variant/40 bg-m3-surface-container/45 p-3">
+                                        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-google-blue">
+                                            {index === 0 ? t('bestTime') : `#${index + 1}`}
+                                        </div>
+                                        <div className="text-sm font-medium text-m3-on-surface">{formatRecommendationLabel(recommendation)}</div>
+                                        <div className="mt-1 text-xs text-m3-on-surface-variant">
+                                            {t('participantCoverage', {
+                                                count: recommendation.count,
+                                                total: recommendation.participantCount,
+                                                percent,
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="rounded-xl border border-dashed border-m3-outline-variant/60 bg-m3-surface-container/30 p-3 text-sm text-m3-on-surface-variant">
+                            {t('noRecommendations')}
+                        </div>
+                    )}
+                </section>
+            )}
 
         {/* --- Date Mode Grid --- */}
         {config.mode === 'date' && (

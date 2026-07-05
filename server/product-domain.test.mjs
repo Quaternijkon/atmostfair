@@ -10,6 +10,7 @@ import {
   createGatherFieldData,
   createQueueJoinData,
   createTeamJoinMember,
+  createScheduleRecommendationSummary,
   createVoteToggleOperations,
   PROJECT_CASCADE_COLLECTIONS,
 } from '../src/lib/projectDomain.js';
@@ -231,6 +232,52 @@ test('schedule submission guard updates an existing response instead of duplicat
       availability,
       submittedAt: 3701,
     },
+  });
+});
+
+test('schedule recommendation summary ranks date availability and filters stale values', () => {
+  const config = { mode: 'date', start: '2026-07-05', end: '2026-07-07' };
+  const submissions = [
+    { uid: 'u1', availability: ['2026-07-05', '2026-07-06'] },
+    { uid: 'u2', availability: ['2026-07-05'] },
+    { uid: 'u3', availability: ['2026-07-07', 'not-a-date', '2026-07-09'] },
+  ];
+
+  assert.deepEqual(createScheduleRecommendationSummary(submissions, config, 3), {
+    participantCount: 3,
+    recommendations: [
+      { key: '2026-07-05', date: '2026-07-05', count: 2, participantCount: 3, coverage: 2 / 3 },
+      { key: '2026-07-06', date: '2026-07-06', count: 1, participantCount: 3, coverage: 1 / 3 },
+      { key: '2026-07-07', date: '2026-07-07', count: 1, participantCount: 3, coverage: 1 / 3 },
+    ],
+  });
+});
+
+test('schedule recommendation summary supports half-day slots and time buckets', () => {
+  const halfConfig = { mode: 'half', start: '2026-07-05', end: '2026-07-06' };
+  assert.deepEqual(createScheduleRecommendationSummary([
+    { uid: 'u1', availability: ['2026-07-05_morning', '2026-07-05_evening'] },
+    { uid: 'u2', availability: ['2026-07-05_morning', '2026-07-06_morning'] },
+    { uid: 'u3', availability: ['2026-07-06_late', '2026-07-08_morning'] },
+  ], halfConfig, 2), {
+    participantCount: 3,
+    recommendations: [
+      { key: '2026-07-05_morning', date: '2026-07-05', slot: 'morning', count: 2, participantCount: 3, coverage: 2 / 3 },
+      { key: '2026-07-05_evening', date: '2026-07-05', slot: 'evening', count: 1, participantCount: 3, coverage: 1 / 3 },
+    ],
+  });
+
+  const timeConfig = { mode: 'time', start: '2026-07-05', end: '2026-07-05' };
+  assert.deepEqual(createScheduleRecommendationSummary([
+    { uid: 'u1', availability: [{ date: '2026-07-05', start: '09:00', end: '10:00' }] },
+    { uid: 'u2', availability: [{ date: '2026-07-05', start: '09:30', end: '10:30' }] },
+    { uid: 'u3', availability: [{ date: '2026-07-06', start: '09:30', end: '10:00' }, { date: '2026-07-05', start: '11:00', end: '10:00' }] },
+  ], timeConfig, 2), {
+    participantCount: 3,
+    recommendations: [
+      { key: '2026-07-05_09:30', date: '2026-07-05', start: '09:30', end: '10:00', count: 2, participantCount: 3, coverage: 2 / 3 },
+      { key: '2026-07-05_09:00', date: '2026-07-05', start: '09:00', end: '09:30', count: 1, participantCount: 3, coverage: 1 / 3 },
+    ],
   });
 });
 

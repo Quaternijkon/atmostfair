@@ -16,6 +16,7 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 ];
 
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
+const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
 
 export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
@@ -131,6 +132,59 @@ export function createScheduleSubmissionWrite(existingSubmissions, projectId, us
       submittedAt,
     },
   };
+}
+
+export function createScheduleRecommendationSummary(submissions, config, limit = 3) {
+  const participantCount = Array.isArray(submissions) ? submissions.length : 0;
+  if (!participantCount || !config?.mode) {
+    return { participantCount, recommendations: [] };
+  }
+
+  const counts = new Map();
+  const addCount = (key, meta) => {
+    const current = counts.get(key);
+    counts.set(key, current ? { ...current, count: current.count + 1 } : { ...meta, key, count: 1 });
+  };
+
+  for (const submission of submissions) {
+    const availability = Array.isArray(submission?.availability) ? submission.availability : [];
+    if (config.mode === 'date') {
+      for (const date of availability) {
+        if (!isValidDateOnly(date) || !isDateInConfigRange(date, config)) continue;
+        addCount(date, { date });
+      }
+    } else if (config.mode === 'half') {
+      for (const key of availability) {
+        const [date, slot] = String(key || '').split('_');
+        if (!isValidDateOnly(date) || !HALF_DAY_SLOTS.has(slot) || !isDateInConfigRange(date, config)) continue;
+        addCount(`${date}_${slot}`, { date, slot });
+      }
+    } else if (config.mode === 'time') {
+      for (const range of availability) {
+        if (!range || !isValidDateOnly(range.date) || !isDateInConfigRange(range.date, config)) continue;
+        const startMinutes = parseTimeToMinutes(range.start);
+        const endMinutes = parseTimeToMinutes(range.end);
+        if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) continue;
+        for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+          if (minutes < startMinutes || minutes >= endMinutes) continue;
+          const start = formatMinutes(minutes);
+          const end = formatMinutes(minutes + 30);
+          addCount(`${range.date}_${start}`, { date: range.date, start, end });
+        }
+      }
+    }
+  }
+
+  const recommendations = [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, Math.max(0, Number.parseInt(limit, 10) || 0))
+    .map((entry) => ({
+      ...entry,
+      participantCount,
+      coverage: entry.count / participantCount,
+    }));
+
+  return { participantCount, recommendations };
 }
 
 export function createClaimToggleData(item, user, userName, claimedAt) {
@@ -369,6 +423,27 @@ function isValidDateOnly(value) {
   return date.getUTCFullYear() === Number(year)
     && date.getUTCMonth() === Number(month) - 1
     && date.getUTCDate() === Number(day);
+}
+
+function isDateInConfigRange(date, config) {
+  if (config.start && date < config.start) return false;
+  if (config.end && date > config.end) return false;
+  return true;
+}
+
+function parseTimeToMinutes(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+  if (!match) return Number.NaN;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return Number.NaN;
+  return hours * 60 + minutes;
+}
+
+function formatMinutes(value) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function createVoteOperation(id, action, uid) {

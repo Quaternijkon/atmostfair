@@ -282,6 +282,27 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   assert.doesNotMatch(files.roulette, />Speed<|'MAX'|'Winner'|Project Stopped|You have joined|Your entry has been recorded|>Name<|>Val</, 'Roulette visible utility copy should be localized');
 });
 
+test('schedule workspace exposes localized owner recommendation summary', async () => {
+  const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
+
+  for (const key of [
+    'scheduleRecommendations',
+    'bestTime',
+    'participantCoverage',
+    'noRecommendations',
+  ]) {
+    assert.match(schedule, new RegExp(`t\\('${key}'(?:,|\\))`), `Schedule should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(schedule, /createScheduleRecommendationSummary/, 'Schedule should derive recommendations through the domain helper');
+  assert.match(schedule, /scheduleSummary\.recommendations\.map/, 'Schedule should render recommendation rows from computed summary data');
+  assert.match(schedule, /participantCoverage/, 'Schedule recommendation rows should show coverage');
+  assert.match(schedule, /app-card[\s\S]{0,500}scheduleRecommendations/, 'Recommendation summary should use the shared app surface');
+  assert.doesNotMatch(schedule, />Recommendations<|>Best time<|>No recommendations/, 'Schedule recommendation copy should be localized');
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
