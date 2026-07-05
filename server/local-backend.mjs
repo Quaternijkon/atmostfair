@@ -37,6 +37,7 @@ const DATA_API_COLLECTIONS = new Set([
 ]);
 const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
+const PROJECT_STATUSES = new Set(['active', 'stopped', 'finished']);
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
@@ -341,7 +342,11 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   }
 
   if (type === 'delete') return undefined;
-  return preserveProjectOwner(data, existing, type);
+  return normalizeProjectStateData({
+    data: preserveProjectOwner(data, existing, type),
+    existing,
+    type,
+  });
 }
 
 async function authorizeAnnouncementOperation({ store, user, type, id, data }) {
@@ -2028,10 +2033,66 @@ async function normalizeProjectCreateData({ store, data, user }) {
   }
 
   return {
-    ...projectData,
+    ...normalizeProjectStateData({
+      data: projectData,
+      existing: null,
+      type: 'add',
+    }),
     creatorId: user.uid,
     password: String(password || '').trim(),
   };
+}
+
+function normalizeProjectStateData({ data, existing, type }) {
+  const normalized = { ...(data || {}) };
+
+  if (Object.hasOwn(normalized, 'status')) {
+    assertValidProjectStatus(normalized.status);
+  } else if (type === 'add') {
+    normalized.status = 'active';
+  } else if (type === 'set') {
+    normalized.status = PROJECT_STATUSES.has(existing?.status) ? existing.status : 'active';
+  }
+
+  if (Object.hasOwn(normalized, 'archived')) {
+    assertValidProjectArchived(normalized.archived);
+  } else if (type === 'add') {
+    normalized.archived = false;
+  } else if (type === 'set') {
+    normalized.archived = Boolean(existing?.archived);
+  }
+
+  if (Object.hasOwn(normalized, 'archivedAt')) {
+    assertValidProjectArchivedAt(normalized.archivedAt);
+  } else if (type === 'add') {
+    normalized.archivedAt = null;
+  } else if (type === 'set') {
+    normalized.archivedAt = existing?.archivedAt ?? null;
+  }
+
+  if (Object.hasOwn(normalized, 'archived') && normalized.archived === false) {
+    normalized.archivedAt = null;
+  }
+
+  return normalized;
+}
+
+function assertValidProjectStatus(status) {
+  if (!PROJECT_STATUSES.has(status)) {
+    throwDataError(400, 'data/invalid-project-status', 'Project status is invalid.');
+  }
+}
+
+function assertValidProjectArchived(archived) {
+  if (typeof archived !== 'boolean') {
+    throwDataError(400, 'data/invalid-project-archive', 'Project archive state is invalid.');
+  }
+}
+
+function assertValidProjectArchivedAt(archivedAt) {
+  if (archivedAt !== null && (!Number.isFinite(archivedAt) || archivedAt < 0)) {
+    throwDataError(400, 'data/invalid-project-archive', 'Project archive timestamp is invalid.');
+  }
 }
 
 function preserveProjectOwner(data, existing, type) {

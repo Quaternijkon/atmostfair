@@ -418,6 +418,106 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
+test('HTTP data API rejects invalid project state metadata without partial writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+
+      const invalidCreate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Impossible', status: 'banana', createdAt: 1 },
+        },
+      });
+      assert.equal(invalidCreate.status, 400);
+      assert.equal(invalidCreate.body.error.code, 'data/invalid-project-status');
+      assert.deepEqual(await store.list('projects'), []);
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Valid', status: 'active', createdAt: 2 },
+        },
+      });
+
+      const invalidStatusUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { status: 'paused' },
+        },
+      });
+      assert.equal(invalidStatusUpdate.status, 400);
+      assert.equal(invalidStatusUpdate.body.error.code, 'data/invalid-project-status');
+      assert.equal((await store.get('projects', project.doc.id)).status, 'active');
+
+      const invalidArchiveUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { archived: 'yes', archivedAt: 'later' },
+        },
+      });
+      assert.equal(invalidArchiveUpdate.status, 400);
+      assert.equal(invalidArchiveUpdate.body.error.code, 'data/invalid-project-archive');
+      assert.equal((await store.get('projects', project.doc.id)).archived, false);
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            {
+              type: 'add',
+              collection: 'project_activities',
+              data: {
+                projectId: project.doc.id,
+                type: PROJECT_ACTIVITY_TYPES.projectBriefUpdated,
+                subject: 'partial write',
+                createdAt: 3,
+              },
+            },
+            {
+              type: 'update',
+              collection: 'projects',
+              id: project.doc.id,
+              data: { status: 'unknown' },
+            },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 400);
+      assert.equal(blockedBatch.body.error.code, 'data/invalid-project-status');
+      assert.equal((await store.get('projects', project.doc.id)).status, 'active');
+      assert.deepEqual(await store.list('project_activities'), []);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API limits user document writes to the current user and preserves identity fields', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
