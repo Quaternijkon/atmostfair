@@ -15,6 +15,7 @@ import {
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds, normalizeRecentProjectIds } from '../src/lib/dashboardDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
+import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
 import {
   PROJECT_CREATOR_NAME_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
@@ -427,6 +428,9 @@ async function authorizeUserOperation({ store, user, type, id, data }) {
 
 function normalizeUserData(data) {
   const normalized = { ...(data || {}) };
+  if (Object.hasOwn(normalized, 'displayName')) {
+    normalized.displayName = normalizeUserDisplayName(normalized.displayName);
+  }
   if (Object.hasOwn(normalized, 'pinnedProjectIds')) {
     if (!Array.isArray(normalized.pinnedProjectIds)) {
       throwDataError(400, 'data/invalid-user-settings', 'Pinned projects must be a list.');

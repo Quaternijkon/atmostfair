@@ -1,4 +1,5 @@
 import { apiRequest, getAuthToken, setAuthToken } from './apiClient';
+import { normalizeUserDisplayName } from './userDomain';
 
 export const auth = {
   currentUser: null,
@@ -29,7 +30,7 @@ export async function createUserWithEmailAndPassword(_auth, email, password) {
 }
 
 export async function signInAnonymously(_auth, displayName) {
-  const cleanName = String(displayName || '').trim();
+  const cleanName = normalizeUserDisplayName(displayName);
   if (!cleanName) throw authError('auth/missing-display-name', 'Missing display name.');
   const session = await apiRequest('/api/auth/guest', {
     body: { displayName: cleanName },
@@ -49,8 +50,11 @@ export async function signOut() {
 }
 
 export async function updateProfile(user, profile) {
+  const cleanProfile = profile?.displayName !== undefined
+    ? { ...profile, displayName: normalizeUserDisplayName(profile.displayName) }
+    : profile;
   const result = await apiRequest('/api/auth/profile', {
-    body: profile,
+    body: cleanProfile,
   });
   const updatedUser = normalizeUser(result.user);
   auth.currentUser = updatedUser;
@@ -91,10 +95,11 @@ function applySession(session) {
 
 function normalizeUser(user) {
   if (!user) return null;
+  const displayName = normalizeUserDisplayName(user.displayName, user.email?.split('@')[0]);
   return {
     uid: user.uid,
     email: user.email ?? null,
-    displayName: user.displayName || user.email?.split('@')[0] || '',
+    displayName,
     isAnonymous: Boolean(user.isAnonymous),
     metadata: {
       creationTime: user.metadata?.creationTime || new Date().toISOString(),

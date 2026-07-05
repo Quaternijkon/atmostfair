@@ -13,6 +13,7 @@ import {
   PROJECT_CREATOR_NAME_MAX_LENGTH,
   createProjectCascadeDeleteOperations,
 } from '../src/lib/projectDomain.js';
+import { USER_DISPLAY_NAME_MAX_LENGTH } from '../src/lib/userDomain.js';
 
 async function withTempStore(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'atmostfair-'));
@@ -56,6 +57,16 @@ test('local auth supports email password accounts and guest sessions only', asyn
     assert.equal(guest.user.displayName, 'Visitor');
     assert.equal(guest.user.isAnonymous, true);
     assert.ok(guest.token);
+
+    const longDisplayName = 'N'.repeat(USER_DISPLAY_NAME_MAX_LENGTH + 12);
+    const named = await auth.registerEmail('named@example.com', 'secret123', longDisplayName);
+    assert.equal(named.user.displayName, 'N'.repeat(USER_DISPLAY_NAME_MAX_LENGTH));
+
+    const longGuest = await auth.createGuest(longDisplayName);
+    assert.equal(longGuest.user.displayName, 'N'.repeat(USER_DISPLAY_NAME_MAX_LENGTH));
+
+    const updated = await auth.updateProfile(created.user.uid, { displayName: longDisplayName });
+    assert.equal(updated.displayName, 'N'.repeat(USER_DISPLAY_NAME_MAX_LENGTH));
 
     await assert.rejects(
       () => auth.updateProfile(created.user.uid, { email: 'not-an-email' }),
@@ -666,10 +677,10 @@ test('HTTP data API limits user document writes to the current user and preserve
         body: {
           collection: 'users',
           id: alice.user.uid,
-          data: { displayName: 'Alice Updated' },
+          data: { displayName: 'A'.repeat(USER_DISPLAY_NAME_MAX_LENGTH + 20) },
         },
       });
-      assert.equal(ownUpdate.doc.displayName, 'Alice Updated');
+      assert.equal(ownUpdate.doc.displayName, 'A'.repeat(USER_DISPLAY_NAME_MAX_LENGTH));
 
       const pinUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
         method: 'POST',
@@ -753,7 +764,7 @@ test('HTTP data API limits user document writes to the current user and preserve
       });
       assert.equal(blockedBatch.status, 403);
       assert.equal(blockedBatch.body.error.code, 'data/forbidden');
-      assert.equal((await store.get('users', alice.user.uid)).displayName, 'Alice Updated');
+      assert.equal((await store.get('users', alice.user.uid)).displayName, 'A'.repeat(USER_DISPLAY_NAME_MAX_LENGTH));
 
       const readable = await fetchJson(`${baseUrl}/api/data/list`, {
         method: 'POST',

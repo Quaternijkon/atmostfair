@@ -850,6 +850,8 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
   assert.match(files.login, /setError\(t\('invalidEmail'\)\)/, 'Invalid email should use localized frontend copy');
   assert.match(files.login, /auth\/invalid-email[\s\S]{0,160}t\('invalidEmail'\)/, 'Backend invalid-email errors should use localized copy');
   assert.match(files.login, /auth\/weak-password[\s\S]{0,160}t\('weakPassword'\)/, 'Backend weak-password errors should use localized copy');
+  assert.match(files.login, /USER_DISPLAY_NAME_MAX_LENGTH/, 'Guest nickname input should share the user display-name limit');
+  assert.match(files.login, /maxLength=\{USER_DISPLAY_NAME_MAX_LENGTH\}/, 'Guest nickname input should cap names before submit');
   assert.match(files.login, /t\('actionFailed'/, 'Login failures should use a localized action-failed template');
   assert.match(files.login, /status\s*>=\s*500[\s\S]{0,160}t\('authServiceUnavailable'\)/, 'Login should replace server outage responses with localized service-unavailable copy');
   assert.doesNotMatch(files.login, /setError\(e\.message\)/, 'Login should not expose raw transport errors such as Request failed with status 502');

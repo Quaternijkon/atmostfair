@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 
+import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
+
 const scrypt = promisify(crypto.scrypt);
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -42,7 +44,7 @@ export function createAuthService({ store, sessionSecret, now = () => Date.now()
     const user = await upsertUser(uid, {
       uid,
       email: normalizedEmail,
-      displayName: displayName || normalizedEmail.split('@')[0],
+      displayName: normalizeUserDisplayName(displayName, normalizedEmail.split('@')[0]),
       isAnonymous: false,
       createdAt,
       lastSeen: createdAt,
@@ -65,7 +67,7 @@ export function createAuthService({ store, sessionSecret, now = () => Date.now()
   }
 
   async function createGuest(displayName) {
-    const cleanName = String(displayName || '').trim();
+    const cleanName = normalizeUserDisplayName(displayName);
     if (!cleanName) throw authError('auth/missing-display-name', 'Guest display name is required.');
 
     const uid = crypto.randomUUID();
@@ -88,7 +90,7 @@ export function createAuthService({ store, sessionSecret, now = () => Date.now()
     const updates = {
       lastSeen: now(),
     };
-    if (profile.displayName !== undefined) updates.displayName = String(profile.displayName).trim() || user.displayName;
+    if (profile.displayName !== undefined) updates.displayName = normalizeUserDisplayName(profile.displayName, user.displayName);
     if (profile.email !== undefined && !user.isAnonymous) {
       const normalizedEmail = normalizeEmail(profile.email);
       if (!isValidEmail(normalizedEmail)) throw authError('auth/invalid-email', 'Invalid email address.');
@@ -181,10 +183,11 @@ async function verifyPassword(password, account) {
 }
 
 function publicUser(user) {
+  const displayName = normalizeUserDisplayName(user.displayName, user.email?.split('@')[0]);
   return {
     uid: user.uid,
     email: user.email ?? null,
-    displayName: user.displayName || user.email?.split('@')[0] || null,
+    displayName: displayName || null,
     isAnonymous: Boolean(user.isAnonymous),
     metadata: {
       creationTime: new Date(user.createdAt || Date.now()).toISOString(),

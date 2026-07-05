@@ -6,6 +6,7 @@ import {
   updateProfile
 } from '../lib/localAuth';
 import { auth } from '../lib/localAuth';
+import { normalizeUserDisplayName, USER_DISPLAY_NAME_MAX_LENGTH } from '../lib/userDomain';
 import AtmostfairLogo from '../components/Logo';
 
 export default function Login({ lang, setLang, t }) {
@@ -46,7 +47,7 @@ export default function Login({ lang, setLang, t }) {
         try {
           const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
           if (userCredential.user) {
-            await updateProfile(userCredential.user, { displayName: cleanEmail.split('@')[0] });
+            await updateProfile(userCredential.user, { displayName: normalizeUserDisplayName(cleanEmail.split('@')[0]) });
           }
         } catch (createError) {
           if (createError.code === 'auth/email-already-in-use') {
@@ -68,12 +69,13 @@ export default function Login({ lang, setLang, t }) {
   // Guest Login Handler
   const handleGuestLogin = async (e) => {
     e.preventDefault();
-    if (!guestName.trim()) return setError(t('setGuestName'));
+    const cleanGuestName = normalizeUserDisplayName(guestName);
+    if (!cleanGuestName) return setError(t('setGuestName'));
     setLoading(true);
     setError('');
     try {
-      const result = await signInAnonymously(auth, guestName.trim());
-      await updateProfile(result.user, { displayName: guestName.trim() });
+      const result = await signInAnonymously(auth, cleanGuestName);
+      await updateProfile(result.user, { displayName: cleanGuestName });
     } catch (e) {
       setError(authErrorMessage(t('guestLogin'), e));
     } finally {
@@ -170,10 +172,11 @@ export default function Login({ lang, setLang, t }) {
                 type="text"
                 required
                 value={guestName}
-                onChange={e => setGuestName(e.target.value)}
+                onChange={e => setGuestName(normalizeUserDisplayName(e.target.value))}
                 className="app-input"
                 placeholder={t('guestName')}
                 autoComplete="nickname"
+                maxLength={USER_DISPLAY_NAME_MAX_LENGTH}
                 aria-describedby={error ? 'auth-error' : undefined}
               />
               <button type="submit" disabled={loading} className="app-button-tonal whitespace-nowrap">
