@@ -16,8 +16,8 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
         <div className="flex items-center justify-between bg-google-red p-6 text-white">
           <div><div className="text-white/80 text-xs font-medium uppercase tracking-wider mb-1">{t('currentTeam')}</div><h2 className="text-2xl font-medium">{currentRoom.name}</h2></div>
           <div className="flex gap-2">
-            {(canManage && !isStopped) || isAdmin ? <button onClick={() => onDelete(currentRoom.id)} className="app-button bg-white/20 px-3 text-xs text-white hover:bg-white/30">{t('disbandTeam')}</button> : null}
-            <button onClick={() => onKick(currentRoom.id, currentRoom.members.find((m) => m.uid === user.uid))} className="app-button bg-white text-google-red hover:shadow-elevation-1">{t('leave')}</button>
+            {canManage && !isStopped ? <button onClick={() => onDelete(currentRoom.id)} className="app-button bg-white/20 px-3 text-xs text-white hover:bg-white/30">{t('disbandTeam')}</button> : null}
+            {!isStopped && <button onClick={() => onKick(currentRoom.id, currentRoom.members.find((m) => m.uid === user.uid))} className="app-button bg-white text-google-red hover:shadow-elevation-1">{t('leave')}</button>}
           </div>
         </div>
         <div className="p-6 grid gap-4 sm:grid-cols-2">
@@ -27,7 +27,7 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
                 <div className="w-8 h-8 rounded-full bg-google-red/20 text-google-red flex items-center justify-center font-bold text-xs">{m.name.charAt(0)}</div>
                 <div className="text-m3-on-surface font-medium">{m.name} {m.uid === currentRoom.ownerId && <span className="text-xs font-normal text-m3-on-surface-variant ml-1">({t('leader')})</span>}</div>
               </div>
-              {canManage && m.uid !== user.uid && (!isStopped || isAdmin) && <button onClick={() => onKick(currentRoom.id, m)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>}
+              {canManage && m.uid !== user.uid && !isStopped && <button onClick={() => onKick(currentRoom.id, m)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>}
             </div>
           ))}
         </div>

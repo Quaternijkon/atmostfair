@@ -464,6 +464,36 @@ test('paused and finished collaboration workspaces hide item deletion controls',
   );
 });
 
+test('paused and finished team workspaces hide membership mutation controls', async () => {
+  const team = await readFile(path.join(root, 'src/components/TeamView.jsx'), 'utf8');
+
+  assert.match(
+    team,
+    /canManage && !isStopped \? <button[\s\S]{0,220}onDelete\(currentRoom\.id\)/,
+    'Team disband should be hidden when the project is stopped or finished',
+  );
+  assert.doesNotMatch(
+    team,
+    /\(canManage && !isStopped\) \|\| isAdmin/,
+    'Team admins should not bypass the stopped/finished disband guard',
+  );
+  assert.match(
+    team,
+    /canManage && m\.uid !== user\.uid && !isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, m\)/,
+    'Team member kick controls should be hidden when the project is stopped or finished',
+  );
+  assert.doesNotMatch(
+    team,
+    /\(!isStopped \|\| isAdmin\)/,
+    'Team admins should not bypass the stopped/finished member kick guard',
+  );
+  assert.match(
+    team,
+    /!isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, currentRoom\.members\.find/,
+    'Team leave control should be hidden when the project is stopped or finished',
+  );
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
