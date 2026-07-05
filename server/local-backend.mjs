@@ -416,7 +416,7 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
   }
 
   if (isProjectLocked(project)) {
-    throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
+    throwDataError(409, 'data/project-locked', 'Project is paused, finished, or archived.');
   }
 
   if (collection === 'voting_items') {
@@ -1695,7 +1695,7 @@ async function normalizeNotificationCreateData({ store, user, data }) {
     const project = await store.get('projects', projectId);
     if (!project) throwDataError(404, 'data/project-not-found', 'Project not found.');
     if (!canWriteProject(project, user)) forbidden();
-    if (isProjectLocked(project)) throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
+    if (isProjectLocked(project)) throwDataError(409, 'data/project-locked', 'Project is paused, finished, or archived.');
     return {
       ...notification,
       recipientId,
@@ -2081,7 +2081,7 @@ function canDeleteProjectChild({ collection, doc, project, user }) {
 }
 
 function isProjectLocked(project) {
-  return LOCKED_PROJECT_STATUSES.has(project?.status);
+  return Boolean(project?.archived) || LOCKED_PROJECT_STATUSES.has(project?.status);
 }
 
 function isAdminUser(user) {

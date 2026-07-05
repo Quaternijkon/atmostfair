@@ -998,7 +998,7 @@ test('HTTP data API restricts notification creation to verified app events', asy
   });
 });
 
-test('HTTP data API rejects child writes against stopped and finished projects without partial writes', async () => {
+test('HTTP data API rejects child writes against stopped, finished, and archived projects without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
       store,
@@ -1036,6 +1036,14 @@ test('HTTP data API rejects child writes against stopped and finished projects w
         token: owner.token,
         body: { collection: 'projects', data: { title: 'Finished', status: 'finished', createdAt: 3 } },
       });
+      const archivedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Archived', status: 'active', archived: true, archivedAt: 4, createdAt: 4 },
+        },
+      });
 
       const activeItem = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
@@ -1072,6 +1080,20 @@ test('HTTP data API rejects child writes against stopped and finished projects w
       assert.equal(finishedAdd.status, 409);
       assert.equal(finishedAdd.body.error.code, 'data/project-locked');
       assert.deepEqual(await store.list('project_chats'), []);
+
+      const archivedAdd = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'voting_items',
+          data: { projectId: archivedProject.doc.id, title: 'Should not persist', creatorId: member.user.uid },
+        },
+      });
+      assert.equal(archivedAdd.status, 409);
+      assert.equal(archivedAdd.body.error.code, 'data/project-locked');
+      assert.deepEqual(await store.list('voting_items', {
+        filters: [{ field: 'projectId', op: '==', value: archivedProject.doc.id }],
+      }), []);
 
       const stoppedQueueEntry = await store.add('queue_participants', {
         projectId: stoppedProject.doc.id,

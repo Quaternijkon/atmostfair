@@ -218,7 +218,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const isArchived = Boolean(project.archived);
   const isStopped = project.status === 'stopped';
   const isFinished = project.status === 'finished';
-  const canEditBrief = hasAdminRights && !isStopped && !isFinished;
+  const canEditBrief = hasAdminRights && !isArchived && !isStopped && !isFinished;
   const canExportParticipants = hasAdminRights && supportsParticipantExport(project.type);
   const shortProjectId = project.id.slice(0, 8);
   const projectTypeLabel = {
@@ -345,7 +345,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
                  {isArchived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
                  <span className="hidden lg:inline">{isArchived ? t('restore') : t('archive')}</span>
                </button>
-               {!isFinished && (
+               {!isArchived && !isFinished && (
                  <button onClick={() => actions.handleToggleProjectStatus(project)} className={isStopped ? 'app-button-tonal' : 'app-button-quiet border border-m3-outline-variant/45'}>{isStopped ? t('resume') : t('pause')}</button>
                )}
                <button 

@@ -1164,7 +1164,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /commitProjectDuplicateWithRollback\(/, 'Project duplication should roll back the new project if child copies fail');
   assert.doesNotMatch(app, /Promise\.all\([\s\S]{0,240}childOperations[\s\S]{0,240}addDoc/, 'Project duplication should not leave partial copies through concurrent child writes');
   assert.match(app, /const LOCKED_PROJECT_STATUSES = new Set\(\['stopped', 'finished'\]\);/, 'App should define locked project statuses once');
-  assert.match(app, /const isProjectWritable = \(projectId\) => \{[\s\S]{0,260}!LOCKED_PROJECT_STATUSES\.has\(project\.status\)/, 'App should expose a shared stopped/finished write guard');
+  assert.match(app, /const isProjectWritable = \(projectId\) => \{[\s\S]{0,260}!project\.archived[\s\S]{0,160}!LOCKED_PROJECT_STATUSES\.has\(project\.status\)/, 'App should expose a shared archived/stopped/finished write guard');
   for (const action of [
     'handleAddItem',
     'handleUpdateVotingConfig',
@@ -1230,6 +1230,8 @@ test('project detail exposes an owner-editable project brief', async () => {
   assert.match(detail, /ProjectBriefCard/, 'Project detail should render a reusable project brief card');
   assert.match(detail, /project\.brief/, 'Project brief should read from the project document');
   assert.match(detail, /canEditBrief/, 'Project brief editing should be derived from owner/admin and writable state');
+  assert.match(detail, /canEditBrief = hasAdminRights && !isArchived && !isStopped && !isFinished/, 'Archived project briefs should stay read-only until restored');
+  assert.match(detail, /!isArchived && !isFinished && \(/, 'Archived projects should hide pause/resume write controls until restored');
   assert.match(detail, /isSavingBrief/, 'Project brief saves should expose async submit feedback');
   assert.match(detail, /disabled=\{briefTooLong \|\| isSavingBrief\}/, 'Project brief save should prevent duplicate submissions while saving');
   assert.match(detail, /actions\.handleUpdateProjectBrief/, 'Project brief saves should route through app actions');

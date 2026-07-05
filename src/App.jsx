@@ -118,7 +118,7 @@ function AppContent() {
   const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
   const isProjectWritable = (projectId) => {
     const project = projects.find((entry) => entry.id === projectId);
-    return Boolean(project && !LOCKED_PROJECT_STATUSES.has(project.status));
+    return Boolean(project && !project.archived && !LOCKED_PROJECT_STATUSES.has(project.status));
   };
 
   const loadProjectCascadeDocs = async (projectId) => {
