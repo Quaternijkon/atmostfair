@@ -244,21 +244,25 @@ function validateDataBatchOperations(operations) {
 
 async function authorizeDataOperations({ store, user, operations }) {
   const authorizedOperations = [];
+  const context = createAuthorizationContext();
   for (const operation of operations) {
     const data = await authorizeDataOperation({
       store,
       user,
+      context,
       type: operation.type,
       collection: operation.collection,
       id: operation.id,
       data: operation.data || {},
     });
-    authorizedOperations.push(data === undefined ? operation : { ...operation, data });
+    const authorizedOperation = data === undefined ? operation : { ...operation, data };
+    authorizedOperations.push(authorizedOperation);
+    await stageAuthorizedDataOperation({ store, context, operation: authorizedOperation });
   }
   return authorizedOperations;
 }
 
-async function authorizeDataOperation({ store, user, type, collection, id, data }) {
+async function authorizeDataOperation({ store, user, context, type, collection, id, data }) {
   if (collection === 'users') {
     return authorizeUserOperation({ store, user, type, id, data });
   }
@@ -281,7 +285,7 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
 
   const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
   if (projectField) {
-    return authorizeProjectChildOperation({ store, user, type, collection, id, data, projectField });
+    return authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField });
   }
 
   if (collection !== 'projects') return data;
@@ -290,7 +294,7 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
     return normalizeProjectCreateData(data, user);
   }
 
-  const existing = await store.get(collection, id);
+  const existing = await getProjectedDoc({ store, context, collection, id });
   if (!existing) {
     if (type === 'set') return normalizeProjectCreateData(data, user);
     throwDataError(404, 'data/not-found', 'Project not found.');
@@ -343,8 +347,8 @@ async function authorizeUserOperation({ store, user, type, id, data }) {
   return data || {};
 }
 
-async function authorizeProjectChildOperation({ store, user, type, collection, id, data, projectField }) {
-  const existing = type === 'add' ? null : await store.get(collection, id);
+async function authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField }) {
+  const existing = type === 'add' ? null : await getProjectedDoc({ store, context, collection, id });
   if (!existing && type !== 'add') {
     if (type !== 'set') throwDataError(404, 'data/not-found', 'Record not found.');
   }
@@ -354,7 +358,7 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
     throwDataError(400, 'data/invalid-project', 'Project id is required.');
   }
 
-  const project = await store.get('projects', projectId);
+  const project = await getProjectedDoc({ store, context, collection: 'projects', id: projectId });
   if (!project) {
     if (type === 'delete' && isAdminUser(user)) return undefined;
     throwDataError(404, 'data/project-not-found', 'Project not found.');
@@ -371,6 +375,10 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
 
   if (isProjectLocked(project)) {
     throwDataError(409, 'data/project-locked', 'Project is paused or finished.');
+  }
+
+  if (collection === 'voting_items') {
+    return authorizeVotingItemOperation({ store, user, context, type, data, existing, project });
   }
 
   if (
@@ -400,6 +408,74 @@ async function authorizeProjectChildOperation({ store, user, type, collection, i
   }
 
   return existing ? preserveImmutableField(data, existing, projectField, type) : data || {};
+}
+
+async function authorizeVotingItemOperation({ store, user, context, type, data, existing, project }) {
+  if (!existing) {
+    return normalizeVotingItemCreateData({ user, data });
+  }
+
+  const protectedData = preserveImmutableField(data, existing, 'projectId', type);
+  if (Object.hasOwn(protectedData || {}, 'votes')) {
+    return authorizeVotingItemVotePatch({ store, context, user, type, data: protectedData, existing, project });
+  }
+
+  if (!canWriteProject(project, user)) forbidden();
+  assertImmutableField(protectedData, existing, 'creatorId');
+  assertImmutableField(protectedData, existing, 'creatorName');
+  if (type === 'set') {
+    return {
+      ...(protectedData || {}),
+      projectId: existing.projectId,
+      creatorId: existing.creatorId,
+      creatorName: existing.creatorName,
+      votes: Array.isArray(existing.votes) ? existing.votes : [],
+    };
+  }
+  return protectedData || {};
+}
+
+function normalizeVotingItemCreateData({ user, data }) {
+  return {
+    ...(data || {}),
+    creatorId: user.uid,
+    creatorName: cleanUserProvidedName(data?.creatorName, user),
+    votes: [],
+  };
+}
+
+async function authorizeVotingItemVotePatch({ store, context, user, type, data, existing, project }) {
+  if (type !== 'update') forbidden();
+
+  const mutableKeys = Object.keys(data || {}).filter((key) => key !== 'projectId');
+  if (mutableKeys.length !== 1 || mutableKeys[0] !== 'votes') forbidden();
+
+  const voteAction = getOwnVoteTransformAction(data.votes, user);
+  if (!voteAction) forbidden();
+
+  if (voteAction === 'add' && getVotingMode(project) === 'single') {
+    const projectItems = await listProjectedVotingItems({ store, context, projectId: existing.projectId });
+    const hasConflictingVote = projectItems.some((item) => (
+      item.id !== existing.id
+      && Array.isArray(item.votes)
+      && item.votes.includes(user.uid)
+    ));
+    if (hasConflictingVote) forbidden();
+  }
+
+  return data || {};
+}
+
+function getOwnVoteTransformAction(value, user) {
+  const values = Array.isArray(value?.values) ? value.values : [];
+  if (values.length !== 1 || values[0] !== user.uid) return null;
+  if (value?.__type === 'arrayUnion') return 'add';
+  if (value?.__type === 'arrayRemove') return 'remove';
+  return null;
+}
+
+function getVotingMode(project) {
+  return project?.votingConfig?.mode === 'single' ? 'single' : 'multiple';
 }
 
 function authorizeManagedProjectChildOperation({ user, type, collection, data, existing, project }) {
@@ -701,6 +777,118 @@ function hasMember(record, uid) {
   return Array.isArray(record?.members) && record.members.includes(uid);
 }
 
+function createAuthorizationContext() {
+  return { projectedDocs: new Map() };
+}
+
+function projectionKey(collection, id) {
+  return `${collection}\0${id}`;
+}
+
+async function getProjectedDoc({ store, context, collection, id }) {
+  if (!context) return store.get(collection, id);
+  const key = projectionKey(collection, id);
+  if (context.projectedDocs.has(key)) {
+    const doc = context.projectedDocs.get(key);
+    return doc ? cloneDataValue(doc) : null;
+  }
+  return store.get(collection, id);
+}
+
+function setProjectedDoc(context, collection, id, doc) {
+  context.projectedDocs.set(projectionKey(collection, id), doc ? cloneDataValue(doc) : null);
+}
+
+async function stageAuthorizedDataOperation({ store, context, operation }) {
+  if (!context || !operation?.id) return;
+
+  if (operation.type === 'delete') {
+    setProjectedDoc(context, operation.collection, operation.id, null);
+    return;
+  }
+
+  if (operation.type === 'update') {
+    const existing = await getProjectedDoc({
+      store,
+      context,
+      collection: operation.collection,
+      id: operation.id,
+    });
+    if (!existing) return;
+    setProjectedDoc(context, operation.collection, operation.id, {
+      ...existing,
+      ...applyDataPatch(existing, operation.data || {}),
+    });
+    return;
+  }
+
+  if (operation.type === 'set') {
+    const existing = await getProjectedDoc({
+      store,
+      context,
+      collection: operation.collection,
+      id: operation.id,
+    });
+    const nextDoc = operation.options?.merge
+      ? {
+          ...(existing || { id: operation.id }),
+          ...applyDataPatch(existing || {}, operation.data || {}),
+        }
+      : { id: operation.id, ...cloneDataValue(operation.data || {}) };
+    setProjectedDoc(context, operation.collection, operation.id, nextDoc);
+  }
+}
+
+async function listProjectedVotingItems({ store, context, projectId }) {
+  const docs = new Map((await store.list('voting_items', {
+    filters: [{ field: 'projectId', op: '==', value: projectId }],
+  })).map((doc) => [doc.id, doc]));
+
+  if (context) {
+    for (const [key, doc] of context.projectedDocs.entries()) {
+      const separator = key.indexOf('\0');
+      const collection = key.slice(0, separator);
+      const id = key.slice(separator + 1);
+      if (collection !== 'voting_items') continue;
+      if (!doc) {
+        docs.delete(id);
+      } else if (doc.projectId === projectId) {
+        docs.set(id, cloneDataValue(doc));
+      }
+    }
+  }
+
+  return [...docs.values()];
+}
+
+function applyDataPatch(existing, patch) {
+  const result = {};
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value?.__type === 'arrayUnion') {
+      const current = Array.isArray(existing[key]) ? [...existing[key]] : [];
+      for (const item of value.values || []) {
+        if (!current.some((entry) => deepEqualData(entry, item))) current.push(cloneDataValue(item));
+      }
+      result[key] = current;
+    } else if (value?.__type === 'arrayRemove') {
+      const current = Array.isArray(existing[key]) ? existing[key] : [];
+      result[key] = current.filter((entry) => !(value.values || []).some((item) => deepEqualData(entry, item)));
+    } else {
+      result[key] = cloneDataValue(value);
+    }
+  }
+  return result;
+}
+
+function deepEqualData(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function cloneDataValue(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
 function preserveImmutableField(data, existing, field, type) {
   if (Object.hasOwn(data || {}, field) && data[field] !== existing[field]) forbidden();
   if (type === 'set') {
@@ -710,6 +898,10 @@ function preserveImmutableField(data, existing, field, type) {
     };
   }
   return data || {};
+}
+
+function assertImmutableField(data, existing, field) {
+  if (Object.hasOwn(data || {}, field) && data[field] !== existing[field]) forbidden();
 }
 
 function assertImmutableUserField(data, identity, field) {

@@ -1491,6 +1491,158 @@ test('HTTP data API restricts managed child creation to project owners and norma
   });
 });
 
+test('HTTP data API restricts voting item writes to current-user vote toggles', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Single vote', type: 'vote', status: 'active', votingConfig: { mode: 'single' }, createdAt: 1 },
+        },
+      });
+
+      const firstItem = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          data: {
+            projectId: project.doc.id,
+            title: 'First',
+            creatorId: bob.user.uid,
+            creatorName: 'Alice Display',
+            votes: [bob.user.uid],
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(firstItem.doc.creatorId, alice.user.uid);
+      assert.equal(firstItem.doc.creatorName, 'Alice Display');
+      assert.deepEqual(firstItem.doc.votes, []);
+
+      const secondItem = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          data: { projectId: project.doc.id, title: 'Second', votes: [bob.user.uid], createdAt: 3 },
+        },
+      });
+      assert.deepEqual(secondItem.doc.votes, []);
+
+      const forgedDirectVotes = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: firstItem.doc.id,
+          data: { votes: [alice.user.uid, bob.user.uid] },
+        },
+      });
+      assert.equal(forgedDirectVotes.status, 403);
+      assert.equal(forgedDirectVotes.body.error.code, 'data/forbidden');
+
+      const forgedOtherUserVote = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: firstItem.doc.id,
+          data: { votes: arrayUnion(bob.user.uid) },
+        },
+      });
+      assert.equal(forgedOtherUserVote.status, 403);
+      assert.equal(forgedOtherUserVote.body.error.code, 'data/forbidden');
+
+      const firstVote = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: firstItem.doc.id,
+          data: { votes: arrayUnion(alice.user.uid) },
+        },
+      });
+      assert.deepEqual(firstVote.doc.votes, [alice.user.uid]);
+
+      const singleModeBypass = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: secondItem.doc.id,
+          data: { votes: arrayUnion(alice.user.uid) },
+        },
+      });
+      assert.equal(singleModeBypass.status, 403);
+      assert.equal(singleModeBypass.body.error.code, 'data/forbidden');
+
+      const singleModeSwitch = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            {
+              type: 'update',
+              collection: 'voting_items',
+              id: firstItem.doc.id,
+              data: { votes: arrayRemove(alice.user.uid) },
+            },
+            {
+              type: 'update',
+              collection: 'voting_items',
+              id: secondItem.doc.id,
+              data: { votes: arrayUnion(alice.user.uid) },
+            },
+          ],
+        },
+      });
+      assert.deepEqual(singleModeSwitch.results[0].votes, []);
+      assert.deepEqual(singleModeSwitch.results[1].votes, [alice.user.uid]);
+
+      const forgedRemoval = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'voting_items',
+          id: secondItem.doc.id,
+          data: { votes: arrayRemove(alice.user.uid) },
+        },
+      });
+      assert.equal(forgedRemoval.status, 403);
+      assert.equal(forgedRemoval.body.error.code, 'data/forbidden');
+      assert.deepEqual((await store.get('voting_items', secondItem.doc.id)).votes, [alice.user.uid]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API filters private notifications and friend records by current user', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
