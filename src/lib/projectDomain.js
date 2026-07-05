@@ -24,6 +24,8 @@ const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const SCHEDULE_MODES = new Set(['date', 'half', 'time']);
 const BOOKING_MODES = new Set(['date', 'half']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
+const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
+const MINE_TERMINAL_STATUSES = new Set(['dead', 'won']);
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
 
@@ -397,6 +399,44 @@ export function createGameRoomSummary(room) {
     roundsPlayed: 0,
     scoreLine: leader ? `${Number.parseInt(leader.progress, 10) || 0}%` : '',
     playerCount,
+  };
+}
+
+export function createMineRoomProgressPatch(room, user, progress, status, transitionAt) {
+  if (!room?.id || room.game !== 'mine' || room.status === 'finished' || !user?.uid) return null;
+  const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];
+  const playerIndex = players.findIndex((player) => player.uid === user.uid);
+  if (playerIndex < 0) return null;
+
+  const nextProgress = Number.parseInt(progress, 10);
+  if (!Number.isInteger(nextProgress) || nextProgress < 0 || nextProgress > 100) return null;
+  const nextStatus = MINE_PLAYER_STATUSES.has(status) ? status : null;
+  if (!nextStatus) return null;
+  if (nextStatus === 'won' && nextProgress !== 100) return null;
+  if (nextProgress === 100 && nextStatus !== 'won') return null;
+
+  const nextPlayers = players.map((player, index) => (
+    index === playerIndex ? { ...player, progress: nextProgress, status: nextStatus } : player
+  ));
+  const patch = { players: nextPlayers };
+  const winner = nextPlayers.find((player) => player.status === 'won') || null;
+  const allPlayersDone = nextPlayers.length > 0 && nextPlayers.every((player) => MINE_TERMINAL_STATUSES.has(player.status));
+  if (nextStatus !== 'won' && !allPlayersDone) return patch;
+
+  const winnerId = winner?.uid || null;
+  const finishedRoom = {
+    ...room,
+    status: 'finished',
+    players: nextPlayers,
+    winnerId,
+  };
+
+  return {
+    ...patch,
+    status: 'finished',
+    winnerId,
+    finishedAt: transitionAt,
+    resultSummary: createGameRoomSummary(finishedRoom),
   };
 }
 

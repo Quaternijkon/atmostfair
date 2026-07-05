@@ -4,7 +4,7 @@ import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepa
 import { useUI } from './UIContext';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
-import { createGameRoomJoinPatch, createGameRoomSummary, createRpsNextRoundPatch } from '../lib/projectDomain';
+import { createGameRoomJoinPatch, createGameRoomSummary, createMineRoomProgressPatch, createRpsNextRoundPatch } from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
 const RPS_COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
@@ -455,17 +455,13 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
       // Debounce update to avoid spamming
       const timer = setTimeout(() => {
           if (me.progress !== percent || me.status !== status) {
-               const newPlayers = room.players.map(p => {
-                  if (p.uid === user.uid) {
-                      return { ...p, progress: percent, status: (status === 'dead' || status === 'won') ? status : 'playing' };
-                  }
-                  return p;
-               });
-               updateDoc(doc(db, 'game_rooms', room.id), { players: newPlayers });
+               const nextStatus = (status === 'dead' || status === 'won') ? status : 'playing';
+               const updateData = createMineRoomProgressPatch(room, user, percent, nextStatus, nowMs());
+               if (updateData) updateDoc(doc(db, 'game_rooms', room.id), updateData);
           }
       }, 1000);
       return () => clearTimeout(timer);
-  }, [canInteract, cols, isPlayer, me?.progress, me?.status, mines, revealed.size, room.id, room.isLocal, room.players, rows, status, user.uid]);
+  }, [canInteract, cols, isPlayer, me?.progress, me?.status, mines, revealed.size, room, rows, status, user]);
 
   const getNeighbors = (r, c) => {
     const neighbors = [];

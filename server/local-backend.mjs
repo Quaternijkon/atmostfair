@@ -19,6 +19,7 @@ import {
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
   createGameRoomJoinPatch,
+  createMineRoomProgressPatch,
   createScheduleConfigData,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
@@ -342,7 +343,7 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
 
   const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
   if (projectField) {
-    return authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField });
+    return authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField, now });
   }
 
   if (collection !== 'projects') return data;
@@ -434,7 +435,7 @@ function normalizeUserData(data) {
   return normalized;
 }
 
-async function authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField }) {
+async function authorizeProjectChildOperation({ store, user, context, type, collection, id, data, projectField, now }) {
   const existing = type === 'add' ? null : await getProjectedDoc({ store, context, collection, id });
   if (!existing && type !== 'add') {
     if (type !== 'set') throwDataError(404, 'data/not-found', 'Record not found.');
@@ -483,7 +484,7 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
   }
 
   if (collection === 'game_rooms') {
-    return authorizeGameRoomOperation({ user, type, data, existing });
+    return authorizeGameRoomOperation({ user, type, data, existing, now });
   }
 
   if (
@@ -683,7 +684,7 @@ function normalizeProjectChatCreateData(data, user) {
   };
 }
 
-function authorizeGameRoomOperation({ user, type, data, existing }) {
+function authorizeGameRoomOperation({ user, type, data, existing, now }) {
   if (!existing) {
     return normalizeGameRoomCreateData(data, user);
   }
@@ -696,7 +697,7 @@ function authorizeGameRoomOperation({ user, type, data, existing }) {
   }
 
   if (existing.game === 'mine') {
-    return authorizeMineRoomUpdate({ user, data, existing });
+    return authorizeMineRoomUpdate({ user, data, existing, now });
   }
 
   forbidden();
@@ -945,8 +946,9 @@ function isValidOwnRpsMoveChange(before, after) {
   return before.move == null && RPS_MOVES.has(after.move) && samePlayerExcept(before, after, ['move']);
 }
 
-function authorizeMineRoomUpdate({ user, data, existing }) {
+function authorizeMineRoomUpdate({ user, data, existing, now }) {
   assertOnlyGameRoomFields(data, ['players']);
+  if (existing.status === 'finished') forbidden();
   const existingPlayers = normalizeGamePlayers(existing.players);
   const nextPlayers = normalizeGamePlayers(data.players);
 
@@ -965,10 +967,15 @@ function authorizeMineRoomUpdate({ user, data, existing }) {
   if (!MINE_PLAYER_STATUSES.has(after.status)) forbidden();
   assertValidMinePlayerTransition(before, after, progress);
 
-  const expectedPlayers = existingPlayers.map((player) => (
-    player.uid === user.uid ? { ...player, progress, status: after.status } : player
-  ));
-  return { players: expectedPlayers };
+  const expected = createMineRoomProgressPatch(
+    { ...existing, players: existingPlayers },
+    user,
+    progress,
+    after.status,
+    typeof now === 'function' ? now() : Date.now(),
+  );
+  if (!expected) forbidden();
+  return expected;
 }
 
 function assertValidMinePlayerTransition(before, after, progress) {

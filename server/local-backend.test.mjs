@@ -2654,6 +2654,18 @@ test('HTTP data API restricts game room writes to current-player transitions', a
           },
         },
       });
+      assert.equal(bobWins.doc.status, 'finished');
+      assert.equal(bobWins.doc.winnerId, bob.user.uid);
+      assert.equal(bobWins.doc.finishedAt, 1700000000000);
+      assert.deepEqual(bobWins.doc.resultSummary, {
+        game: 'mine',
+        status: 'finished',
+        winnerId: bob.user.uid,
+        winnerName: 'Bob',
+        roundsPlayed: 0,
+        scoreLine: '100%',
+        playerCount: 2,
+      });
       assert.equal(bobWins.doc.players[1].status, 'won');
       assert.equal(bobWins.doc.players[1].progress, 100);
 

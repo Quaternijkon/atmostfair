@@ -476,6 +476,71 @@ test('RPS room transition persists a reusable match result summary', () => {
   });
 });
 
+test('minesweeper progress patch completes rooms with reusable result summaries', () => {
+  assert.equal(typeof projectDomain.createMineRoomProgressPatch, 'function');
+
+  const room = {
+    id: 'mine-1',
+    game: 'mine',
+    status: 'playing',
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'playing' },
+      { uid: 'u2', name: 'Bo', progress: 80, status: 'playing' },
+    ],
+  };
+
+  assert.deepEqual(projectDomain.createMineRoomProgressPatch(room, { uid: 'u2' }, 90, 'playing', 5000), {
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'playing' },
+      { uid: 'u2', name: 'Bo', progress: 90, status: 'playing' },
+    ],
+  });
+
+  assert.deepEqual(projectDomain.createMineRoomProgressPatch(room, { uid: 'u2' }, 100, 'won', 6000), {
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'playing' },
+      { uid: 'u2', name: 'Bo', progress: 100, status: 'won' },
+    ],
+    status: 'finished',
+    winnerId: 'u2',
+    finishedAt: 6000,
+    resultSummary: {
+      game: 'mine',
+      status: 'finished',
+      winnerId: 'u2',
+      winnerName: 'Bo',
+      roundsPlayed: 0,
+      scoreLine: '100%',
+      playerCount: 2,
+    },
+  });
+
+  assert.deepEqual(projectDomain.createMineRoomProgressPatch({
+    ...room,
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'dead' },
+      { uid: 'u2', name: 'Bo', progress: 80, status: 'playing' },
+    ],
+  }, { uid: 'u2' }, 82, 'dead', 7000), {
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'dead' },
+      { uid: 'u2', name: 'Bo', progress: 82, status: 'dead' },
+    ],
+    status: 'finished',
+    winnerId: null,
+    finishedAt: 7000,
+    resultSummary: {
+      game: 'mine',
+      status: 'finished',
+      winnerId: null,
+      winnerName: '',
+      roundsPlayed: 0,
+      scoreLine: '82%',
+      playerCount: 2,
+    },
+  });
+});
+
 test('game room join guard is idempotent and enforces capacity', () => {
   assert.equal(typeof projectDomain.createGameRoomJoinPatch, 'function');
 
