@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle } from './Icons';
+import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle, Share2 } from './Icons';
 import { useUI } from './UIContext';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
@@ -10,6 +10,8 @@ import {
   createGameRoomJoinPatch,
   createGameRoomSummary,
   createUserGameResultHistory,
+  createGameRoomInviteUrl,
+  getGameRoomInviteId,
   createMineRoomProgressPatch,
   createRpsNextRoundPatch,
 } from '../lib/projectDomain';
@@ -707,9 +709,10 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const { showToast } = useUI();
   const canInteract = !isStopped;
   const [activeTab, setActiveTab] = useState('lobby'); // lobby | finished
-  const [rooms, setRooms] = useState([]);
+  const [roomsSnapshot, setRoomsSnapshot] = useState({ projectId: null, items: [] });
   const [showCreate, setShowCreate] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState(null); // If joined/spectating a room
+  const handledInviteRef = useRef(null);
   
   // Create Form State
   const [roomName, setRoomName] = useState('');
@@ -719,6 +722,12 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const [mineDifficulty, setMineDifficulty] = useState('easy'); // easy, medium, hard
   const [vsComputer, setVsComputer] = useState(false);
 
+  const replaceRoomInviteUrl = useCallback((roomId) => {
+      if (typeof window === 'undefined') return;
+      const nextUrl = createGameRoomInviteUrl(window.location.href, roomId);
+      if (nextUrl) window.history.replaceState(window.history.state, '', nextUrl);
+  }, []);
+
   // Sync Rooms
   useEffect(() => {
     const q = query(
@@ -727,10 +736,32 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
     );
     
     const unsub = onSnapshot(q, (snapshot) => {
-        setRooms(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        const nextRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setRoomsSnapshot({ projectId: project.id, items: nextRooms });
+
+        const inviteRoomId = typeof window === 'undefined' ? null : getGameRoomInviteId(window.location.search);
+        const inviteKey = inviteRoomId ? `${project.id}:${inviteRoomId}` : null;
+        if (!inviteRoomId || handledInviteRef.current === inviteKey) return;
+
+        handledInviteRef.current = inviteKey;
+        const invitedRoom = nextRooms.find((room) => room.id === inviteRoomId);
+        if (invitedRoom) {
+            setActiveRoomId(invitedRoom.id);
+            setActiveTab(invitedRoom.status === 'finished' ? 'finished' : 'lobby');
+            replaceRoomInviteUrl(invitedRoom.id);
+            return;
+        }
+
+        replaceRoomInviteUrl(null);
+        showToast(t('roomInviteUnavailable'), 'info');
     });
     return () => unsub();
-  }, [project.id]);
+  }, [project.id, replaceRoomInviteUrl, showToast, t]);
+
+  const rooms = useMemo(
+      () => (roomsSnapshot.projectId === project.id ? roomsSnapshot.items : []),
+      [project.id, roomsSnapshot.items, roomsSnapshot.projectId],
+  );
 
   const visibleRooms = useMemo(() => (
       rooms.filter(room => (
@@ -748,6 +779,33 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const currentActiveRoom = useMemo(() => (
       activeRoomId ? rooms.find(room => room.id === activeRoomId) || null : null
   ), [activeRoomId, rooms]);
+
+  const openRoom = useCallback((room) => {
+      if (!room?.id) return;
+      setActiveRoomId(room.id);
+      setActiveTab(room.status === 'finished' ? 'finished' : 'lobby');
+      replaceRoomInviteUrl(room.id);
+  }, [replaceRoomInviteUrl]);
+
+  const closeRoom = useCallback(() => {
+      setActiveRoomId(null);
+      replaceRoomInviteUrl(null);
+  }, [replaceRoomInviteUrl]);
+
+  const copyRoomInvite = useCallback(async (room) => {
+      const inviteUrl = typeof window === 'undefined' ? '' : createGameRoomInviteUrl(window.location.href, room?.id);
+      if (!inviteUrl || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+          showToast(t('roomInviteUnavailable'), 'error');
+          return;
+      }
+
+      try {
+          await navigator.clipboard.writeText(inviteUrl);
+          showToast(t('roomInviteCopied'), 'success');
+      } catch {
+          showToast(t('roomInviteUnavailable'), 'error');
+      }
+  }, [showToast, t]);
 
   const handleCreateRoom = async (e) => {
       e.preventDefault();
@@ -777,17 +835,18 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
       const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
       setShowCreate(false);
       setRoomName('');
+      openRoom({ id: ref.id, status: newRoom.status });
   };
   
   const handleJoin = async (room) => {
-       setActiveRoomId(room.id);
+       openRoom(room);
   };
   
       if (currentActiveRoom) {
           if (currentActiveRoom.game === 'mine') {
-              return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} isStopped={isStopped} onLeave={() => setActiveRoomId(null)} t={t} />;
+              return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} isStopped={isStopped} onLeave={closeRoom} t={t} />;
           }
-          return <RPSGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} projectId={project.id} isStopped={isStopped} onLeave={() => setActiveRoomId(null)} t={t} />;
+          return <RPSGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} projectId={project.id} isStopped={isStopped} onLeave={closeRoom} t={t} />;
       }
   
   const GAMES = [
@@ -871,7 +930,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                    <button
                                      type="button"
                                      key={entry.id}
-                                     onClick={() => setActiveRoomId(entry.id)}
+                                     onClick={() => handleJoin(rooms.find((room) => room.id === entry.id) || { id: entry.id, status: 'finished' })}
                                      className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-m3-outline-variant/20 bg-m3-surface-container/50 px-3 py-2 text-left transition-colors hover:border-google-blue/30 hover:bg-m3-surface-container-high"
                                    >
                                        <div className="min-w-0">
@@ -1003,49 +1062,64 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                    const roomSummary = createGameRoomSummary(room) || {};
                    const isFinishedRoom = room.status === 'finished';
                    return (
-                   <button type="button" key={room.id} onClick={() => handleJoin(room)} className="app-card group relative w-full cursor-pointer overflow-hidden p-5 text-left hover:border-google-blue/30 hover:bg-m3-surface-container-high">
-                       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                           {room.game === 'mine' ? <Bomb className="w-24 h-24 rotate-12"/> : <Scissors className="w-24 h-24 -rotate-12"/> }
-                       </div>
-                       
-                       <div className="relative">
-                           <div className="flex justify-between items-start mb-4">
-                               <div className={`p-2 rounded-xl text-white ${room.game === 'mine' ? 'bg-google-red' : 'bg-google-blue'}`}>
-                                   {room.game === 'mine' ? <Bomb className="w-6 h-6"/> : <Scissors className="w-6 h-6"/>}
-                               </div>
-                               <div className="px-2 py-1 bg-m3-surface/50 rounded text-xs font-mono">
-                                   {room.players?.length || 0} / {room.game === 'mine' ? 8 : 2}
-                               </div>
+                   <article key={room.id} className="app-card group relative w-full overflow-hidden p-5 hover:border-google-blue/30 hover:bg-m3-surface-container-high">
+                       <button
+                         type="button"
+                         onClick={() => handleJoin(room)}
+                         className="relative block w-full cursor-pointer text-left"
+                       >
+                           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                               {room.game === 'mine' ? <Bomb className="w-24 h-24 rotate-12"/> : <Scissors className="w-24 h-24 -rotate-12"/> }
                            </div>
                            
-                           <h3 className="text-lg font-bold mb-1">{room.name}</h3>
-                           <p className="text-sm text-m3-on-surface-variant mb-4 capitalize">
-                               {room.game === 'mine' ? `${difficultyLabels[room.config.difficulty] || room.config.difficulty}` : `${t('bestOf')} ${room.config.bestOf}`}
-                           </p>
+                           <div className="relative">
+                               <div className="mb-4 flex items-start justify-between pr-12">
+                                   <div className={`p-2 rounded-xl text-white ${room.game === 'mine' ? 'bg-google-red' : 'bg-google-blue'}`}>
+                                       {room.game === 'mine' ? <Bomb className="w-6 h-6"/> : <Scissors className="w-6 h-6"/>}
+                                   </div>
+                                   <div className="px-2 py-1 bg-m3-surface/50 rounded text-xs font-mono">
+                                       {room.players?.length || 0} / {room.game === 'mine' ? 8 : 2}
+                                   </div>
+                               </div>
 
-                           {isFinishedRoom && (
-                               <div className="mb-4 rounded-lg border border-google-yellow/25 bg-google-yellow/10 p-3">
-                                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
-                                       <Trophy className="h-4 w-4 text-google-yellow" />
-                                       {t('gameResult')}
+                               <h3 className="text-lg font-bold mb-1">{room.name}</h3>
+                               <p className="text-sm text-m3-on-surface-variant mb-4 capitalize">
+                                   {room.game === 'mine' ? `${difficultyLabels[room.config.difficulty] || room.config.difficulty}` : `${t('bestOf')} ${room.config.bestOf}`}
+                               </p>
+
+                               {isFinishedRoom && (
+                                   <div className="mb-4 rounded-lg border border-google-yellow/25 bg-google-yellow/10 p-3">
+                                       <div className="mb-2 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+                                           <Trophy className="h-4 w-4 text-google-yellow" />
+                                           {t('gameResult')}
+                                       </div>
+                                       <div className="grid gap-1 text-xs text-m3-on-surface-variant">
+                                           <div>{t('gameWinner', { name: roomSummary.winnerName || t('draw') })}</div>
+                                           <div>{t('gameScoreLine', { score: roomSummary.scoreLine || '-' })}</div>
+                                           <div>{t('gameRoundsPlayed', { count: roomSummary.roundsPlayed || 0 })}</div>
+                                           {roomSummary.lastRound && (
+                                               <div>{t('gameLastRound', { round: roomSummary.lastRound.round })}</div>
+                                           )}
+                                       </div>
                                    </div>
-                                   <div className="grid gap-1 text-xs text-m3-on-surface-variant">
-                                       <div>{t('gameWinner', { name: roomSummary.winnerName || t('draw') })}</div>
-                                       <div>{t('gameScoreLine', { score: roomSummary.scoreLine || '-' })}</div>
-                                       <div>{t('gameRoundsPlayed', { count: roomSummary.roundsPlayed || 0 })}</div>
-                                       {roomSummary.lastRound && (
-                                           <div>{t('gameLastRound', { round: roomSummary.lastRound.round })}</div>
-                                       )}
-                                   </div>
+                               )}
+
+                               <div className="flex items-center gap-2 text-xs text-m3-on-surface-variant/70">
+                                   <User className="w-3 h-3"/>
+                                   <span>{t('createdBy')} {room.createdBy === user.uid ? t('you') : `${t('userLabel')} ${room.createdBy.slice(0,4)}`}</span>
                                </div>
-                           )}
-                           
-                           <div className="flex items-center gap-2 text-xs text-m3-on-surface-variant/70">
-                               <User className="w-3 h-3"/>
-                               <span>{t('createdBy')} {room.createdBy === user.uid ? t('you') : `${t('userLabel')} ${room.createdBy.slice(0,4)}`}</span>
                            </div>
-                       </div>
-                   </button>
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => copyRoomInvite(room)}
+                         className="app-icon-button absolute right-4 top-4 z-10 bg-m3-surface-container/80 hover:bg-google-blue/10 hover:text-google-blue"
+                         title={t('copyRoomInvite')}
+                         aria-label={t('copyRoomInvite')}
+                       >
+                           <Share2 className="h-4 w-4" />
+                       </button>
+                   </article>
                    );
                   })
            )}

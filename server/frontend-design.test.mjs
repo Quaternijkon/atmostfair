@@ -222,6 +222,9 @@ test('game hub exposes localized active and finished room summaries', async () =
     'gameHistoryWin',
     'gameHistoryLoss',
     'gameHistoryDraw',
+    'copyRoomInvite',
+    'roomInviteCopied',
+    'roomInviteUnavailable',
     'gameResult',
     'gameWinner',
     'gameRoundsPlayed',
@@ -235,6 +238,11 @@ test('game hub exposes localized active and finished room summaries', async () =
 
   assert.match(files.gameHub, /createGameRoomSummary/, 'Game hub should derive list summaries through the domain helper');
   assert.match(files.gameHub, /createUserGameResultHistory/, 'Game hub should derive per-user result history through the domain helper');
+  assert.match(files.gameHub, /createGameRoomInviteUrl/, 'Game hub should build shareable room invite URLs through the domain helper');
+  assert.match(files.gameHub, /getGameRoomInviteId/, 'Game hub should read room invites from the URL through the domain helper');
+  assert.match(files.gameHub, /navigator\.clipboard\.writeText/, 'Game hub should copy room invite links to the clipboard');
+  assert.match(files.gameHub, /history\.replaceState/, 'Game hub should keep active room URL state in sync without navigation');
+  assert.match(files.gameHub, /roomInviteUnavailable/, 'Invalid room invite links should use localized feedback');
   assert.match(files.gameHub, /userResultHistory/, 'Game hub should expose a current-user result history panel');
   assert.match(files.gameHub, /createRpsNextRoundPatch/, 'RPS room transitions should use the domain helper');
   assert.match(files.gameHub, /createMineRoomProgressPatch/, 'Minesweeper progress should use the domain helper for terminal room summaries');

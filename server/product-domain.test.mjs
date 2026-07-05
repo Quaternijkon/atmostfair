@@ -10,6 +10,8 @@ import {
   createBookingWaitlistPatch,
   createGameRoomCreateData,
   createUserGameResultHistory,
+  createGameRoomInviteUrl,
+  getGameRoomInviteId,
   createProjectCascadeDeleteOperations,
   createProjectCreateData,
   createGatherFieldData,
@@ -554,6 +556,28 @@ test('user game result history summarizes finished rooms for one player', () => 
     stats: { total: 0, wins: 0, losses: 0, draws: 0 },
     recent: [],
   });
+});
+
+test('game room invite URL helpers preserve page state and normalize room ids', () => {
+  assert.equal(typeof createGameRoomInviteUrl, 'function');
+  assert.equal(typeof getGameRoomInviteId, 'function');
+
+  assert.equal(getGameRoomInviteId('?room= room-1 &tab=finished'), 'room-1');
+  assert.equal(getGameRoomInviteId('?room=&tab=finished'), null);
+  assert.equal(getGameRoomInviteId('tab=finished'), null);
+
+  assert.equal(
+    createGameRoomInviteUrl('https://atmostfair.example/games/project-1?tab=finished#board', ' room-2 '),
+    'https://atmostfair.example/games/project-1?tab=finished&room=room-2#board',
+  );
+  assert.equal(
+    createGameRoomInviteUrl('https://atmostfair.example/games/project-1?room=old&tab=finished', 'room-3'),
+    'https://atmostfair.example/games/project-1?room=room-3&tab=finished',
+  );
+  assert.equal(
+    createGameRoomInviteUrl('https://atmostfair.example/games/project-1?room=old&tab=finished', ''),
+    'https://atmostfair.example/games/project-1?tab=finished',
+  );
 });
 
 test('minesweeper progress patch completes rooms with reusable result summaries', () => {

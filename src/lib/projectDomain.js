@@ -27,6 +27,7 @@ const BOOKING_MODES = new Set(['date', 'half']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const MINE_TERMINAL_STATUSES = new Set(['dead', 'won']);
+const GAME_ROOM_INVITE_PARAM = 'room';
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
 
@@ -454,6 +455,28 @@ export function createUserGameResultHistory(rooms, uid, limit = 3) {
     stats,
     recent: entries.slice(0, recentLimit),
   };
+}
+
+export function getGameRoomInviteId(search = '') {
+  const query = String(search || '').trim().replace(/^\?/, '');
+  if (!query) return null;
+  return normalizeGameRoomInviteId(new URLSearchParams(query).get(GAME_ROOM_INVITE_PARAM));
+}
+
+export function createGameRoomInviteUrl(href, roomId) {
+  const source = String(href || '').trim();
+  if (!source) return '';
+
+  const isAbsoluteUrl = /^[a-z][a-z\d+.-]*:/i.test(source);
+  try {
+    const url = new URL(source, isAbsoluteUrl ? undefined : 'https://atmostfair.local');
+    const cleanRoomId = normalizeGameRoomInviteId(roomId);
+    if (cleanRoomId) url.searchParams.set(GAME_ROOM_INVITE_PARAM, cleanRoomId);
+    else url.searchParams.delete(GAME_ROOM_INVITE_PARAM);
+    return isAbsoluteUrl ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '';
+  }
 }
 
 export function createMineRoomProgressPatch(room, user, progress, status, transitionAt) {
@@ -977,6 +1000,11 @@ function cleanName(userName, user) {
   const explicit = String(userName || '').trim();
   if (explicit) return explicit;
   return user.displayName || user.email?.split('@')[0] || '';
+}
+
+function normalizeGameRoomInviteId(value) {
+  const cleanValue = String(value ?? '').trim();
+  return cleanValue || null;
 }
 
 function normalizedCollection(docsByCollection, collectionName) {
