@@ -407,6 +407,136 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
+test('HTTP data API limits user document writes to the current user and preserves identity fields', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+
+      const ownSync = await fetchJson(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: {
+            uid: alice.user.uid,
+            email: alice.user.email,
+            displayName: 'Alice Synced',
+            isAnonymous: false,
+            lastSeen: 1,
+          },
+          options: { merge: true },
+        },
+      });
+      assert.equal(ownSync.doc.displayName, 'Alice Synced');
+      assert.equal(ownSync.doc.email, 'alice@example.com');
+
+      const foreignUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { displayName: 'Bob Took Over' },
+        },
+      });
+      assert.equal(foreignUpdate.status, 403);
+      assert.equal(foreignUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('users', alice.user.uid)).displayName, 'Alice Synced');
+
+      const foreignSet = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { uid: alice.user.uid, email: 'alice@example.com', displayName: 'Still Bob' },
+          options: { merge: true },
+        },
+      });
+      assert.equal(foreignSet.status, 403);
+      assert.equal(foreignSet.body.error.code, 'data/forbidden');
+
+      const identityUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { email: 'spoof@example.com' },
+        },
+      });
+      assert.equal(identityUpdate.status, 403);
+      assert.equal(identityUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('users', alice.user.uid)).email, 'alice@example.com');
+
+      const ownUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'users',
+          id: alice.user.uid,
+          data: { displayName: 'Alice Updated' },
+        },
+      });
+      assert.equal(ownUpdate.doc.displayName, 'Alice Updated');
+
+      const ownDelete = await fetchJsonResponse(`${baseUrl}/api/data/delete`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'users', id: alice.user.uid },
+      });
+      assert.equal(ownDelete.status, 403);
+      assert.equal(ownDelete.body.error.code, 'data/forbidden');
+      assert.notEqual(await store.get('users', alice.user.uid), null);
+
+      const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            { type: 'update', collection: 'users', id: alice.user.uid, data: { displayName: 'Batch partial' } },
+            { type: 'update', collection: 'users', id: bob.user.uid, data: { displayName: 'Foreign batch' } },
+          ],
+        },
+      });
+      assert.equal(blockedBatch.status, 403);
+      assert.equal(blockedBatch.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('users', alice.user.uid)).displayName, 'Alice Updated');
+
+      const readable = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'users',
+          query: { filters: [{ field: 'email', op: '==', value: 'alice@example.com' }] },
+        },
+      });
+      assert.deepEqual(readable.docs.map((entry) => entry.id), [alice.user.uid]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects child writes against stopped and finished projects without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

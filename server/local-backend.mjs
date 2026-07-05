@@ -258,6 +258,10 @@ async function authorizeDataOperations({ store, user, operations }) {
 }
 
 async function authorizeDataOperation({ store, user, type, collection, id, data }) {
+  if (collection === 'users') {
+    return authorizeUserOperation({ store, user, type, id, data });
+  }
+
   if (collection === 'notifications') {
     return authorizeNotificationOperation({ store, user, type, id, data });
   }
@@ -293,6 +297,32 @@ async function authorizeDataOperation({ store, user, type, collection, id, data 
 
   if (type === 'delete') return undefined;
   return preserveProjectOwner(data, existing, type);
+}
+
+async function authorizeUserOperation({ store, user, type, id, data }) {
+  if (type === 'add' || type === 'delete' || id !== user.uid) forbidden();
+
+  const existing = await store.get('users', id);
+  if (!existing && type === 'update') throwDataError(404, 'data/not-found', 'User not found.');
+
+  const identity = {
+    uid: existing?.uid ?? user.uid,
+    email: existing?.email ?? user.email ?? null,
+    isAnonymous: Boolean(existing?.isAnonymous ?? user.isAnonymous),
+  };
+
+  assertImmutableUserField(data, identity, 'uid');
+  assertImmutableUserField(data, identity, 'email');
+  assertImmutableUserField(data, identity, 'isAnonymous');
+
+  if (type === 'set') {
+    return {
+      ...(data || {}),
+      ...identity,
+    };
+  }
+
+  return data || {};
 }
 
 async function authorizeProjectChildOperation({ store, user, type, collection, id, data, projectField }) {
@@ -446,6 +476,10 @@ function preserveImmutableField(data, existing, field, type) {
     };
   }
   return data || {};
+}
+
+function assertImmutableUserField(data, identity, field) {
+  if (Object.hasOwn(data || {}, field) && data[field] !== identity[field]) forbidden();
 }
 
 function normalizeProjectCreateData(data, user) {
