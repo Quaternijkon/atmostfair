@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
 import { useUI } from '../components/UIContext';
+import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
 import { getProjectRoutePrefix } from '../lib/dashboardDomain';
 import { createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
@@ -274,30 +275,41 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     .filter((activity) => activity.projectId === project.id)
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-  const handleExportParticipants = () => {
-    const exportData = createProjectParticipantExport(project, {
-      queueParticipants: projectQueueData,
-      bookingSlots: projectBookingSlots,
-      scheduleSubmissions: projectScheduleSubmissions,
-      gatherFields: projectGatherFields,
-      gatherSubmissions: projectGatherSubmissions,
-      claimItems: projectClaimItems,
-    }, t);
+  const handleExportParticipants = async () => {
+    try {
+      let projectGameRooms = [];
+      if (project.type === 'game_hub') {
+        const snapshot = await getDocs(query(collection(db, 'game_rooms'), where('projectId', '==', project.id)));
+        projectGameRooms = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+      }
 
-    if (!exportData) {
-      showToast(t('noExportData'), 'info');
-      return;
+      const exportData = createProjectParticipantExport(project, {
+        queueParticipants: projectQueueData,
+        bookingSlots: projectBookingSlots,
+        scheduleSubmissions: projectScheduleSubmissions,
+        gatherFields: projectGatherFields,
+        gatherSubmissions: projectGatherSubmissions,
+        claimItems: projectClaimItems,
+        gameRooms: projectGameRooms,
+      }, t);
+
+      if (!exportData) {
+        showToast(t('noExportData'), 'info');
+        return;
+      }
+
+      const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = exportData.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      showToast(t('actionFailed', { action: t('exportParticipants'), message: error?.message || t('failed') }), 'error');
     }
-
-    const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = exportData.filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   return (

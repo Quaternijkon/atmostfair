@@ -20,12 +20,20 @@ const LABELS = {
   exportClaimCount: 'Claim Count',
   exportClaimants: 'Claimants',
   exportFile: 'export',
+  exportFinishedAt: 'Finished At',
+  exportGameRoom: 'Room',
+  exportGameType: 'Game',
   exportJoinedAt: 'Joined At',
   exportParticipantId: 'Participant ID',
   exportParticipants: 'Export participants',
+  exportPlayerCount: 'Players',
+  exportPlayers: 'Player List',
   exportQueueOrder: 'Queue Order',
+  exportRounds: 'Rounds',
+  exportScore: 'Score',
   exportSlotLabel: 'Slot',
   exportWaitlistOrder: 'Waitlist Order',
+  exportWinner: 'Winner',
   maxClaims: 'Max People',
   nameLabel: 'Name',
   noExportData: 'No participant data to export',
@@ -36,6 +44,10 @@ const LABELS = {
   taskTitle: 'Task / Item',
   valueLabel: 'Value (0-100)',
   booked: 'Booked',
+  finished: 'Finished',
+  minesweeper: 'Minesweeper',
+  playing: 'Playing',
+  rockPaperScissors: 'Rock Paper Scissors',
   waitlisted: 'Waitlisted',
 };
 
@@ -149,12 +161,48 @@ test('participant export builds localized CSV for each participant workflow', ()
   }, t);
   assert.match(claimExport.csv, /^Task \/ Item,Max People,Claim Count,Claimants\n/);
   assert.match(claimExport.csv, /Bring badges,3,2,Eli; Fay/);
+
+  const gameExport = createProjectParticipantExport({
+    id: 'p7',
+    title: 'Game Night',
+    type: 'game_hub',
+  }, {
+    gameRooms: [
+      {
+        id: 'game-2',
+        name: 'Mine room',
+        game: 'mine',
+        status: 'playing',
+        players: [{ uid: 'u3', name: 'Cy', progress: 42, status: 'playing' }],
+        createdAt: 1714550000000,
+      },
+      {
+        id: 'game-1',
+        name: 'Final RPS',
+        game: 'rps',
+        status: 'finished',
+        winnerId: 'u1',
+        finishedAt: 1714554000000,
+        players: [
+          { uid: 'u1', name: 'Ana', score: 2 },
+          { uid: 'u2', name: 'Bo', score: 1 },
+        ],
+        history: [{ round: 1 }, { round: 2 }, { round: 3 }],
+        createdAt: 1714540000000,
+      },
+    ],
+  }, t);
+  assert.equal(gameExport.filename, 'Game-Night_game_results.csv');
+  assert.match(gameExport.csv, /^Room,Game,Status,Winner,Score,Players,Rounds,Finished At,Player List\n/);
+  assert.match(gameExport.csv, /Final RPS,Rock Paper Scissors,Finished,Ana,2 - 1,2,3,2024-05-01T09:00:00.000Z,Ana \(2\); Bo \(1\)/);
+  assert.match(gameExport.csv, /Mine room,Minesweeper,Playing,,42%,1,0,,Cy \(42%\)/);
 });
 
 test('participant export returns null for unsupported or empty participant data', () => {
   assert.equal(createProjectParticipantExport({ type: 'vote', title: 'Poll' }, {}, t), null);
   assert.equal(createProjectParticipantExport({ type: 'queue', title: 'Queue' }, { queueParticipants: [] }, t), null);
   assert.equal(createProjectParticipantExport({ type: 'book', title: 'Book' }, { bookingSlots: [{ label: 'Open' }] }, t), null);
+  assert.equal(createProjectParticipantExport({ type: 'game_hub', title: 'Game Hub' }, { gameRooms: [] }, t), null);
 });
 
 test('participant export preserves zero timestamps instead of treating them as empty', () => {
@@ -187,15 +235,26 @@ test('project detail exposes owner/admin participant export without native dialo
     'exportBookingStatus',
     'exportClaimCount',
     'exportClaimants',
+    'exportFinishedAt',
+    'exportGameRoom',
+    'exportGameType',
     'exportJoinedAt',
     'exportParticipantId',
     'exportParticipants',
+    'exportPlayerCount',
+    'exportPlayers',
     'exportQueueOrder',
+    'exportRounds',
+    'exportScore',
     'exportSlotLabel',
     'exportWaitlistOrder',
+    'exportWinner',
     'noExportData',
   ]) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
+  assert.match(detail, /getDocs\(query\(collection\(db, 'game_rooms'\), where\('projectId', '==', project\.id\)\)\)/, 'Game hub export should load live game rooms before exporting');
+  assert.match(detail, /gameRooms:\s*projectGameRooms/, 'Project detail should pass game rooms into participant export');
+  assert.match(detail, /catch \(error\) \{[\s\S]{0,260}showToast\(t\('actionFailed'/, 'Game hub export failures should use app toast feedback');
 });

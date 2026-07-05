@@ -1,4 +1,6 @@
-const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim']);
+import { createGameRoomSummary } from './projectDomain.js';
+
+const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim', 'game_hub']);
 
 export function supportsParticipantExport(projectType) {
   return PARTICIPANT_EXPORT_TYPES.has(projectType);
@@ -22,6 +24,7 @@ export function createProjectParticipantExport(project, datasets = {}, t = (key)
     schedule: createScheduleExport,
     gather: createGatherExport,
     claim: createClaimExport,
+    game_hub: createGameExport,
   }[project.type];
 
   const result = exporter(datasets, t);
@@ -157,6 +160,42 @@ function createClaimExport({ claimItems = [] }, t) {
   };
 }
 
+function createGameExport({ gameRooms = [] }, t) {
+  const rooms = [...gameRooms]
+    .filter((room) => room?.id)
+    .sort((a, b) => (b.finishedAt || b.createdAt || 0) - (a.finishedAt || a.createdAt || 0));
+  const rows = rooms.map((room) => {
+    const summary = createGameRoomSummary(room) || {};
+    return [
+      room.name,
+      formatGameName(room.game, t),
+      formatGameStatus(summary.status || room.status, t),
+      summary.winnerName,
+      summary.scoreLine,
+      summary.playerCount,
+      summary.roundsPlayed,
+      formatExportDate(room.finishedAt),
+      formatGamePlayers(room.players),
+    ];
+  });
+
+  return {
+    suffix: 'game_results',
+    headers: [
+      t('exportGameRoom'),
+      t('exportGameType'),
+      t('exportBookingStatus'),
+      t('exportWinner'),
+      t('exportScore'),
+      t('exportPlayerCount'),
+      t('exportRounds'),
+      t('exportFinishedAt'),
+      t('exportPlayers'),
+    ],
+    rows,
+  };
+}
+
 function serializeCsv(rows) {
   return rows.map((row) => row.map(formatCsvCell).join(',')).join('\n');
 }
@@ -195,6 +234,33 @@ function collectDynamicKeys(records) {
 
 function hasKeys(value) {
   return Boolean(value && typeof value === 'object' && Object.keys(value).length);
+}
+
+function formatGameName(game, t) {
+  if (game === 'rps') return t('rockPaperScissors');
+  if (game === 'mine') return t('minesweeper');
+  return game || '';
+}
+
+function formatGameStatus(status, t) {
+  if (status === 'finished') return t('finished');
+  if (status === 'playing') return t('playing');
+  if (status === 'waiting') return t('waiting');
+  return status || '';
+}
+
+function formatGamePlayers(players = []) {
+  return (Array.isArray(players) ? players : [])
+    .map((player) => {
+      const name = player.name || player.uid || '';
+      const score = Number.parseInt(player.score, 10);
+      if (Number.isInteger(score)) return `${name} (${score})`;
+      const progress = Number.parseInt(player.progress, 10);
+      if (Number.isInteger(progress)) return `${name} (${progress}%)`;
+      return name;
+    })
+    .filter(Boolean)
+    .join('; ');
 }
 
 function sanitizeFilename(value) {
