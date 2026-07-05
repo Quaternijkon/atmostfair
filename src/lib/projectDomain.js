@@ -744,18 +744,16 @@ export function createProjectCascadeDeleteOperations(projectId, docsByCollection
   const operations = [];
 
   for (const { name, field } of PROJECT_CASCADE_COLLECTIONS) {
+    if (name === 'projects') continue;
     const docs = Array.isArray(docsByCollection?.[name]) ? docsByCollection[name] : [];
     for (const entry of docs) {
       if (!entry?.id) continue;
-      const belongsToProject = field === 'id' ? entry.id === projectId : entry[field] === projectId;
-      if (!belongsToProject) continue;
+      if (entry[field] !== projectId) continue;
       operations.push({ type: 'delete', collection: name, id: entry.id });
     }
   }
 
-  if (!operations.some((operation) => operation.collection === 'projects' && operation.id === projectId)) {
-    operations.unshift({ type: 'delete', collection: 'projects', id: projectId });
-  }
+  operations.push({ type: 'delete', collection: 'projects', id: projectId });
 
   return operations;
 }

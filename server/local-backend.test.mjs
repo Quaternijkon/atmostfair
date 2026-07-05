@@ -7,6 +7,7 @@ import test from 'node:test';
 import { createAuthService } from './auth-service.mjs';
 import { arrayRemove, arrayUnion, createDataStore } from './data-store.mjs';
 import { createLocalBackendServer } from './local-backend.mjs';
+import { createProjectCascadeDeleteOperations } from '../src/lib/projectDomain.js';
 
 async function withTempStore(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'atmostfair-'));
@@ -1453,6 +1454,58 @@ test('HTTP data API rejects unauthorized active project child deletes', async ()
       });
       assert.equal(ownerQueueDelete.ok, true);
       assert.equal(await store.get('queue_participants', queueEntry.doc.id), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API accepts app-generated project cascade delete batches', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Cascade', type: 'vote', status: 'active', createdAt: 1 } },
+      });
+      const item = await store.add('voting_items', {
+        projectId: project.doc.id,
+        title: 'Child vote',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [],
+        createdAt: 2,
+      });
+
+      const operations = createProjectCascadeDeleteOperations(project.doc.id, {
+        projects: [project.doc],
+        voting_items: [item],
+      });
+
+      const deleted = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: { operations },
+      });
+
+      assert.equal(deleted.results.length, operations.length);
+      assert.equal(await store.get('voting_items', item.id), null);
+      assert.equal(await store.get('projects', project.doc.id), null);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
