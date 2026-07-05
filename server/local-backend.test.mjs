@@ -8,7 +8,7 @@ import { createAuthService } from './auth-service.mjs';
 import { arrayRemove, arrayUnion, createDataStore } from './data-store.mjs';
 import { createLocalBackendServer } from './local-backend.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
-import { createProjectCascadeDeleteOperations } from '../src/lib/projectDomain.js';
+import { PROJECT_CASCADE_COLLECTIONS, createProjectCascadeDeleteOperations } from '../src/lib/projectDomain.js';
 
 async function withTempStore(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'atmostfair-'));
@@ -1650,6 +1650,14 @@ test('HTTP data API accepts app-generated project cascade delete batches', async
         method: 'POST',
         body: { email: 'owner@example.com', password: 'secret123' },
       });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const charlie = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'charlie@example.com', password: 'secret123' },
+      });
       const project = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: owner.token,
@@ -1663,11 +1671,66 @@ test('HTTP data API accepts app-generated project cascade delete batches', async
         votes: [],
         createdAt: 2,
       });
-
-      const operations = createProjectCascadeDeleteOperations(project.doc.id, {
-        projects: [project.doc],
-        voting_items: [item],
+      const gameRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Cascade game',
+        game: 'mine',
+        createdBy: owner.user.uid,
+        players: [],
+        status: 'playing',
+        config: { difficulty: 'easy' },
+        createdAt: 3,
       });
+      const activity = await store.add('project_activities', {
+        projectId: project.doc.id,
+        type: PROJECT_ACTIVITY_TYPES.projectCreated,
+        actorId: owner.user.uid,
+        actorName: 'Owner',
+        subject: 'Cascade',
+        metadata: {},
+        createdAt: 4,
+      });
+      const notification = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'kicked',
+            title: 'Cascade notice',
+            projectId: project.doc.id,
+            read: false,
+            createdAt: 5,
+          },
+        },
+      });
+      const strangerNotifications = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: charlie.token,
+        body: {
+          collection: 'notifications',
+          query: { filters: [{ field: 'projectId', op: '==', value: project.doc.id }] },
+        },
+      });
+      assert.deepEqual(strangerNotifications.docs, []);
+
+      const docsByCollection = {
+        projects: [project.doc],
+      };
+      for (const { name, field } of PROJECT_CASCADE_COLLECTIONS.filter(({ name }) => name !== 'projects')) {
+        const listed = await fetchJson(`${baseUrl}/api/data/list`, {
+          method: 'POST',
+          token: owner.token,
+          body: {
+            collection: name,
+            query: { filters: [{ field, op: '==', value: project.doc.id }] },
+          },
+        });
+        docsByCollection[name] = listed.docs;
+      }
+
+      const operations = createProjectCascadeDeleteOperations(project.doc.id, docsByCollection);
 
       const deleted = await fetchJson(`${baseUrl}/api/data/batch`, {
         method: 'POST',
@@ -1677,6 +1740,9 @@ test('HTTP data API accepts app-generated project cascade delete batches', async
 
       assert.equal(deleted.results.length, operations.length);
       assert.equal(await store.get('voting_items', item.id), null);
+      assert.equal(await store.get('game_rooms', gameRoom.id), null);
+      assert.equal(await store.get('project_activities', activity.id), null);
+      assert.equal(await store.get('notifications', notification.doc.id), null);
       assert.equal(await store.get('projects', project.doc.id), null);
     } finally {
       await new Promise((resolve) => server.close(resolve));

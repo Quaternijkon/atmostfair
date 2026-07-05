@@ -157,8 +157,9 @@ async function handleDataApi({ request, response, url, store, body, user }) {
 
   if (url.pathname === '/api/data/list') {
     const collection = validateDataCollection(body.collection);
-    const rawDocs = await store.list(collection, body.query || {});
-    const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs });
+    const query = body.query || {};
+    const rawDocs = await store.list(collection, query);
+    const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs, query });
     return sendJson(response, 200, { docs });
   }
 
@@ -1392,21 +1393,26 @@ function allowOnlyFields(data, fields) {
   return patch;
 }
 
-async function filterReadableDocs({ store, user, collection, docs }) {
+async function filterReadableDocs({ store, user, collection, docs, query }) {
   if (isAdminUser(user)) return docs;
   if (!['notifications', 'friendships', 'friend_messages'].includes(collection)) return docs;
 
   const visible = [];
   for (const doc of docs || []) {
-    if (await canReadDataDoc({ store, user, collection, doc })) visible.push(doc);
+    if (await canReadDataDoc({ store, user, collection, doc, query })) visible.push(doc);
   }
   return visible;
 }
 
-async function canReadDataDoc({ store, user, collection, doc }) {
+async function canReadDataDoc({ store, user, collection, doc, query }) {
   if (!doc) return true;
   if (isAdminUser(user)) return true;
-  if (collection === 'notifications') return doc.recipientId === user.uid;
+  if (collection === 'notifications') {
+    return doc.recipientId === user.uid || (
+      isExactProjectQuery(query, doc.projectId)
+      && await canManageProjectNotification(store, user, doc)
+    );
+  }
   if (collection === 'friendships') return hasMember(doc, user.uid);
   if (collection === 'friend_messages') return canAccessFriendMessage(store, user, doc);
   return true;
@@ -1420,7 +1426,9 @@ async function authorizeNotificationOperation({ store, user, type, id, data }) {
     if (type === 'set') return normalizeNotificationCreateData({ store, user, data });
     throwDataError(404, 'data/not-found', 'Notification not found.');
   }
-  if (!canWriteNotification(existing, user)) forbidden();
+  if (!canWriteNotification(existing, user)) {
+    if (!(type === 'delete' && await canManageProjectNotification(store, user, existing))) forbidden();
+  }
 
   if (type === 'delete') return undefined;
   return preserveImmutableField(data, existing, 'recipientId', type);
@@ -1556,6 +1564,23 @@ async function normalizeFriendMessageCreateData(store, data, user) {
 
 function canWriteNotification(notification, user) {
   return notification.recipientId === user.uid || isAdminUser(user);
+}
+
+async function canManageProjectNotification(store, user, notification) {
+  if (!PROJECT_NOTIFICATION_TYPES.has(notification?.type)) return false;
+  const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : '';
+  if (!projectId) return false;
+  const project = await store.get('projects', projectId);
+  return Boolean(project && canWriteProject(project, user));
+}
+
+function isExactProjectQuery(query, projectId) {
+  if (!projectId) return false;
+  return (query?.filters || []).some((filter) => (
+    filter?.field === 'projectId'
+    && filter.op === '=='
+    && filter.value === projectId
+  ));
 }
 
 async function canAccessFriendMessage(store, user, message) {
