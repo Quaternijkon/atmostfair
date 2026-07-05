@@ -50,3 +50,28 @@ test('GitHub Pages workflow ignores backend-only changes', async () => {
 
   assert.doesNotMatch(workflow, /-\s+['"]?server\/\*\*/, 'backend-only changes should not trigger Pages deploy');
 });
+
+test('GitHub Pages workflow retries transient deploy failures once', async () => {
+  const workflow = await readFile(path.join(root, '.github/workflows/deploy.yml'), 'utf8');
+
+  assert.match(
+    workflow,
+    /url:\s*\$\{\{\s*steps\.deployment\.outputs\.page_url\s*\|\|\s*steps\.deployment_retry\.outputs\.page_url\s*\}\}/,
+    'Pages environment URL should report the successful first deploy or retry URL',
+  );
+  assert.match(
+    workflow,
+    /id:\s+deployment[\s\S]{0,160}uses:\s+actions\/deploy-pages@v5[\s\S]{0,160}continue-on-error:\s+true/,
+    'The first deploy attempt should continue so a transient Pages failure can be retried',
+  );
+  assert.match(
+    workflow,
+    /id:\s+deployment_retry[\s\S]{0,120}if:\s+\$\{\{\s*steps\.deployment\.outcome\s*==\s*'failure'\s*\}\}[\s\S]{0,160}uses:\s+actions\/deploy-pages@v5/,
+    'A second deploy attempt should run only when the first deploy-pages step fails',
+  );
+  assert.doesNotMatch(
+    workflow,
+    /id:\s+deployment_retry[\s\S]{0,220}continue-on-error:\s+true/,
+    'The retry attempt should fail the workflow when Pages still cannot deploy',
+  );
+});
