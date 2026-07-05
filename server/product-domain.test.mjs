@@ -8,6 +8,7 @@ import {
   createBookingPatch,
   createBookingReleasePatch,
   createBookingWaitlistPatch,
+  createGameRoomCreateData,
   createProjectCascadeDeleteOperations,
   createProjectCreateData,
   createGatherFieldData,
@@ -539,6 +540,83 @@ test('minesweeper progress patch completes rooms with reusable result summaries'
       playerCount: 2,
     },
   });
+});
+
+test('game room creation data normalizes setup and rejects invalid room names', () => {
+  assert.equal(typeof createGameRoomCreateData, 'function');
+
+  const user = { uid: 'u1', displayName: 'Ada' };
+  assert.deepEqual(
+    createGameRoomCreateData('project-1', user, '  Finals table  ', 'rps', {
+      bestOf: '5',
+      timeout: '60',
+    }, 7200),
+    {
+      projectId: 'project-1',
+      name: 'Finals table',
+      game: 'rps',
+      status: 'waiting',
+      players: [],
+      config: { bestOf: 5, timeout: 60 },
+      createdAt: 7200,
+      createdBy: 'u1',
+    },
+  );
+
+  assert.deepEqual(
+    createGameRoomCreateData('project-1', user, 'Solo drill', 'rps', {
+      bestOf: 99,
+      timeout: 7,
+      vsComputer: true,
+      botName: '  Practice Bot  ',
+    }, 7300),
+    {
+      projectId: 'project-1',
+      name: 'Solo drill',
+      game: 'rps',
+      status: 'playing',
+      players: [
+        { uid: 'u1', name: 'Ada', score: 0, move: null },
+        { uid: 'computer', name: 'Practice Bot', score: 0, move: null },
+      ],
+      config: { bestOf: 3, timeout: 30 },
+      createdAt: 7300,
+      createdBy: 'u1',
+      currentRound: 1,
+      roundStartTime: 7300,
+    },
+  );
+
+  assert.deepEqual(
+    createGameRoomCreateData('project-1', user, 'Minefield', 'mine', {
+      difficulty: 'hard',
+      rows: 100,
+      cols: 100,
+      mines: 1000,
+      mineLocations: ['1,1', '1,1', ' 2,2 ', '', '3,3'],
+    }, 7400),
+    {
+      projectId: 'project-1',
+      name: 'Minefield',
+      game: 'mine',
+      status: 'playing',
+      players: [],
+      config: {
+        difficulty: 'hard',
+        rows: 30,
+        cols: 30,
+        mines: 899,
+        mineLocations: ['1,1', '2,2', '3,3'],
+      },
+      createdAt: 7400,
+      createdBy: 'u1',
+    },
+  );
+
+  assert.equal(createGameRoomCreateData('project-1', user, '   ', 'rps', {}, 7500), null);
+  assert.equal(createGameRoomCreateData('project-1', user, 'x'.repeat(121), 'rps', {}, 7500), null);
+  assert.equal(createGameRoomCreateData('   ', user, 'Valid', 'rps', {}, 7500), null);
+  assert.equal(createGameRoomCreateData('project-1', user, 'Valid', 'unknown', {}, 7500), null);
 });
 
 test('game room join guard is idempotent and enforces capacity', () => {

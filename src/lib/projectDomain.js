@@ -20,6 +20,7 @@ export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
+const GAME_ROOM_TYPES = new Set(['rps', 'mine']);
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const SCHEDULE_MODES = new Set(['date', 'half', 'time']);
 const BOOKING_MODES = new Set(['date', 'half']);
@@ -440,6 +441,38 @@ export function createMineRoomProgressPatch(room, user, progress, status, transi
   };
 }
 
+export function createGameRoomCreateData(projectId, user, roomName, game, options = {}, createdAt) {
+  const cleanProjectId = String(projectId || '').trim();
+  if (!cleanProjectId || !user?.uid || !GAME_ROOM_TYPES.has(game)) return null;
+  const cleanRoomName = normalizeProjectChildText(roomName);
+  if (!cleanRoomName) return null;
+
+  const base = {
+    projectId: cleanProjectId,
+    name: cleanRoomName,
+    game,
+    status: game === 'mine' ? 'playing' : 'waiting',
+    players: [],
+    config: game === 'mine' ? normalizeMineRoomConfig(options) : normalizeRpsRoomConfig(options),
+    createdAt,
+    createdBy: user.uid,
+  };
+
+  if (game === 'mine') return base;
+  if (!options?.vsComputer) return base;
+
+  return {
+    ...base,
+    status: 'playing',
+    players: [
+      { uid: user.uid, name: cleanName(options.userName, user), score: 0, move: null },
+      { uid: 'computer', name: String(options.botName || 'Bot').trim() || 'Bot', score: 0, move: null },
+    ],
+    currentRound: Number.parseInt(options.currentRound, 10) || 1,
+    roundStartTime: options.roundStartTime ?? createdAt,
+  };
+}
+
 export function createGameRoomJoinPatch(room, user, userName, joinedAt) {
   if (!room?.id || !user?.uid || room.status === 'finished') return null;
   const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];
@@ -471,6 +504,35 @@ export function createGameRoomJoinPatch(room, user, userName, joinedAt) {
   }
 
   return null;
+}
+
+function normalizeRpsRoomConfig(config) {
+  const bestOf = [1, 3, 5].includes(Number.parseInt(config?.bestOf, 10))
+    ? Number.parseInt(config.bestOf, 10)
+    : 3;
+  const timeout = [15, 30, 60].includes(Number.parseInt(config?.timeout, 10))
+    ? Number.parseInt(config.timeout, 10)
+    : 30;
+  return { bestOf, timeout };
+}
+
+function normalizeMineRoomConfig(config) {
+  const difficulty = ['easy', 'medium', 'hard'].includes(config?.difficulty) ? config.difficulty : 'easy';
+  const rows = normalizeBoundedInt(config?.rows, 1, 30, difficulty === 'hard' ? 16 : difficulty === 'medium' ? 16 : 9);
+  const cols = normalizeBoundedInt(config?.cols, 1, 30, difficulty === 'hard' ? 30 : difficulty === 'medium' ? 16 : 9);
+  const maxMines = Math.max(1, rows * cols - 1);
+  const mines = normalizeBoundedInt(config?.mines, 1, maxMines, difficulty === 'hard' ? 99 : difficulty === 'medium' ? 40 : 10);
+  const mineLocations = Array.isArray(config?.mineLocations)
+    ? [...new Set(config.mineLocations.map((item) => String(item || '').trim()).filter(Boolean))].slice(0, mines)
+    : [];
+
+  return { difficulty, rows, cols, mines, mineLocations };
+}
+
+function normalizeBoundedInt(value, min, max, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt, config) {

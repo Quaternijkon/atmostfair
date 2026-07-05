@@ -604,6 +604,7 @@ test('project child text inputs expose a shared display length limit', async () 
     team: await readFile(path.join(root, 'src/components/TeamView.jsx'), 'utf8'),
     gather: await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8'),
     claim: await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8'),
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
     backend: await readFile(path.join(root, 'server/local-backend.mjs'), 'utf8'),
   };
@@ -618,6 +619,8 @@ test('project child text inputs expose a shared display length limit', async () 
   assert.match(files.team, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Team room input should cap text before submit');
   assert.match(files.gather, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Gather field input should cap text before submit');
   assert.match(files.claim, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Claim item input should cap text before submit');
+  assert.match(files.gameHub, /maxLength=\{PROJECT_CHILD_TEXT_MAX_LENGTH\}/, 'Game room input should cap text before submit');
+  assert.match(files.gameHub, /createGameRoomCreateData/, 'Game hub should route room creation through the shared domain guard');
 });
 
 test('read-only project write attempts show localized app feedback', async () => {

@@ -4,7 +4,14 @@ import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepa
 import { useUI } from './UIContext';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
-import { createGameRoomJoinPatch, createGameRoomSummary, createMineRoomProgressPatch, createRpsNextRoundPatch } from '../lib/projectDomain';
+import {
+  PROJECT_CHILD_TEXT_MAX_LENGTH,
+  createGameRoomCreateData,
+  createGameRoomJoinPatch,
+  createGameRoomSummary,
+  createMineRoomProgressPatch,
+  createRpsNextRoundPatch,
+} from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
 const RPS_COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
@@ -338,6 +345,17 @@ const MINE_NUMBER_COLORS = [
   'text-google-green',
   'text-google-red',
 ];
+
+function createMineLocations(rows, cols, mines) {
+  const locations = [];
+  while (locations.length < mines) {
+    const r = Math.floor(Math.random() * rows);
+    const c = Math.floor(Math.random() * cols);
+    const key = `${r},${c}`;
+    if (!locations.includes(key)) locations.push(key);
+  }
+  return locations;
+}
 
 function MineCell({
   r,
@@ -728,55 +746,27 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const handleCreateRoom = async (e) => {
       e.preventDefault();
       if (!canInteract || !roomName.trim()) return;
-      
-      let config = {};
-      
-      if (selectedGame === 'rps') {
-           config = {
-              bestOf: parseInt(bestOf),
-              timeout: parseInt(timeoutSeconds)
-          };
-      } else if (selectedGame === 'mine') {
-          // Difficulty Config
-          let rows=9, cols=9, mines=10;
-          if (mineDifficulty === 'medium') { rows=16; cols=16; mines=40; }
-          if (mineDifficulty === 'hard') { rows=16; cols=30; mines=99; }
-          
-          // Generate Seed (Mine Coordinates)
-          const locations = [];
-          while (locations.length < mines) {
-              const r = Math.floor(Math.random() * rows);
-              const c = Math.floor(Math.random() * cols);
-              const key = `${r},${c}`;
-              if (!locations.includes(key)) locations.push(key);
+
+      const createdAt = nowMs();
+      const baseRoom = createGameRoomCreateData(project.id, user, roomName, selectedGame, {
+          bestOf,
+          timeout: timeoutSeconds,
+          vsComputer,
+          userName: user.displayName || t('you'),
+          botName: t('bot'),
+          difficulty: mineDifficulty,
+      }, createdAt);
+      if (!baseRoom) return;
+
+      const newRoom = selectedGame === 'mine'
+          ? {
+              ...baseRoom,
+              config: {
+                  ...baseRoom.config,
+                  mineLocations: createMineLocations(baseRoom.config.rows, baseRoom.config.cols, baseRoom.config.mines),
+              },
           }
-           
-          config = {
-              difficulty: mineDifficulty,
-              rows, cols, mines,
-              mineLocations: locations
-          };
-      }
-      
-      const newRoom = {
-          projectId: project.id,
-          name: roomName,
-          game: selectedGame, // 'rps' or 'mine'
-          status: (vsComputer || selectedGame === 'mine') ? 'playing' : 'waiting', 
-          players: [], 
-          config,
-          createdAt: nowMs(),
-          createdBy: user.uid
-      };
-      
-      if (selectedGame === 'rps' && vsComputer) {
-           newRoom.players = [
-               { uid: user.uid, name: user.displayName || t('you'), score: 0, move: null },
-               { uid: 'computer', name: t('bot'), score: 0, move: null }
-           ];
-           newRoom.currentRound = 1;
-           newRoom.roundStartTime = nowMs();
-      }
+          : baseRoom;
 
       const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
       setShowCreate(false);
@@ -863,7 +853,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                        <div className="flex-1 space-y-4">
                            <div>
                                <label className="app-label uppercase tracking-wide">{t('roomName')}</label>
-                               <input type="text" placeholder={t('roomNamePlaceholder')} value={roomName} onChange={e => setRoomName(e.target.value)} className="app-input" required />
+                               <input type="text" placeholder={t('roomNamePlaceholder')} value={roomName} onChange={e => setRoomName(e.target.value)} className="app-input" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} required />
                            </div>
                            
                            {/* Game Specific Config */}

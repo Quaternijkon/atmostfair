@@ -18,6 +18,7 @@ import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messag
 import {
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
+  createGameRoomCreateData,
   createGameRoomJoinPatch,
   createMineRoomProgressPatch,
   createScheduleConfigData,
@@ -54,7 +55,6 @@ const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const VOTING_MODES = new Set(['multiple', 'single']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
-const GAME_TYPES = new Set(['rps', 'mine']);
 const RPS_MOVES = new Set(['rock', 'paper', 'scissors']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
@@ -704,95 +704,22 @@ function authorizeGameRoomOperation({ user, type, data, existing, now }) {
 }
 
 function normalizeGameRoomCreateData(data, user) {
-  const projectId = typeof data?.projectId === 'string' ? data.projectId.trim() : '';
-  const name = String(data?.name || '').trim();
-  const game = typeof data?.game === 'string' ? data.game.trim() : '';
-  if (!projectId || !name || !GAME_TYPES.has(game)) {
+  const requestedPlayers = Array.isArray(data?.players) ? data.players : [];
+  const userPlayer = requestedPlayers.find((player) => player?.uid === user.uid) || null;
+  const computerPlayer = requestedPlayers.find((player) => player?.uid === 'computer') || null;
+  const room = createGameRoomCreateData(data?.projectId, user, data?.name, data?.game, {
+    ...(data?.config || {}),
+    vsComputer: Boolean(userPlayer && computerPlayer),
+    userName: userPlayer?.name,
+    botName: computerPlayer?.name,
+    currentRound: data?.currentRound,
+    roundStartTime: data?.roundStartTime ?? data?.createdAt,
+  }, data?.createdAt);
+
+  if (!room) {
     throwDataError(400, 'data/invalid-game-room', 'Game room name and type are required.');
   }
-
-  if (game === 'rps') {
-    return normalizeRpsRoomCreateData({ data, user, projectId, name });
-  }
-
-  return {
-    projectId,
-    name,
-    game: 'mine',
-    status: 'playing',
-    players: [],
-    config: normalizeMineConfig(data?.config),
-    createdAt: data?.createdAt,
-    createdBy: user.uid,
-  };
-}
-
-function normalizeRpsRoomCreateData({ data, user, projectId, name }) {
-  const requestedPlayers = Array.isArray(data?.players) ? data.players : [];
-  const userPlayer = requestedPlayers.find((player) => player?.uid === user.uid);
-  const computerPlayer = requestedPlayers.find((player) => player?.uid === 'computer');
-  const base = {
-    projectId,
-    name,
-    game: 'rps',
-    status: 'waiting',
-    players: [],
-    config: normalizeRpsConfig(data?.config),
-    createdAt: data?.createdAt,
-    createdBy: user.uid,
-  };
-
-  if (!userPlayer || !computerPlayer) return base;
-
-  return {
-    ...base,
-    status: 'playing',
-    players: [
-      {
-        uid: user.uid,
-        name: cleanUserProvidedName(userPlayer.name, user),
-        score: 0,
-        move: null,
-      },
-      {
-        uid: 'computer',
-        name: String(computerPlayer.name || 'Bot').trim() || 'Bot',
-        score: 0,
-        move: null,
-      },
-    ],
-    currentRound: Number.parseInt(data?.currentRound, 10) || 1,
-    roundStartTime: data?.roundStartTime ?? data?.createdAt,
-  };
-}
-
-function normalizeRpsConfig(config) {
-  const bestOf = [1, 3, 5].includes(Number.parseInt(config?.bestOf, 10))
-    ? Number.parseInt(config.bestOf, 10)
-    : 3;
-  const timeout = [15, 30, 60].includes(Number.parseInt(config?.timeout, 10))
-    ? Number.parseInt(config.timeout, 10)
-    : 30;
-  return { bestOf, timeout };
-}
-
-function normalizeMineConfig(config) {
-  const difficulty = ['easy', 'medium', 'hard'].includes(config?.difficulty) ? config.difficulty : 'easy';
-  const rows = normalizeBoundedInt(config?.rows, 1, 30, difficulty === 'hard' ? 16 : difficulty === 'medium' ? 16 : 9);
-  const cols = normalizeBoundedInt(config?.cols, 1, 30, difficulty === 'hard' ? 30 : difficulty === 'medium' ? 16 : 9);
-  const maxMines = Math.max(1, rows * cols - 1);
-  const mines = normalizeBoundedInt(config?.mines, 1, maxMines, difficulty === 'hard' ? 99 : difficulty === 'medium' ? 40 : 10);
-  const mineLocations = Array.isArray(config?.mineLocations)
-    ? [...new Set(config.mineLocations.map((item) => String(item || '').trim()).filter(Boolean))].slice(0, mines)
-    : [];
-
-  return { difficulty, rows, cols, mines, mineLocations };
-}
-
-function normalizeBoundedInt(value, min, max, fallback) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed)) return fallback;
-  return Math.min(max, Math.max(min, parsed));
+  return room;
 }
 
 function assertGameRoomImmutableFields(data, existing) {

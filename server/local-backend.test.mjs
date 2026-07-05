@@ -2435,6 +2435,23 @@ test('HTTP data API restricts game room writes to current-player transitions', a
       assert.deepEqual(spoofedRoom.doc.players, []);
       assert.equal(spoofedRoom.doc.winnerId, undefined);
 
+      const overlongRoomName = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          data: {
+            projectId: project.doc.id,
+            name: 'x'.repeat(121),
+            game: 'rps',
+            config: { bestOf: 3, timeout: 30 },
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(overlongRoomName.status, 400);
+      assert.equal(overlongRoomName.body.error.code, 'data/invalid-game-room');
+
       const rpsRoom = await store.add('game_rooms', {
         projectId: project.doc.id,
         name: 'RPS',
