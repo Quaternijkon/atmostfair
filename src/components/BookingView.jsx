@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { CalendarCheck, CheckSquare, Plus, UserMinus } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
+import { createBookingConfigData, createDateRangeDays } from '../lib/projectDomain';
 import { addDaysIsoDate, todayIsoDate } from '../lib/time';
 import { useUI } from './UIContext';
 
@@ -29,16 +30,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   
   // Date Generator (Similar to Schedule)
   const dates = useMemo(() => {
-     if (!config.start || !config.end) return [];
-     const list = [];
-     let curr = new Date(config.start);
-     const end = new Date(config.end);
-     while (curr <= end) {
-         list.push(new Date(curr).toISOString().split('T')[0]);
-         curr.setDate(curr.getDate() + 1);
-     }
-     return list;
-  }, [config.start, config.end]);
+     return createDateRangeDays(config);
+  }, [config]);
 
   const hasConfig = !!project.bookingConfig;
   const reqFields = (config.requiredFields || '').split(/[，,]/).map(s => s.trim()).filter(s => s);
@@ -49,7 +42,12 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
   const handleSaveConfig = () => {
     if (!canInteract) return;
-    actions.handleUpdateBookingConfig(project.id, config);
+    const bookingConfig = createBookingConfigData(config);
+    if (!bookingConfig) {
+      showToast(t('rangeError'), 'error');
+      return;
+    }
+    actions.handleUpdateBookingConfig(project.id, bookingConfig);
   };
 
   const toggleSlot = (start, end, label) => {

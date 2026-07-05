@@ -590,6 +590,112 @@ test('schedule submission guard updates an existing response instead of duplicat
   });
 });
 
+test('schedule and booking config guards reject invalid date ranges', () => {
+  assert.equal(typeof projectDomain.createScheduleConfigData, 'function');
+  assert.equal(typeof projectDomain.createBookingConfigData, 'function');
+
+  assert.deepEqual(
+    projectDomain.createScheduleConfigData({
+      mode: 'date',
+      start: '2026-07-05',
+      end: '2026-07-07',
+      deadline: '2026-07-04T12:30',
+    }),
+    {
+      mode: 'date',
+      start: '2026-07-05',
+      end: '2026-07-07',
+      deadline: '2026-07-04T12:30',
+    },
+  );
+  assert.deepEqual(
+    projectDomain.createScheduleConfigData({ mode: 'time', start: '2026-07-05', end: '2026-07-12', deadline: '' }),
+    { mode: 'time', start: '2026-07-05', end: '2026-07-12', deadline: '' },
+  );
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'date', start: '', end: '2026-07-07' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'date', start: '2026-07-08', end: '2026-07-07' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'date', start: '2026-02-30', end: '2026-03-01' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'date', start: '2026-07-01', end: '2026-08-15' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'time', start: '2026-07-05', end: '2026-07-13' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'invalid', start: '2026-07-05', end: '2026-07-07' }), null);
+  assert.equal(projectDomain.createScheduleConfigData({ mode: 'date', start: '2026-07-05', end: '2026-07-07', deadline: 'bad' }), null);
+
+  assert.deepEqual(
+    projectDomain.createBookingConfigData({
+      mode: 'half',
+      start: '2026-07-05',
+      end: '2026-07-06',
+      requiredFields: ' Name ， Phone ,, Email ',
+    }),
+    {
+      mode: 'half',
+      start: '2026-07-05',
+      end: '2026-07-06',
+      requiredFields: 'Name, Phone, Email',
+    },
+  );
+  assert.equal(projectDomain.createBookingConfigData({ mode: 'time', start: '2026-07-05', end: '2026-07-06' }), null);
+  assert.equal(projectDomain.createBookingConfigData({ mode: 'date', start: '2026-07-08', end: '2026-07-07' }), null);
+  assert.equal(projectDomain.createBookingConfigData({ mode: 'date', start: '2026-07-01', end: '2026-08-15' }), null);
+
+  assert.deepEqual(
+    projectDomain.createDateRangeDays({ mode: 'date', start: '2026-07-05', end: '2026-07-07' }),
+    ['2026-07-05', '2026-07-06', '2026-07-07'],
+  );
+  assert.deepEqual(
+    projectDomain.createDateRangeDays({ mode: 'date', start: '2026-02-30', end: '2026-03-01' }),
+    [],
+  );
+});
+
+test('schedule submission guard sanitizes availability against the active config', () => {
+  const user = { uid: 'u2', displayName: 'Rosalind' };
+
+  assert.deepEqual(
+    projectDomain.createScheduleSubmissionWrite(
+      [],
+      'project-1',
+      user,
+      'Rosalind Franklin',
+      ['2026-07-05', '2026-07-08', 'bad-date'],
+      3710,
+      { mode: 'date', start: '2026-07-05', end: '2026-07-07' },
+    ).data.availability,
+    ['2026-07-05'],
+  );
+
+  assert.deepEqual(
+    projectDomain.createScheduleSubmissionWrite(
+      [],
+      'project-1',
+      user,
+      'Rosalind Franklin',
+      ['2026-07-05_morning', '2026-07-05_late', '2026-07-08_evening'],
+      3711,
+      { mode: 'half', start: '2026-07-05', end: '2026-07-07' },
+    ).data.availability,
+    ['2026-07-05_morning'],
+  );
+
+  assert.deepEqual(
+    projectDomain.createScheduleSubmissionWrite(
+      [],
+      'project-1',
+      user,
+      'Rosalind Franklin',
+      [
+        { id: 'r1', date: '2026-07-05', start: '09:00', end: '10:00' },
+        { id: 'r2', date: '2026-07-05', start: '11:00', end: '10:00' },
+        { id: 'r3', date: '2026-07-08', start: '09:00', end: '10:00' },
+        { id: 'r4', date: 'not-date', start: '09:00', end: '10:00' },
+      ],
+      3712,
+      { mode: 'time', start: '2026-07-05', end: '2026-07-07' },
+    ).data.availability,
+    [{ id: 'r1', date: '2026-07-05', start: '09:00', end: '10:00' }],
+  );
+});
+
 test('schedule recommendation summary ranks date availability and filters stale values', () => {
   const config = { mode: 'date', start: '2026-07-05', end: '2026-07-07' };
   const submissions = [
@@ -938,6 +1044,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createRouletteJoinData',
     'createRouletteResultData',
     'createScheduleSubmissionWrite',
+    'createScheduleConfigData',
+    'createBookingConfigData',
     'createVoteToggleOperations',
     'createClaimToggleData',
     'createProjectStatusPatch',

@@ -2,7 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { CalendarClock, CheckSquare, X, ChartLine, Lock } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
-import { createScheduleRecommendationSummary } from '../lib/projectDomain';
+import {
+  createDateRangeDays,
+  createScheduleConfigData,
+  createScheduleRecommendationSummary,
+} from '../lib/projectDomain';
 import { addDaysIsoDate, nowMs, todayIsoDate } from '../lib/time';
 import { useUI } from './UIContext';
 
@@ -35,16 +39,8 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
 
   // Helper: Date Range Generator
   const dates = useMemo(() => {
-     if (!config.start || !config.end) return [];
-     const list = [];
-     let curr = new Date(config.start);
-     const end = new Date(config.end);
-     while (curr <= end) {
-         list.push(new Date(curr).toISOString().split('T')[0]);
-         curr.setDate(curr.getDate() + 1);
-     }
-     return list;
-  }, [config.start, config.end]);
+     return createDateRangeDays(config);
+  }, [config]);
 
   const hasConfig = !!project.scheduleConfig;
   const isDeadlinePassed = config.deadline && nowMs() > new Date(config.deadline).getTime();
@@ -53,18 +49,13 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   // --- Handlers ---
 
   const handleSaveConfig = () => {
-    // Validation
-    const dayCount = dates.length;
-    if (config.mode === 'date' && dayCount > 31) {
+    const scheduleConfig = createScheduleConfigData(config);
+    if (!scheduleConfig) {
       showToast(t('rangeError'), 'error');
       return;
     }
-    if ((config.mode === 'half' || config.mode === 'time') && dayCount > 8) {
-      showToast(t('rangeError'), 'error');
-      return;
-    }
-    
-    actions.handleUpdateScheduleConfig(project.id, config);
+
+    actions.handleUpdateScheduleConfig(project.id, scheduleConfig);
   };
 
   const handleSubmit = () => {

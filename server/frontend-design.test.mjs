@@ -661,6 +661,10 @@ test('workspace timestamps and defaults avoid render-time unstable values', asyn
 
   assert.match(files.schedule, /useState\(\(\) => project\.scheduleConfig \|\| createDefaultScheduleConfig\(\)\)/, 'Schedule default config should be lazily initialized');
   assert.match(files.booking, /useState\(\(\) => project\.bookingConfig \|\| createDefaultBookingConfig\(t\)\)/, 'Booking default config should be lazily initialized');
+  assert.match(files.schedule, /createDateRangeDays\(config\)/, 'Schedule date grids should use the shared validated date-range helper');
+  assert.match(files.booking, /createDateRangeDays\(config\)/, 'Booking date grids should use the shared validated date-range helper');
+  assert.doesNotMatch(files.schedule, /new Date\(config\.start\)/, 'Schedule should not generate date grids through permissive Date parsing');
+  assert.doesNotMatch(files.booking, /new Date\(config\.start\)/, 'Booking should not generate date grids through permissive Date parsing');
 });
 
 test('React compiler hotspots stay derived and deterministic', async () => {

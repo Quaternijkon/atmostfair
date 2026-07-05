@@ -12,6 +12,7 @@ import {
 import { createProjectArchivePatch } from './lib/dashboardDomain';
 import {
   createBookingPatch,
+  createBookingConfigData,
   createBookingReleasePatch,
   createBookingWaitlistPatch,
   createGatherFieldData,
@@ -24,6 +25,7 @@ import {
   createQueueResultData,
   createRouletteJoinData,
   createRouletteResultData,
+  createScheduleConfigData,
   createScheduleSubmissionWrite,
   createTeamJoinMember,
   createVoteToggleOperations,
@@ -392,11 +394,14 @@ function AppContent() {
       },
       handleUpdateScheduleConfig: async (projectId, config) => {
          if (!user || !isProjectWritable(projectId)) return;
-         await updateDoc(doc(db, 'projects', projectId), { scheduleConfig: config });
+         const scheduleConfig = createScheduleConfigData(config);
+         if (!scheduleConfig) return;
+         await updateDoc(doc(db, 'projects', projectId), { scheduleConfig });
       },
       handleSubmitSchedule: async (projectId, availability, submitterName) => {
          if (!user || !isProjectWritable(projectId)) return;
-         const submissionWrite = createScheduleSubmissionWrite(scheduleSubmissions, projectId, user, submitterName || currentUserName(), availability, nowMs());
+         const project = projects.find((entry) => entry.id === projectId);
+         const submissionWrite = createScheduleSubmissionWrite(scheduleSubmissions, projectId, user, submitterName || currentUserName(), availability, nowMs(), project?.scheduleConfig);
          if (!submissionWrite) return;
          if (submissionWrite.type === 'update') {
              await updateDoc(doc(db, submissionWrite.collection, submissionWrite.id), submissionWrite.data);
@@ -407,7 +412,9 @@ function AppContent() {
       },
       handleUpdateBookingConfig: async (projectId, config) => {
          if (!user || !isProjectWritable(projectId)) return;
-         await updateDoc(doc(db, 'projects', projectId), { bookingConfig: config });
+         const bookingConfig = createBookingConfigData(config);
+         if (!bookingConfig) return;
+         await updateDoc(doc(db, 'projects', projectId), { bookingConfig });
       },
       handleCreateBookingSlot: async (projectId, start, end, label) => {
          if (!isProjectWritable(projectId)) return;

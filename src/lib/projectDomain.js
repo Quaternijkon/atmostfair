@@ -19,6 +19,8 @@ export const PROJECT_TITLE_MAX_LENGTH = 120;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
+const SCHEDULE_MODES = new Set(['date', 'half', 'time']);
+const BOOKING_MODES = new Set(['date', 'half']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
@@ -423,8 +425,10 @@ export function createGameRoomJoinPatch(room, user, userName, joinedAt) {
   return null;
 }
 
-export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt) {
+export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt, config) {
   if (!projectId || !user?.uid) return null;
+  const normalizedAvailability = normalizeScheduleAvailability(availability, config);
+  if (normalizedAvailability === null) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
   const existing = submissions.find((submission) => submission.projectId === projectId && submission.uid === user.uid);
   if (existing?.id) {
@@ -433,7 +437,7 @@ export function createScheduleSubmissionWrite(existingSubmissions, projectId, us
       collection: 'schedule_submissions',
       id: existing.id,
       data: {
-        availability: availability || {},
+        availability: normalizedAvailability,
         submittedAt,
       },
     };
@@ -446,10 +450,46 @@ export function createScheduleSubmissionWrite(existingSubmissions, projectId, us
       projectId,
       uid: user.uid,
       name: cleanName(userName, user),
-      availability: availability || {},
+      availability: normalizedAvailability,
       submittedAt,
     },
   };
+}
+
+export function createScheduleConfigData(config) {
+  if (!config || !SCHEDULE_MODES.has(config.mode)) return null;
+  const base = createDateRangeConfigData(config, config.mode);
+  if (!base) return null;
+  const deadline = String(config.deadline || '').trim();
+  if (deadline && !isValidDateTimeLocal(deadline)) return null;
+  return { ...base, deadline };
+}
+
+export function createBookingConfigData(config) {
+  if (!config || !BOOKING_MODES.has(config.mode)) return null;
+  const base = createDateRangeConfigData(config, config.mode);
+  if (!base) return null;
+  return {
+    ...base,
+    requiredFields: normalizeRequiredFields(config.requiredFields),
+  };
+}
+
+export function createDateRangeDays(config) {
+  if (!config?.mode) return [];
+  const data = SCHEDULE_MODES.has(config.mode)
+    ? createScheduleConfigData(config)
+    : createBookingConfigData(config);
+  if (!data) return [];
+
+  const dates = [];
+  const cursor = new Date(`${data.start}T00:00:00Z`);
+  const end = new Date(`${data.end}T00:00:00Z`);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 export function createScheduleRecommendationSummary(submissions, config, limit = 3) {
@@ -754,6 +794,65 @@ function normalizeGatherSubmissionValue(field, value) {
   return text;
 }
 
+function createDateRangeConfigData(config, mode) {
+  const start = String(config.start || '').trim();
+  const end = String(config.end || '').trim();
+  if (!isValidDateOnly(start) || !isValidDateOnly(end) || end < start) return null;
+
+  const dayCount = countInclusiveDays(start, end);
+  const limit = mode === 'date' ? 31 : 8;
+  if (!Number.isFinite(dayCount) || dayCount < 1 || dayCount > limit) return null;
+
+  return { mode, start, end };
+}
+
+function countInclusiveDays(start, end) {
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return Number.NaN;
+  return Math.floor((endMs - startMs) / 86400000) + 1;
+}
+
+function normalizeScheduleAvailability(availability, config) {
+  if (!config?.mode) return availability || {};
+
+  const scheduleConfig = createScheduleConfigData(config);
+  if (!scheduleConfig) return null;
+  const values = Array.isArray(availability) ? availability : [];
+
+  if (scheduleConfig.mode === 'date') {
+    return uniqueValues(values.filter((date) => (
+      isValidDateOnly(date) && isDateInConfigRange(date, scheduleConfig)
+    )));
+  }
+
+  if (scheduleConfig.mode === 'half') {
+    return uniqueValues(values.filter((key) => {
+      const [date, slot] = String(key || '').split('_');
+      return isValidDateOnly(date) && HALF_DAY_SLOTS.has(slot) && isDateInConfigRange(date, scheduleConfig);
+    }));
+  }
+
+  return values.filter((range) => {
+    if (!range || !isValidDateOnly(range.date) || !isDateInConfigRange(range.date, scheduleConfig)) return false;
+    const startMinutes = parseTimeToMinutes(range.start);
+    const endMinutes = parseTimeToMinutes(range.end);
+    return Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes;
+  });
+}
+
+function normalizeRequiredFields(value) {
+  return uniqueValues(String(value || '')
+    .split(/[，,]/)
+    .map((field) => field.trim())
+    .filter(Boolean))
+    .join(', ');
+}
+
+function uniqueValues(values) {
+  return [...new Set(values)];
+}
+
 function normalizeGatherFieldType(type) {
   return GATHER_FIELD_TYPES.has(type) ? type : 'text';
 }
@@ -880,6 +979,12 @@ function isValidDateOnly(value) {
   return date.getUTCFullYear() === Number(year)
     && date.getUTCMonth() === Number(month) - 1
     && date.getUTCDate() === Number(day);
+}
+
+function isValidDateTimeLocal(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?$/.exec(String(value || ''));
+  if (!match) return false;
+  return isValidDateOnly(match[1]) && Number.isFinite(parseTimeToMinutes(match[2]));
 }
 
 function isDateInConfigRange(date, config) {
