@@ -474,6 +474,87 @@ test('RPS room transition persists a reusable match result summary', () => {
   });
 });
 
+test('game room join guard is idempotent and enforces capacity', () => {
+  assert.equal(typeof projectDomain.createGameRoomJoinPatch, 'function');
+
+  const user = { uid: 'u2', displayName: 'Ada' };
+  const rpsRoom = {
+    id: 'game-1',
+    game: 'rps',
+    status: 'waiting',
+    config: { bestOf: 3 },
+    players: [{ uid: 'u1', name: 'Owner', score: 0, move: null }],
+  };
+
+  assert.deepEqual(projectDomain.createGameRoomJoinPatch(rpsRoom, user, 'Ada Lovelace', 9000), {
+    players: [
+      { uid: 'u1', name: 'Owner', score: 0, move: null },
+      { uid: 'u2', name: 'Ada Lovelace', score: 0, move: null },
+    ],
+    status: 'playing',
+    roundStartTime: 9000,
+    currentRound: 1,
+  });
+
+  assert.equal(
+    projectDomain.createGameRoomJoinPatch(
+      { ...rpsRoom, players: [...rpsRoom.players, { uid: 'u2', name: 'Ada', score: 0, move: null }] },
+      user,
+      'Ada Lovelace',
+      9001,
+    ),
+    null,
+    'same RPS player should not be added twice',
+  );
+
+  assert.equal(
+    projectDomain.createGameRoomJoinPatch(
+      { ...rpsRoom, players: [...rpsRoom.players, { uid: 'u3', name: 'Grace', score: 0, move: null }] },
+      user,
+      'Ada Lovelace',
+      9002,
+    ),
+    null,
+    'full RPS room should reject additional players',
+  );
+
+  const mineRoom = {
+    id: 'game-2',
+    game: 'mine',
+    status: 'playing',
+    players: Array.from({ length: 7 }, (_, index) => ({
+      uid: `u${index + 1}`,
+      name: `Player ${index + 1}`,
+      progress: 0,
+      status: 'playing',
+    })),
+  };
+
+  assert.deepEqual(projectDomain.createGameRoomJoinPatch(mineRoom, { uid: 'u8', displayName: 'Lin' }, 'Lin', 9100), {
+    players: [
+      ...mineRoom.players,
+      { uid: 'u8', name: 'Lin', progress: 0, status: 'playing' },
+    ],
+  });
+
+  assert.equal(
+    projectDomain.createGameRoomJoinPatch(
+      { ...mineRoom, players: [...mineRoom.players, { uid: 'u8', name: 'Lin', progress: 0, status: 'playing' }] },
+      { uid: 'u9', displayName: 'Max' },
+      'Max',
+      9101,
+    ),
+    null,
+    'full minesweeper room should reject additional players',
+  );
+
+  assert.equal(
+    projectDomain.createGameRoomJoinPatch({ ...rpsRoom, status: 'finished' }, user, 'Ada Lovelace', 9003),
+    null,
+    'finished game rooms should reject joins',
+  );
+});
+
 test('schedule submission guard updates an existing response instead of duplicating it', () => {
   const createScheduleSubmissionWrite = projectDomain.createScheduleSubmissionWrite;
   assert.equal(typeof createScheduleSubmissionWrite, 'function');

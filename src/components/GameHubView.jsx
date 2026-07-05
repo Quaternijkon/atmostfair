@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle } from './Icons';
 import { useUI } from './UIContext';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, query, where, getDoc, db } from '../lib/localData';
+import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
-import { createGameRoomSummary, createRpsNextRoundPatch } from '../lib/projectDomain';
+import { createGameRoomJoinPatch, createGameRoomSummary, createRpsNextRoundPatch } from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
 const RPS_COLORS = { rock: 'text-google-red', paper: 'text-google-blue', scissors: 'text-google-yellow' };
@@ -15,8 +15,9 @@ function MoveIcon({ move, className = 'w-10 h-10' }) {
 }
 
 // --- Rock Paper Scissors Game ---
-const RPSGame = ({ user, room, projectId, onLeave, t }) => {
+const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
   const { showToast } = useUI();
+  const canInteract = !isStopped;
   
   // Game State derived from room
   const [timeLeft, setTimeLeft] = useState(0);
@@ -31,12 +32,14 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
   const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
   
   const startNextRound = useCallback(async () => {
+       if (!canInteract) return;
        const updateData = createRpsNextRoundPatch(room, nowMs());
        if (!updateData) return;
        await updateDoc(doc(db, 'game_rooms', room.id), updateData);
-  }, [room]);
+  }, [canInteract, room]);
 
   const handleMove = useCallback(async (move) => {
+      if (!canInteract) return;
       if ((selectedMove || me.move) && room.status === 'playing') return; // Already acted locally
       setSelectedMoveState({ round: room.currentRound, move });
       
@@ -98,7 +101,7 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
       }
       
       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
-  }, [me, room, selectedMove, user.uid]);
+  }, [canInteract, me, room, selectedMove, user.uid]);
 
   // Timer & Game Loop logic
   useEffect(() => {
@@ -114,7 +117,7 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
             setTimeLeft(remaining);
 
             // Timeout Auto-move (Client side enforcement by player themselves)
-            if (remaining <= 0 && isPlayer && !me.move) {
+            if (canInteract && remaining <= 0 && isPlayer && !me.move) {
                // Auto-play random or rock
                const moves = ['rock', 'paper', 'scissors'];
                const randomMove = moves[Math.floor(Math.random() * moves.length)];
@@ -123,7 +126,7 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
         }
 
         // 2. SHOWDOWN STATE TIMER (Host only handles transition)
-        if (room.status === 'showdown' && isHost) {
+        if (canInteract && room.status === 'showdown' && isHost) {
              if (now > room.showdownEndTime) {
                  startNextRound();
              }
@@ -131,22 +134,13 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
 
     }, 200);
     return () => clearInterval(interval);
-  }, [handleMove, isHost, isPlayer, me, room, startNextRound]);
+  }, [canInteract, handleMove, isHost, isPlayer, me, room, startNextRound]);
 
   
   const joinGame = async () => {
-      if (room.players.length >= 2) return;
-      
-      const newPlayer = { uid: user.uid, name: user.displayName || t('userLabel'), score: 0, move: null };
-      const newPlayers = [...room.players, newPlayer];
-      
-      let updateData = { players: newPlayers };
-      if (newPlayers.length === 2) {
-          updateData.status = 'playing';
-          updateData.roundStartTime = nowMs();
-          updateData.currentRound = 1;
-      }
-      
+      if (!canInteract) return;
+      const updateData = createGameRoomJoinPatch(room, user, user.displayName || t('userLabel'), nowMs());
+      if (!updateData) return;
       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
   };
 
@@ -281,7 +275,7 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
                                 return (
                                     <button
                                         key={move}
-                                        disabled={!!selectedMove || room.status !== 'playing'}
+                                        disabled={!canInteract || !!selectedMove || room.status !== 'playing'}
                                         onClick={() => handleMove(move)}
                                         className={`touch-target flex h-20 w-20 items-center justify-center rounded-2xl transition-all duration-200
                                             ${isSelected
@@ -302,7 +296,7 @@ const RPSGame = ({ user, room, projectId, onLeave, t }) => {
                         </div>
                     </>
                 ) : (
-                    <button onClick={joinGame} className="app-button-primary px-8">
+                    <button onClick={joinGame} disabled={!canInteract} className="app-button-primary px-8">
                         {t('joinGame')}
                     </button>
                 )}
@@ -425,9 +419,10 @@ function MineCell({
 
 
 // --- Minesweeper Game ---
-const MinesweeperGame = ({ user, room, onLeave, t }) => {
+const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
   const { showToast } = useUI();
   const { rows, cols, mines } = room.config;
+  const canInteract = !isStopped;
   const [status, setStatus] = useState(() => room.config.mineLocations ? 'ready' : 'loading'); // loading, ready, playing, dead, won
   const [flags, setFlags] = useState(new Set());
   const [revealed, setRevealed] = useState(new Set());
@@ -450,6 +445,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
 
   // Sync progress to shared local data.
   useEffect(() => {
+      if (!canInteract) return;
       if (!isPlayer || status === 'loading' || room.isLocal) return; // Skip for Local/Practice games
       
       const totalSafe = (rows * cols) - mines;
@@ -469,7 +465,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
           }
       }, 1000);
       return () => clearTimeout(timer);
-  }, [cols, isPlayer, me?.progress, me?.status, mines, revealed.size, room.id, room.isLocal, room.players, rows, status, user.uid]);
+  }, [canInteract, cols, isPlayer, me?.progress, me?.status, mines, revealed.size, room.id, room.isLocal, room.players, rows, status, user.uid]);
 
   const getNeighbors = (r, c) => {
     const neighbors = [];
@@ -491,6 +487,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
   };
 
   const revealCell = (r, c) => {
+    if (!canInteract) return;
     if (status === 'dead' || status === 'won' || flags.has(`${r},${c}`) || revealed.has(`${r},${c}`)) return;
     if (status === 'ready') setStatus('playing');
 
@@ -533,6 +530,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
   };
 
   const toggleFlag = (r, c) => {
+      if (!canInteract) return;
       if (status === 'dead' || status === 'won' || revealed.has(`${r},${c}`)) return;
       
       const key = `${r},${c}`;
@@ -543,6 +541,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
   };
 
   const handleChord = (r, c) => {
+      if (!canInteract) return;
       if (!revealed.has(`${r},${c}`)) return;
       
       const mineCount = countMines(r, c);
@@ -575,10 +574,10 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
   };
 
   const joinGame = async () => {
-       const newPlayer = { uid: user.uid, name: user.displayName || t('userLabel'), progress: 0, status: 'playing' };
-       await updateDoc(doc(db, 'game_rooms', room.id), {
-           players: arrayUnion(newPlayer)
-       });
+       if (!canInteract) return;
+       const updateData = createGameRoomJoinPatch(room, user, user.displayName || t('userLabel'), nowMs());
+       if (!updateData) return;
+       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
   };
 
   if (!room) return null;
@@ -637,7 +636,7 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
              ) : (
                  <div className="flex-1 flex items-center justify-center flex-col gap-4">
                      <Grid3x3 className="w-24 h-24 text-m3-on-surface-variant/20"/>
-                    <button onClick={joinGame} className="app-button-primary px-6">
+                    <button onClick={joinGame} disabled={!canInteract} className="app-button-primary px-6">
                          {t('joinMinesweeper')}
                      </button>
                  </div>
@@ -689,8 +688,9 @@ const MinesweeperGame = ({ user, room, onLeave, t }) => {
 };
 
 
-export default function GameHubView({ project, user, t }) {
+export default function GameHubView({ project, user, isStopped = false, t }) {
   const { showToast } = useUI();
+  const canInteract = !isStopped;
   const [activeTab, setActiveTab] = useState('lobby'); // lobby | finished
   const [rooms, setRooms] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -731,7 +731,7 @@ export default function GameHubView({ project, user, t }) {
 
   const handleCreateRoom = async (e) => {
       e.preventDefault();
-      if (!roomName.trim()) return;
+      if (!canInteract || !roomName.trim()) return;
       
       let config = {};
       
@@ -793,9 +793,9 @@ export default function GameHubView({ project, user, t }) {
   
       if (currentActiveRoom) {
           if (currentActiveRoom.game === 'mine') {
-              return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} onLeave={() => setActiveRoomId(null)} t={t} />;
+              return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} isStopped={isStopped} onLeave={() => setActiveRoomId(null)} t={t} />;
           }
-          return <RPSGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} projectId={project.id} onLeave={() => setActiveRoomId(null)} t={t} />;
+          return <RPSGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} projectId={project.id} isStopped={isStopped} onLeave={() => setActiveRoomId(null)} t={t} />;
       }
   
   const GAMES = [
@@ -833,13 +833,13 @@ export default function GameHubView({ project, user, t }) {
                    </button>
                </div>
            </div>
-           <button onClick={() => setShowCreate(!showCreate)} className="app-button-tonal">
+           <button onClick={() => setShowCreate(!showCreate)} disabled={!canInteract} className="app-button-tonal">
                {showCreate ? <X className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
                {showCreate ? t('close') : t('createRoom')}
            </button>
        </div>
        
-       {showCreate && (
+       {showCreate && canInteract && (
            <div className="app-card mb-8 animate-slide-down p-5 sm:p-6">
                <h3 className="mb-6 text-xl font-medium">{t('startNewGame')}</h3>
                <form onSubmit={handleCreateRoom} className="space-y-6">

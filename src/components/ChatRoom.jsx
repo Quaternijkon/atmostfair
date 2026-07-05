@@ -6,7 +6,7 @@ import Avatar from './Avatar';
 import { useUI } from './UIContext';
 import { nowMs } from '../lib/time';
 
-export default function ChatRoom({ projectId, user, currentUser, t }) {
+export default function ChatRoom({ projectId, user, currentUser, isStopped = false, t }) {
     const activeUser = user || currentUser;
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
@@ -36,7 +36,7 @@ export default function ChatRoom({ projectId, user, currentUser, t }) {
 
     const handleSend = async (e) => {
         e.preventDefault();
-        if (!inputText.trim()) return;
+        if (isStopped || !inputText.trim()) return;
 
         try {
             await addDoc(collection(db, 'project_chats'), {
@@ -113,11 +113,12 @@ export default function ChatRoom({ projectId, user, currentUser, t }) {
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder={t('typeMessage')}
+                    disabled={isStopped}
                     className="app-input flex-1 rounded-full"
                 />
                 <button 
                     type="submit" 
-                    disabled={!inputText.trim()}
+                    disabled={isStopped || !inputText.trim()}
                     className="app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1"
                 >
                     <Send className="w-5 h-5" />

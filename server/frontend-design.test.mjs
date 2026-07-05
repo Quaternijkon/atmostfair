@@ -519,6 +519,34 @@ test('paused and finished gather workspaces keep submissions read-only', async (
   );
 });
 
+test('paused and finished game and chat workspaces keep direct writes read-only', async () => {
+  const files = {
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+    gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+  };
+
+  assert.match(
+    files.detail,
+    /<GameHubView project=\{project\} user=\{user\} isStopped=\{isStopped \|\| isFinished\} t=\{t\} \/>/,
+    'Project detail should pass stopped/finished state into the game hub',
+  );
+  assert.match(
+    files.detail,
+    /<ChatRoom projectId=\{project\.id\} currentUser=\{user\} isStopped=\{isStopped \|\| isFinished\} t=\{t\} \/>/,
+    'Project detail should pass stopped/finished state into project chat',
+  );
+  assert.match(files.gameHub, /export default function GameHubView\(\{ project, user, isStopped = false, t \}\)/, 'Game hub should accept a read-only state');
+  assert.match(files.gameHub, /const canInteract = !isStopped;/, 'Game hub should derive a single read-only interaction guard');
+  assert.match(files.gameHub, /createGameRoomJoinPatch/, 'Game hub joins should use the domain join guard');
+  assert.match(files.gameHub, /handleCreateRoom[\s\S]{0,160}if \(!canInteract/, 'Game room creation should reject stopped or finished projects before writing');
+  assert.match(files.gameHub, /joinGame[\s\S]{0,180}if \(!canInteract/, 'Game room joins should reject stopped or finished projects before writing');
+  assert.match(files.gameHub, /handleMove[\s\S]{0,180}if \(!canInteract/, 'RPS moves should reject stopped or finished projects before writing');
+  assert.match(files.chat, /export default function ChatRoom\(\{ projectId, user, currentUser, isStopped = false, t \}\)/, 'Project chat should accept a read-only state');
+  assert.match(files.chat, /if \(isStopped \|\| !inputText\.trim\(\)\) return;/, 'Chat send should reject stopped or finished projects before writing');
+  assert.match(files.chat, /disabled=\{isStopped \|\| !inputText\.trim\(\)\}/, 'Chat send control should be disabled for stopped or finished projects');
+});
+
 test('workspaces avoid native browser dialogs and user-name fallbacks', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

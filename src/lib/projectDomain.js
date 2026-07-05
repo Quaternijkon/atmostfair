@@ -387,6 +387,39 @@ export function createGameRoomSummary(room) {
   };
 }
 
+export function createGameRoomJoinPatch(room, user, userName, joinedAt) {
+  if (!room?.id || !user?.uid || room.status === 'finished') return null;
+  const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];
+  if (players.some((player) => player.uid === user.uid)) return null;
+
+  if (room.game === 'rps') {
+    if (room.status !== 'waiting' || players.length >= 2) return null;
+    const nextPlayers = [
+      ...players,
+      { uid: user.uid, name: cleanName(userName, user), score: 0, move: null },
+    ];
+    const patch = { players: nextPlayers };
+    if (nextPlayers.length === 2) {
+      patch.status = 'playing';
+      patch.roundStartTime = joinedAt;
+      patch.currentRound = 1;
+    }
+    return patch;
+  }
+
+  if (room.game === 'mine') {
+    if (!['waiting', 'playing'].includes(room.status || 'playing') || players.length >= 8) return null;
+    return {
+      players: [
+        ...players,
+        { uid: user.uid, name: cleanName(userName, user), progress: 0, status: 'playing' },
+      ],
+    };
+  }
+
+  return null;
+}
+
 export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt) {
   if (!projectId || !user?.uid) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];

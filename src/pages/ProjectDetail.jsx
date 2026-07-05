@@ -291,7 +291,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
       {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
       {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'game_hub' && <GameHubView project={project} user={user} t={t} />}
+      {project.type === 'game_hub' && <GameHubView project={project} user={user} isStopped={isStopped || isFinished} t={t} />}
       {project.type === 'project' && (
         <div className="app-card flex flex-col items-center justify-center p-12">
             <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
@@ -307,7 +307,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
           <ActivityTimeline activities={projectActivityItems} t={t} />
           {showChat && (
              <div className="animate-fade-in">
-                 <ChatRoom projectId={project.id} currentUser={user} t={t} />
+                 <ChatRoom projectId={project.id} currentUser={user} isStopped={isStopped || isFinished} t={t} />
              </div>
           )}
         </div>
