@@ -167,6 +167,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const [unlockedProjectId, setUnlockedProjectId] = useState(() => (location.state?.unlockedProjectId === id ? id : null));
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+  const [isUnlockingProject, setIsUnlockingProject] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showChat, setShowChat] = useState(false);
 
@@ -199,12 +200,16 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const isProjectLocked = hasProjectPassword(project) && !project.accessGranted && !isLocallyUnlocked;
   const handleUnlockProject = async (e) => {
     e.preventDefault();
+    if (isUnlockingProject) return;
+    setIsUnlockingProject(true);
     try {
       await unlockProjectAccess(project.id, inputPassword);
       setUnlockedProjectId(project.id);
       setPasswordError(false);
     } catch {
       setPasswordError(true);
+    } finally {
+      setIsUnlockingProject(false);
     }
   };
 
@@ -226,12 +231,15 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
                   onChange={e => { setInputPassword(e.target.value); setPasswordError(false); }}
                   className="app-input"
                   placeholder={t('enterPassword')} autoFocus
+                  disabled={isUnlockingProject}
+                  aria-invalid={passwordError}
+                  aria-describedby={passwordError ? 'project-unlock-error' : undefined}
                 />
               </div>
-              {passwordError && <p className="text-google-red text-xs mb-6 ml-1">{t('incorrectPass')}</p>}
+              {passwordError && <p id="project-unlock-error" role="alert" aria-live="assertive" className="text-google-red text-xs mb-6 ml-1">{t('incorrectPass')}</p>}
               <div className="flex justify-end gap-2 mt-4">
-                <button type="button" onClick={() => navigate('/')} className="app-button-quiet">{t('cancel')}</button>
-                <button type="submit" className="app-button-primary">{t('unlock')}</button>
+                <button type="button" disabled={isUnlockingProject} onClick={() => navigate('/')} className="app-button-quiet">{t('cancel')}</button>
+                <button type="submit" disabled={isUnlockingProject} className="app-button-primary">{isUnlockingProject ? t('processing') : t('unlock')}</button>
               </div>
             </form>
         </div>

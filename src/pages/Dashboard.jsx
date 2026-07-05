@@ -53,6 +53,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const [passwordPromptProject, setPasswordPromptProject] = useState(null);
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+  const [isUnlockingProject, setIsUnlockingProject] = useState(false);
 
   // Configuration Mapping
   const CATEGORIES = {
@@ -171,7 +172,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
 
   const handleProjectClick = (project) => {
     if (hasProjectPassword(project) && !project.accessGranted) {
-      setPasswordPromptProject(project); setInputPassword(''); setPasswordError(false);
+      setPasswordPromptProject(project); setInputPassword(''); setPasswordError(false); setIsUnlockingProject(false);
     } else {
       navigateToProject(project);
     }
@@ -179,13 +180,18 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
 
   const verifyPassword = async (e) => {
     e.preventDefault();
+    if (!passwordPromptProject || isUnlockingProject) return;
+    setIsUnlockingProject(true);
     try {
       const project = passwordPromptProject;
       await unlockProjectAccess(project.id, inputPassword);
       navigateToProject(project, { state: { unlockedProjectId: project.id } });
       setPasswordPromptProject(null);
+      setPasswordError(false);
     } catch {
       setPasswordError(true);
+    } finally {
+      setIsUnlockingProject(false);
     }
   };
 
@@ -234,12 +240,15 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                   onChange={e => { setInputPassword(e.target.value); setPasswordError(false); }}
                   className="app-input"
                   placeholder={t('enterPassword')} autoFocus
+                  disabled={isUnlockingProject}
+                  aria-invalid={passwordError}
+                  aria-describedby={passwordError ? 'project-unlock-error' : undefined}
                 />
               </div>
-              {passwordError && <p className="text-google-red text-xs mb-4 ml-1">{t('incorrectPass')}</p>}
+              {passwordError && <p id="project-unlock-error" role="alert" aria-live="assertive" className="text-google-red text-xs mb-4 ml-1">{t('incorrectPass')}</p>}
               <div className="flex justify-end gap-2 mt-6">
-                <button type="button" onClick={() => setPasswordPromptProject(null)} className="app-button-quiet">{t('cancel')}</button>
-                <button type="submit" className="app-button-primary">{t('unlock')}</button>
+                <button type="button" disabled={isUnlockingProject} onClick={() => setPasswordPromptProject(null)} className="app-button-quiet">{t('cancel')}</button>
+                <button type="submit" disabled={isUnlockingProject} className="app-button-primary">{isUnlockingProject ? t('processing') : t('unlock')}</button>
               </div>
             </form>
           </div>

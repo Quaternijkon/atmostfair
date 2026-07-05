@@ -161,6 +161,26 @@ test('password-protected project unlocks use server access grants', async () => 
   );
 });
 
+test('password-protected project unlocks expose pending and accessible error states', async () => {
+  const files = {
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+  };
+
+  assert.match(files.dashboard, /\[isUnlockingProject,\s*setIsUnlockingProject\]\s*=\s*useState\(false\)/, 'Dashboard unlock modal should track pending unlock requests');
+  assert.match(files.detail, /\[isUnlockingProject,\s*setIsUnlockingProject\]\s*=\s*useState\(false\)/, 'Project detail unlock guard should track pending unlock requests');
+
+  for (const [fileKey, source] of Object.entries(files)) {
+    assert.match(source, /if \([^)]*isUnlockingProject[^)]*\) return;/, `${fileKey} unlock submit should ignore duplicate submissions`);
+    assert.match(source, /setIsUnlockingProject\(true\)[\s\S]{0,520}finally\s*\{[\s\S]{0,160}setIsUnlockingProject\(false\)/, `${fileKey} unlock submit should reset pending state in a finally block`);
+    assert.match(source, /disabled=\{isUnlockingProject\}/, `${fileKey} unlock password input should be disabled while submitting`);
+    assert.match(source, /aria-invalid=\{passwordError\}/, `${fileKey} unlock password input should expose invalid state`);
+    assert.match(source, /aria-describedby=\{passwordError \? 'project-unlock-error' : undefined\}/, `${fileKey} unlock password input should reference the current error`);
+    assert.match(source, /id="project-unlock-error" role="alert" aria-live="assertive"/, `${fileKey} unlock error should be announced assertively`);
+    assert.match(source, /isUnlockingProject \? t\('processing'\) : t\('unlock'\)/, `${fileKey} unlock submit button should show localized progress copy`);
+  }
+});
+
 test('game and booking workspaces use localized ergonomic states', async () => {
   const files = {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
