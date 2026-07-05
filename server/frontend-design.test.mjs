@@ -303,6 +303,31 @@ test('schedule workspace exposes localized owner recommendation summary', async 
   assert.doesNotMatch(schedule, />Recommendations<|>Best time<|>No recommendations/, 'Schedule recommendation copy should be localized');
 });
 
+test('queue workspace exposes localized replayable audit steps', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'queueAuditTrail',
+    'queueAuditFormula',
+    'queueAuditStep',
+    'queueAuditEmpty',
+  ]) {
+    assert.match(files.queue, new RegExp(`t\\('${key}'(?:,|\\))`), `Queue should localize ${key}`);
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.queue, /project\.queueResult\?\.steps/, 'Queue should read persisted replay steps from the project result');
+  assert.match(files.queue, /queueAuditSteps\.map/, 'Queue should render replay steps from computed audit data');
+  assert.match(files.queue, /app-card[\s\S]{0,500}queueAuditTrail/, 'Queue audit should use the shared app surface');
+  assert.match(files.app, /createQueueResultData/, 'App should derive queue result through the domain helper');
+  assert.match(files.app, /queueResult:\s*queueResult/, 'App should persist queueResult on the project');
+  assert.doesNotMatch(files.queue, />Audit|>Formula|>Step|No audit/i, 'Queue audit visible copy should be localized');
+});
+
 test('booking workspace exposes localized waitlist states for full slots', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

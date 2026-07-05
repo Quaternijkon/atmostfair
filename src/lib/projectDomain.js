@@ -45,6 +45,40 @@ export function createQueueJoinData(existingParticipants, projectId, user, userN
   };
 }
 
+export function createQueueResultData(participants, generatedAt) {
+  const pool = normalizedQueueParticipants(participants);
+  if (pool.length === 0 || !generatedAt) return null;
+
+  const updates = [];
+  const steps = [];
+  let order = 1;
+
+  while (pool.length > 0) {
+    const sum = pool.reduce((acc, participant) => acc + participant.value, 0);
+    const selectedIndex = sum % pool.length;
+    const winner = pool[selectedIndex];
+    updates.push({ id: winner.id, queueOrder: order });
+    steps.push({
+      order,
+      sum,
+      remainingCount: pool.length,
+      selectedIndex,
+      participantId: winner.id,
+      participantName: winner.name,
+      participantValue: winner.value,
+    });
+    order += 1;
+    pool.splice(selectedIndex, 1);
+  }
+
+  return {
+    generatedAt,
+    participantCount: updates.length,
+    updates,
+    steps,
+  };
+}
+
 export function createBookingPatch(slot, user, userName, bookingData, bookedAt) {
   if (!slot?.id || !user?.uid) return null;
   if (slot.bookedBy) return null;
@@ -480,6 +514,19 @@ function normalizeBookingWaitlist(waitlist) {
       bookingData: entry.bookingData || {},
       joinedAt: entry.joinedAt,
     }));
+}
+
+function normalizedQueueParticipants(participants) {
+  if (!Array.isArray(participants)) return [];
+  return participants
+    .filter((participant) => participant?.id)
+    .map((participant) => ({
+      id: participant.id,
+      name: String(participant.name || '').trim(),
+      value: Number.parseInt(participant.value, 10) || 0,
+      joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
+    }))
+    .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
 }
 
 function isValidDateOnly(value) {

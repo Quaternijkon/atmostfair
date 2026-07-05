@@ -20,6 +20,7 @@ import {
   createProjectDuplicateChildOperations,
   createProjectDuplicateData,
   createQueueJoinData,
+  createQueueResultData,
   createRouletteJoinData,
   createScheduleSubmissionWrite,
   createTeamJoinMember,
@@ -226,31 +227,19 @@ function AppContent() {
       handleGenerateQueue: async (projectId) => {
          if (!user) return;
          const parts = queueParticipants.filter(p => p.projectId === projectId);
-         if (parts.length === 0) return;
-         
-         let pool = [...parts];
-         let order = 1;
-         const updates = [];
-         
-         while (pool.length > 0) {
-            const currentSum = pool.reduce((acc, p) => acc + p.value, 0);
-            const index = currentSum % pool.length;
-            const winner = pool[index];
-            updates.push({ id: winner.id, queueOrder: order });
-            order++;
-            pool.splice(index, 1);
-         }
+         const queueResult = createQueueResultData(parts, nowMs());
+         if (!queueResult) return;
          
          const batch = writeBatch(db);
-         updates.forEach(u => {
+         queueResult.updates.forEach(u => {
             const ref = doc(db, 'queue_participants', u.id);
             batch.update(ref, { queueOrder: u.queueOrder });
          });
          const projectRef = doc(db, 'projects', projectId);
-         batch.update(projectRef, { status: 'finished' });
+         batch.update(projectRef, { status: 'finished', queueResult: queueResult });
          
          await batch.commit();
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueGenerated, subject: String(updates.length), metadata: { participantCount: updates.length } });
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueGenerated, subject: String(queueResult.participantCount), metadata: { participantCount: queueResult.participantCount } });
       },
       handleJoinRoulette: async (projectId, userName, value) => {
          if (!user) return;

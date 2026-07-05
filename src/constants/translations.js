@@ -336,6 +336,10 @@ export const TRANSLATIONS = {
     queueing: "Queueing...",
     queueAlgorithm: "Algorithm Explanation",
     queueAlgoDesc: "Participants pick a number. The list is ordered by sequentially calculating (Sum % Remaining) to pick the next person.",
+    queueAuditTrail: "Replay trail",
+    queueAuditFormula: "{sum} % {remaining} = {index}",
+    queueAuditStep: "#{order} {name} · value {value}",
+    queueAuditEmpty: "No replay data recorded.",
     noParticipantsYet: "No participants yet",
     currentUserBadge: "You",
     // Schedule
@@ -813,6 +817,10 @@ export const TRANSLATIONS = {
     queueing: "排队中...",
     queueAlgorithm: "算法解释",
     queueAlgoDesc: "参与者选择一个数字。系统通过(总和 % 剩余人数)依次选出下一个人，直到所有人排好位置。",
+    queueAuditTrail: "复盘轨迹",
+    queueAuditFormula: "{sum} % {remaining} = {index}",
+    queueAuditStep: "第 {order} 位：{name} · 数值 {value}",
+    queueAuditEmpty: "暂无复盘数据。",
     noParticipantsYet: "暂无参与者",
     currentUserBadge: "你",
     // Schedule

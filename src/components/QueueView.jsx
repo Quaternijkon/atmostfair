@@ -16,6 +16,7 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
 
   const myParticipant = participants.find((p) => p.uid === user?.uid);
   const count = participants.length;
+  const queueAuditSteps = project.queueResult?.steps || [];
 
   const handleGenerate = () => {
     confirm({
@@ -38,6 +39,43 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
             </div>
             <h2 className="text-3xl font-medium text-m3-on-surface mb-2">{t('queueResult')}</h2>
             <p className="text-m3-on-surface-variant mb-6">{t('queueAlgoDesc')}</p>
+        </div>
+      )}
+
+      {isFinished && (
+        <div className="app-card p-5 sm:p-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+            <ListOrdered className="h-4 w-4 text-google-yellow" />
+            {t('queueAuditTrail')}
+          </h3>
+          {queueAuditSteps.length > 0 ? (
+            <div className="grid gap-2">
+              {queueAuditSteps.map((step) => (
+                <div key={`${step.order}-${step.participantId}`} className="rounded-xl border border-m3-outline-variant/35 bg-m3-surface-container/45 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-m3-on-surface">
+                      {t('queueAuditStep', {
+                        order: step.order,
+                        name: step.participantName,
+                        value: step.participantValue,
+                      })}
+                    </div>
+                    <div className="font-mono text-xs text-google-yellow">
+                      {t('queueAuditFormula', {
+                        sum: step.sum,
+                        remaining: step.remainingCount,
+                        index: step.selectedIndex,
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-m3-outline-variant/60 bg-m3-surface-container/30 p-3 text-sm text-m3-on-surface-variant">
+              {t('queueAuditEmpty')}
+            </div>
+          )}
         </div>
       )}
 

@@ -11,6 +11,7 @@ import {
   createProjectCascadeDeleteOperations,
   createGatherFieldData,
   createQueueJoinData,
+  createQueueResultData,
   createTeamJoinMember,
   createScheduleRecommendationSummary,
   createVoteToggleOperations,
@@ -68,6 +69,56 @@ test('queue join guard creates one participant per project and user', () => {
     null,
     'same user should not join the same queue twice',
   );
+});
+
+test('queue result data records deterministic order and replayable audit steps', () => {
+  const participants = [
+    { id: 'p3', projectId: 'project-1', uid: 'u3', name: 'Cy', value: 4, joinedAt: 30 },
+    { id: 'p1', projectId: 'project-1', uid: 'u1', name: 'Ana', value: 1, joinedAt: 10 },
+    { id: 'p2', projectId: 'project-1', uid: 'u2', name: 'Bo', value: 2, joinedAt: 20 },
+  ];
+
+  assert.deepEqual(createQueueResultData(participants, 4000), {
+    generatedAt: 4000,
+    participantCount: 3,
+    updates: [
+      { id: 'p2', queueOrder: 1 },
+      { id: 'p3', queueOrder: 2 },
+      { id: 'p1', queueOrder: 3 },
+    ],
+    steps: [
+      {
+        order: 1,
+        sum: 7,
+        remainingCount: 3,
+        selectedIndex: 1,
+        participantId: 'p2',
+        participantName: 'Bo',
+        participantValue: 2,
+      },
+      {
+        order: 2,
+        sum: 5,
+        remainingCount: 2,
+        selectedIndex: 1,
+        participantId: 'p3',
+        participantName: 'Cy',
+        participantValue: 4,
+      },
+      {
+        order: 3,
+        sum: 1,
+        remainingCount: 1,
+        selectedIndex: 0,
+        participantId: 'p1',
+        participantName: 'Ana',
+        participantValue: 1,
+      },
+    ],
+  });
+
+  assert.equal(createQueueResultData([], 4001), null);
+  assert.equal(createQueueResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], 4002), null);
 });
 
 test('booking guard refuses already booked or stale slots', () => {
@@ -559,6 +610,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   for (const helper of [
     'createTeamJoinMember',
     'createQueueJoinData',
+    'createQueueResultData',
     'createBookingPatch',
     'createBookingWaitlistPatch',
     'createBookingReleasePatch',
@@ -580,6 +632,8 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /loadProjectCascadeDocs/, 'Project deletion should load project-owned docs before deleting');
   assert.doesNotMatch(app, /handleDeleteProject:\s*async\s*\(projectId\)\s*=>\s*\{\s*await deleteDoc\(doc\(db,\s*'projects'/, 'Project deletion should not delete only the project shell');
   assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
+  assert.match(app, /createQueueResultData/, 'Queue generation should derive result and audit steps through the domain helper');
+  assert.match(app, /queueResult/, 'Queue generation should persist replayable result data on the project');
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
   assert.match(app, /const projectFields = gatherFields\.filter/, 'Gather submissions should load project field definitions before writing');
   assert.match(app, /createGatherSubmissionData\([\s\S]{0,500}projectFields/, 'Gather submissions should validate against field definitions before writing');
