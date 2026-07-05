@@ -630,7 +630,10 @@ function AppContent() {
                       gatherFields={gatherFields}
                       gatherSubmissions={gatherSubmissions}
                       scheduleSubmissions={scheduleSubmissions}
-                      bookingSlots={bookingSlots}                    claimItems={claimItems}                    onClose={() => setShowAdmin(false)}
+                      bookingSlots={bookingSlots}
+                      claimItems={claimItems}
+                      onDeleteProject={actions.handleDeleteProject}
+                      onClose={() => setShowAdmin(false)}
                       t={t}
                   />
                 ) : (

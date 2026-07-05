@@ -874,6 +874,7 @@ test('project cascade deletion covers every project-owned collection', () => {
 
 test('app action handlers use domain guards for high-risk writes', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+  const admin = await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8');
 
   for (const helper of [
     'createTeamJoinMember',
@@ -901,6 +902,10 @@ test('app action handlers use domain guards for high-risk writes', async () => {
 
   assert.match(app, /loadProjectCascadeDocs/, 'Project deletion should load project-owned docs before deleting');
   assert.doesNotMatch(app, /handleDeleteProject:\s*async\s*\(projectId\)\s*=>\s*\{\s*await deleteDoc\(doc\(db,\s*'projects'/, 'Project deletion should not delete only the project shell');
+  assert.match(app, /onDeleteProject=\{actions\.handleDeleteProject\}/, 'Admin project deletion should receive the shared cascade delete action');
+  assert.match(admin, /onDeleteProject/, 'AdminDashboard should accept the shared cascade delete action');
+  assert.match(admin, /await onDeleteProject\(project\.id\);/, 'Admin project deletion should call the shared cascade delete action');
+  assert.doesNotMatch(admin, /deleteDoc\(doc\(db,\s*'projects',\s*project\.id\)\)/, 'Admin project deletion should not delete only the project shell');
   assert.match(app, /createVoteToggleOperations\([^)]*items/, 'Vote handling should derive writes from all project voting items');
   assert.match(app, /createQueueResultData/, 'Queue generation should derive result and audit steps through the domain helper');
   assert.match(app, /queueResult/, 'Queue generation should persist replayable result data on the project');

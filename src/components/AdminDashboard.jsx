@@ -4,7 +4,7 @@ import { deleteDoc, doc, db } from '../lib/localData';
 import { formatDate } from '../lib/locale';
 import { useUI } from './UIContext';
 
-export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, onClose, t }) {
+export default function AdminDashboard({ projects, items, rooms, rouletteParticipants, queueParticipants, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, onDeleteProject, onClose, t }) {
   const { confirm, showToast } = useUI();
   // Logic to find orphans
   const projectIds = new Set(projects.map(p => p.id));
@@ -52,6 +52,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   };
 
   const deleteProject = async (project) => {
+    if (!project?.id || typeof onDeleteProject !== 'function') return;
     confirm({
       title: t('deleteProject'),
       message: t('projectDeleteConfirm', { title: project.title, id: project.id }),
@@ -59,7 +60,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
       cancelText: t('cancel'),
       type: 'destructive',
       onConfirm: async () => {
-        await deleteDoc(doc(db, 'projects', project.id));
+        await onDeleteProject(project.id);
       }
     });
   }
