@@ -922,6 +922,15 @@ test('project duplication keeps reusable configuration and resets runtime state'
   assert.equal(duplicate.rouletteResult, undefined);
   assert.notEqual(duplicate.bookingConfig, sourceProject.bookingConfig);
 
+  const safePrivateSource = {
+    ...sourceProject,
+    password: undefined,
+    hasPassword: true,
+  };
+  const safePrivateDuplicate = createProjectDuplicateData(safePrivateSource, user, 'Ada Lovelace', 6000, ' (Copy)');
+  assert.equal(safePrivateDuplicate.password, '');
+  assert.equal(safePrivateDuplicate.duplicateSourceId, sourceProject.id);
+
   const childOperations = createProjectDuplicateChildOperations(
     'project-copy',
     {

@@ -635,16 +635,18 @@ export function createProjectCreateData(title, type, user, creatorName, password
 
 export function createProjectDuplicateData(sourceProject, user, creatorName, createdAt, titleSuffix = '') {
   if (!sourceProject?.id || !sourceProject?.type || !user?.uid) return null;
+  const sourcePassword = sourceProject.password || '';
   const duplicate = {
     title: `${sourceProject.title || ''}${titleSuffix}`,
     type: sourceProject.type,
     creatorId: user.uid,
     creatorName: cleanName(creatorName, user),
-    password: sourceProject.password || '',
+    password: sourcePassword,
     status: 'active',
     createdAt,
     winners: [],
   };
+  if (!sourcePassword && sourceProject.hasPassword) duplicate.duplicateSourceId = sourceProject.id;
 
   for (const key of ['rouletteConfig', 'scheduleConfig', 'bookingConfig', 'votingConfig']) {
     if (sourceProject[key] !== undefined) duplicate[key] = clonePlainValue(sourceProject[key]);

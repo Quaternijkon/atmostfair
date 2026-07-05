@@ -182,7 +182,8 @@ async function handleDataApi({ request, response, url, store, body, user }) {
   if (url.pathname === '/api/data/add') {
     const collection = validateDataCollection(body.collection);
     const data = await authorizeDataOperation({ store, user, type: 'add', collection, data: body.data || {} });
-    const doc = await store.add(collection, data);
+    const rawDoc = await store.add(collection, data);
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
 
@@ -190,7 +191,8 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const data = await authorizeDataOperation({ store, user, type: 'set', collection, id, data: body.data || {} });
-    const doc = await store.set(collection, id, data, body.options || {});
+    const rawDoc = await store.set(collection, id, data, body.options || {});
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
 
@@ -198,7 +200,8 @@ async function handleDataApi({ request, response, url, store, body, user }) {
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     const data = await authorizeDataOperation({ store, user, type: 'update', collection, id, data: body.data || {} });
-    const doc = await store.update(collection, id, data);
+    const rawDoc = await store.update(collection, id, data);
+    const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc });
     return sendJson(response, 200, { doc });
   }
 
@@ -213,7 +216,8 @@ async function handleDataApi({ request, response, url, store, body, user }) {
   if (url.pathname === '/api/data/batch') {
     const operations = validateDataBatchOperations(body.operations || []);
     const authorizedOperations = await authorizeDataOperations({ store, user, operations });
-    const results = await store.batch(authorizedOperations);
+    const rawResults = await store.batch(authorizedOperations);
+    const results = await toReadableDataBatchResults({ store, user, operations: authorizedOperations, results: rawResults });
     return sendJson(response, 200, { results });
   }
 
@@ -311,12 +315,12 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   if (collection !== 'projects') return data;
 
   if (type === 'add') {
-    return normalizeProjectCreateData(data, user);
+    return normalizeProjectCreateData({ store, data, user });
   }
 
   const existing = await getProjectedDoc({ store, context, collection, id });
   if (!existing) {
-    if (type === 'set') return normalizeProjectCreateData(data, user);
+    if (type === 'set') return normalizeProjectCreateData({ store, data, user });
     throwDataError(404, 'data/not-found', 'Project not found.');
   }
 
@@ -1437,6 +1441,27 @@ async function toReadableDataDoc({ store, user, collection, doc, query }) {
   return null;
 }
 
+async function toDataWriteResponseDoc({ store, user, collection, doc }) {
+  if (collection === 'projects') return toReadableDataDoc({ store, user, collection, doc });
+  return doc;
+}
+
+async function toReadableDataBatchResults({ store, user, operations, results }) {
+  const readableResults = [];
+  for (let index = 0; index < (results || []).length; index += 1) {
+    const operation = operations[index];
+    const result = results[index];
+    if (!operation || operation.type === 'delete') {
+      readableResults.push(result);
+    } else if (operation.collection === 'projects') {
+      readableResults.push(await toReadableDataDoc({ store, user, collection: operation.collection, doc: result }));
+    } else {
+      readableResults.push(result);
+    }
+  }
+  return readableResults;
+}
+
 async function canReadDataDoc({ store, user, collection, doc, query }) {
   if (!doc) return true;
   if (isAdminUser(user)) return true;
@@ -1896,10 +1921,27 @@ function assertImmutableUserField(data, identity, field) {
   if (Object.hasOwn(data || {}, field) && data[field] !== identity[field]) forbidden();
 }
 
-function normalizeProjectCreateData(data, user) {
+async function normalizeProjectCreateData({ store, data, user }) {
+  const {
+    duplicateSourceId,
+    hasPassword: _hasPassword,
+    accessGranted: _accessGranted,
+    ...projectData
+  } = data || {};
+  let password = projectData.password;
+
+  if (duplicateSourceId !== undefined) {
+    const sourceProjectId = validateDataId(duplicateSourceId);
+    const sourceProject = await store.get('projects', sourceProjectId);
+    if (!sourceProject) throwDataError(404, 'data/project-not-found', 'Project not found.');
+    if (!canWriteProject(sourceProject, user)) forbidden();
+    password = sourceProject.password || '';
+  }
+
   return {
-    ...(data || {}),
+    ...projectData,
     creatorId: user.uid,
+    password: String(password || '').trim(),
   };
 }
 

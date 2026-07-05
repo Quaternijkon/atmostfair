@@ -3420,6 +3420,155 @@ test('HTTP data API hides private project contents until password unlock', async
   });
 });
 
+test('HTTP data API preserves private project passwords during authorized duplication', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123', displayName: 'Viewer' },
+      });
+
+      const privateProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Private Source',
+            type: 'vote',
+            creatorId: owner.user.uid,
+            creatorName: 'Owner',
+            password: 'source-secret',
+            brief: 'Reusable private context',
+            votingConfig: { mode: 'single' },
+            createdAt: 1,
+            winners: [],
+          },
+        },
+      });
+      assert.equal(privateProject.doc.hasPassword, true);
+      assert.equal(Object.hasOwn(privateProject.doc, 'password'), false);
+
+      const ownerSource = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', id: privateProject.doc.id },
+      });
+      assert.equal(ownerSource.doc.hasPassword, true);
+      assert.equal(Object.hasOwn(ownerSource.doc, 'password'), false);
+
+      const forgedDuplicate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Forged Private Copy',
+            type: 'vote',
+            creatorId: viewer.user.uid,
+            creatorName: 'Viewer',
+            password: '',
+            duplicateSourceId: privateProject.doc.id,
+            createdAt: 2,
+            winners: [],
+          },
+        },
+      });
+      assert.equal(forgedDuplicate.status, 403);
+      assert.equal(forgedDuplicate.body.error.code, 'data/forbidden');
+
+      const duplicate = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Private Source (Copy)',
+            type: 'vote',
+            creatorId: owner.user.uid,
+            creatorName: 'Owner',
+            password: '',
+            duplicateSourceId: privateProject.doc.id,
+            brief: ownerSource.doc.brief,
+            votingConfig: ownerSource.doc.votingConfig,
+            status: 'active',
+            createdAt: 3,
+            winners: [],
+          },
+        },
+      });
+      assert.equal(duplicate.doc.hasPassword, true);
+      assert.equal(duplicate.doc.accessGranted, true);
+      assert.equal(Object.hasOwn(duplicate.doc, 'password'), false);
+      assert.equal(Object.hasOwn(duplicate.doc, 'duplicateSourceId'), false);
+
+      const rawDuplicate = await store.get('projects', duplicate.doc.id);
+      assert.equal(rawDuplicate.password, 'source-secret');
+      assert.equal(Object.hasOwn(rawDuplicate, 'duplicateSourceId'), false);
+
+      const viewerPreview = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: duplicate.doc.id },
+      });
+      assert.equal(viewerPreview.doc.hasPassword, true);
+      assert.equal(viewerPreview.doc.accessGranted, false);
+      assert.equal(Object.hasOwn(viewerPreview.doc, 'brief'), false);
+      assert.equal(Object.hasOwn(viewerPreview.doc, 'password'), false);
+
+      const unlockDuplicate = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: duplicate.doc.id, password: 'source-secret' },
+      });
+      assert.equal(unlockDuplicate.ok, true);
+      assert.equal(unlockDuplicate.project.brief, 'Reusable private context');
+
+      const batchPrivateProject = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            {
+              type: 'add',
+              collection: 'projects',
+              data: {
+                title: 'Batch Private',
+                type: 'vote',
+                creatorId: owner.user.uid,
+                creatorName: 'Owner',
+                password: 'batch-secret',
+                createdAt: 4,
+                winners: [],
+              },
+            },
+          ],
+        },
+      });
+      assert.equal(batchPrivateProject.results[0].hasPassword, true);
+      assert.equal(batchPrivateProject.results[0].accessGranted, true);
+      assert.equal(Object.hasOwn(batchPrivateProject.results[0], 'password'), false);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects duplicate friendships and keeps friend messages append-only', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
