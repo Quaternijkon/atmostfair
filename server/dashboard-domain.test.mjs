@@ -274,6 +274,18 @@ test('dashboard create flow prevents duplicate submissions and preserves drafts 
   assert.match(files.app, /return \{ ok: false \}/, 'Failed project creation should report failure to keep the dashboard draft open');
 });
 
+test('dashboard opens the newly created project after a successful create', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.match(dashboard, /const result = await onCreateProject/, 'Dashboard should wait for the created project id');
+  assert.match(dashboard, /if \(result\?\.ok === false\)/, 'Dashboard should keep the draft open on failed creates');
+  assert.match(dashboard, /if \(result\?\.projectId\)/, 'Dashboard should only navigate when a created project id is available');
+  assert.match(dashboard, /const routePrefix = getProjectRoutePrefix\(selectedModule\.id\)/, 'Dashboard should route new projects with the shared route-prefix helper');
+  assert.match(dashboard, /void onRecordProjectOpen\(result\.projectId\)/, 'Dashboard should add the created project to recent projects');
+  assert.match(dashboard, /navigate\(`\/\$\{routePrefix\}\/\$\{result\.projectId\}`\)/, 'Dashboard should open the newly created project directly');
+  assert.doesNotMatch(dashboard, /navigate\(`\/projects\/\$\{result\.projectId\}`\)/, 'Dashboard should not hard-code the generic project route for every module');
+});
+
 test('dashboard exposes accessible user-scoped project pinning', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
@@ -318,6 +330,8 @@ test('dashboard exposes durable recent-project continuation', async () => {
   assert.match(files.app, /recentProjectIds=\{recentProjectIds\}/, 'Dashboard should receive recent project ids');
   assert.match(files.app, /onRecordProjectOpen=\{actions\.handleRecordProjectOpen\}/, 'Dashboard should receive the shared recent project action');
   assert.match(files.app, /setDoc\(doc\(db,\s*'users',\s*user\.uid\),\s*\{\s*recentProjectIds:/, 'Recent projects should persist to the user document');
+  assert.match(files.app, /if \(!user \|\| !cleanProjectId\) return;/, 'Recent project writes should allow newly created projects before the project snapshot refreshes');
+  assert.doesNotMatch(files.app, /handleRecordProjectOpen[\s\S]{0,260}projects\.some/, 'Recent project writes should not require the project to already exist in the current snapshot');
 
   assert.match(files.dashboard, /createRecentDashboardProjects/, 'Dashboard should use the shared recent project selector');
   assert.match(files.dashboard, /const recentProjects = useMemo/, 'Dashboard should memoize the continue-work list');

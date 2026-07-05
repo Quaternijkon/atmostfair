@@ -136,6 +136,11 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
         setCreateError(t('createProjectFailed'));
         return;
       }
+      if (result?.projectId) {
+        const routePrefix = getProjectRoutePrefix(selectedModule.id);
+        void onRecordProjectOpen(result.projectId);
+        navigate(`/${routePrefix}/${result.projectId}`);
+      }
       setShowCreate(false);
       setNewTitle('');
       setNewPassword('');

@@ -574,7 +574,7 @@ function AppContent() {
       },
       handleRecordProjectOpen: async (projectId) => {
         const cleanProjectId = String(projectId || '').trim();
-        if (!user || !cleanProjectId || !projects.some((project) => project.id === cleanProjectId)) return;
+        if (!user || !cleanProjectId) return;
         const patch = createRecentProjectIdsPatch(cleanProjectId, recentProjectIds, 100);
         if (!patch) return;
         const previousRecentProjectIds = recentProjectIds;
