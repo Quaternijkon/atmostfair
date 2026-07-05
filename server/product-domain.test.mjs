@@ -786,8 +786,48 @@ test('app action handlers use domain guards for high-risk writes', async () => {
   assert.match(app, /createRouletteResultData/, 'Roulette drawing should derive result and audit steps through the domain helper');
   assert.match(app, /rouletteResult:\s*rouletteResult/, 'Roulette drawing should persist replayable result data on the project');
   assert.match(app, /voteOperations\.forEach[\s\S]{0,500}batch\.update/, 'Vote handling should commit helper operations through a batch');
-  assert.match(app, /const gatherProject = projects\.find\(\(project\) => project\.id === projectId\);/, 'Gather submissions should resolve the project before writing');
-  assert.match(app, /if \(!gatherProject \|\| \['stopped', 'finished'\]\.includes\(gatherProject\.status\)\) return;/, 'Gather submissions should not write to stopped or finished projects');
+  assert.match(app, /const LOCKED_PROJECT_STATUSES = new Set\(\['stopped', 'finished'\]\);/, 'App should define locked project statuses once');
+  assert.match(app, /const isProjectWritable = \(projectId\) => \{[\s\S]{0,260}!LOCKED_PROJECT_STATUSES\.has\(project\.status\)/, 'App should expose a shared stopped/finished write guard');
+  for (const action of [
+    'handleAddItem',
+    'handleUpdateVotingConfig',
+    'handleCreateRoom',
+    'handleJoinQueue',
+    'handleGenerateQueue',
+    'handleJoinRoulette',
+    'handleUpdateRouletteConfig',
+    'handleSaveRouletteResult',
+    'handleRecordWinner',
+    'handleCreateGatherField',
+    'handleSubmitGather',
+    'handleUpdateScheduleConfig',
+    'handleSubmitSchedule',
+    'handleUpdateBookingConfig',
+    'handleCreateBookingSlot',
+    'handleCreateClaimItem',
+  ]) {
+    assert.match(app, new RegExp(`${action}: async[\\s\\S]{0,260}isProjectWritable\\(projectId\\)`), `${action} should reject stopped or finished projects before writing`);
+  }
+  for (const [action, collection, projectExpression] of [
+    ['handleDeleteItem', 'items', 'item\\.projectId'],
+    ['handleVote', 'items', 'item\\.projectId'],
+    ['handleJoinRoom', 'rooms', 'room\\.projectId'],
+    ['handleKickMember', 'rooms', 'room\\.projectId'],
+    ['handleDeleteRoom', 'rooms', 'room\\.projectId'],
+    ['handleDeleteGatherField', 'gatherFields', 'field\\.projectId'],
+    ['handleDeleteBookingSlot', 'bookingSlots', 'slot\\.projectId'],
+    ['handleBookSlot', 'bookingSlots', 'slot\\.projectId'],
+    ['handleToggleBookingWaitlist', 'bookingSlots', 'slot\\.projectId'],
+    ['handleKickUser', 'bookingSlots', 'slot\\.projectId'],
+    ['handleDeleteClaimItem', 'claimItems', 'item\\.projectId'],
+    ['handleToggleClaim', 'claimItems', 'item\\.projectId'],
+  ]) {
+    assert.match(
+      app,
+      new RegExp(`${action}: async[\\s\\S]{0,320}${collection}\\.find[\\s\\S]{0,320}isProjectWritable\\(${projectExpression}\\)`),
+      `${action} should resolve the child document project and reject stopped or finished projects before writing`,
+    );
+  }
   assert.match(app, /const projectFields = gatherFields\.filter/, 'Gather submissions should load project field definitions before writing');
   assert.match(app, /createGatherSubmissionData\([\s\S]{0,500}projectFields/, 'Gather submissions should validate against field definitions before writing');
   assert.match(app, /handleToggleBookingWaitlist/, 'Booking should expose a waitlist action for full slots');

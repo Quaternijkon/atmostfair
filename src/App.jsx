@@ -46,6 +46,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 
+const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
+
 const RouteLoadingFallback = ({ label }) => (
   <div className="flex min-h-[320px] w-full items-center justify-center px-4">
     <div className="app-card px-6 py-4 text-sm font-medium text-m3-on-surface-variant">{label}</div>
@@ -108,6 +110,10 @@ function AppContent() {
 
   const [showFriends, setShowFriends] = useState(false);
   const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
+  const isProjectWritable = (projectId) => {
+    const project = projects.find((entry) => entry.id === projectId);
+    return Boolean(project && !LOCKED_PROJECT_STATUSES.has(project.status));
+  };
 
   const loadProjectCascadeDocs = async (projectId) => {
     const docsByCollection = {
@@ -188,13 +194,19 @@ function AppContent() {
   // Actions
   const actions = {
       handleAddItem: async (title, projectId, creatorName) => {
-        if (!title.trim() || !user) return;
+        if (!title.trim() || !user || !isProjectWritable(projectId)) return;
         await addDoc(collection(db, 'voting_items'), { title, projectId, creatorId: user.uid, creatorName: creatorName || currentUserName(), votes: [], createdAt: nowMs() });
         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.voteItemAdded, subject: title, actorName: creatorName });
       },
-      handleDeleteItem: async (itemId) => deleteDoc(doc(db, 'voting_items', itemId)),
-      handleVote: async (item, votingConfig) => {
+      handleDeleteItem: async (itemId) => {
+        const item = items.find((entry) => entry.id === itemId);
+        if (!item || !isProjectWritable(item.projectId)) return;
+        await deleteDoc(doc(db, 'voting_items', itemId));
+      },
+      handleVote: async (staleItem, votingConfig) => {
          if (!user) return;
+         const item = items.find((entry) => entry.id === staleItem?.id);
+         if (!item || !isProjectWritable(item.projectId)) return;
          const voteOperations = createVoteToggleOperations(items, item, user, votingConfig);
          if (voteOperations.length === 0) return;
          const batch = writeBatch(db);
@@ -207,17 +219,18 @@ function AppContent() {
          void recordProjectActivity({ projectId: item.projectId, type: PROJECT_ACTIVITY_TYPES.voteToggled, subject: item.title });
       },
       handleUpdateVotingConfig: async (projectId, config) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          await updateDoc(doc(db, 'projects', projectId), { votingConfig: config });
       },
       handleCreateRoom: async (name, maxMembers, projectId, creatorName) => {
-         if (!user || !name.trim()) return;
+         if (!user || !name.trim() || !isProjectWritable(projectId)) return;
          await addDoc(collection(db, 'rooms'), { name, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.teamCreated, subject: name, actorName: creatorName });
       },
       handleJoinRoom: async (roomId, userName) => {
          if (!user) return;
          const room = rooms.find((entry) => entry.id === roomId);
+         if (!room || !isProjectWritable(room.projectId)) return;
          const member = createTeamJoinMember(room, user, userName || currentUserName(), nowMs());
          if (!member) return;
          await updateDoc(doc(db, 'rooms', roomId), { members: arrayUnion(member) });
@@ -225,19 +238,24 @@ function AppContent() {
       },
       handleKickMember: async (roomId, memberObject) => {
         const room = rooms.find((entry) => entry.id === roomId);
+        if (!room || !isProjectWritable(room.projectId)) return;
         await updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberObject) });
         if (room) void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamMemberRemoved, subject: memberObject?.name || room.name });
       },
-      handleDeleteRoom: async (roomId) => deleteDoc(doc(db, 'rooms', roomId)),
+      handleDeleteRoom: async (roomId) => {
+        const room = rooms.find((entry) => entry.id === roomId);
+        if (!room || !isProjectWritable(room.projectId)) return;
+        await deleteDoc(doc(db, 'rooms', roomId));
+      },
       handleJoinQueue: async (projectId, userName, value) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          const participant = createQueueJoinData(queueParticipants, projectId, user, userName || currentUserName(), value, nowMs());
          if (!participant) return;
          await addDoc(collection(db, 'queue_participants'), participant);
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueJoined, subject: participant.name, metadata: { value: participant.value }, actorName: participant.name });
       },
       handleGenerateQueue: async (projectId) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          const parts = queueParticipants.filter(p => p.projectId === projectId);
          const queueResult = createQueueResultData(parts, nowMs());
          if (!queueResult) return;
@@ -254,18 +272,18 @@ function AppContent() {
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.queueGenerated, subject: String(queueResult.participantCount), metadata: { participantCount: queueResult.participantCount } });
       },
       handleJoinRoulette: async (projectId, userName, value) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          const participant = createRouletteJoinData(rouletteParticipants, projectId, user, userName || currentUserName(), value, nowMs());
          if (!participant) return;
          await addDoc(collection(db, 'roulette_participants'), participant);
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.rouletteJoined, subject: participant.name, metadata: { value: participant.value }, actorName: participant.name });
       },
       handleUpdateRouletteConfig: async (projectId, config) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          await updateDoc(doc(db, 'projects', projectId), { rouletteConfig: config });
       },
       handleSaveRouletteResult: async (projectId, config) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          const parts = rouletteParticipants.filter(p => p.projectId === projectId);
          const rouletteResult = createRouletteResultData(parts, config, nowMs());
          if (!rouletteResult) return;
@@ -286,6 +304,7 @@ function AppContent() {
          });
       },
       handleRecordWinner: async (projectId, winnerInfo) => {
+         if (!isProjectWritable(projectId)) return;
          await updateDoc(doc(db, 'projects', projectId), { winners: arrayUnion({ ...winnerInfo, wonAt: nowMs() }), status: 'finished' });
          if (winnerInfo.participantId) await updateDoc(doc(db, 'roulette_participants', winnerInfo.participantId), { isWinner: true });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.winnerRecorded, subject: winnerInfo.name || winnerInfo.title || winnerInfo.participantId || '' });
@@ -349,7 +368,7 @@ function AppContent() {
         });
       },
       handleCreateGatherField: async (projectId, label, type, options) => {
-        if (!user) return;
+        if (!user || !isProjectWritable(projectId)) return;
         const field = createGatherFieldData(projectId, user, label, type, options, nowMs());
         if (!field) return;
         await addDoc(collection(db, 'gather_fields'), field);
@@ -357,12 +376,12 @@ function AppContent() {
       },
       handleDeleteGatherField: async (fieldId) => {
         if (!user) return;
+        const field = gatherFields.find((entry) => entry.id === fieldId);
+        if (!field || !isProjectWritable(field.projectId)) return;
         await deleteDoc(doc(db, 'gather_fields', fieldId));
       },
       handleSubmitGather: async (projectId, data, submitterName) => {
-        if (!user) return;
-        const gatherProject = projects.find((project) => project.id === projectId);
-        if (!gatherProject || ['stopped', 'finished'].includes(gatherProject.status)) return;
+        if (!user || !isProjectWritable(projectId)) return;
         const projectFields = gatherFields.filter((field) => field.projectId === projectId);
         const submission = createGatherSubmissionData(gatherSubmissions, projectId, user, submitterName || currentUserName(), data, nowMs(), projectFields);
         if (!submission) return;
@@ -370,11 +389,11 @@ function AppContent() {
         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.gatherSubmitted, subject: submission.name, actorName: submission.name });
       },
       handleUpdateScheduleConfig: async (projectId, config) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          await updateDoc(doc(db, 'projects', projectId), { scheduleConfig: config });
       },
       handleSubmitSchedule: async (projectId, availability, submitterName) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          const submissionWrite = createScheduleSubmissionWrite(scheduleSubmissions, projectId, user, submitterName || currentUserName(), availability, nowMs());
          if (!submissionWrite) return;
          if (submissionWrite.type === 'update') {
@@ -385,19 +404,25 @@ function AppContent() {
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.scheduleSubmitted, subject: submitterName || currentUserName() });
       },
       handleUpdateBookingConfig: async (projectId, config) => {
-         if (!user) return;
+         if (!user || !isProjectWritable(projectId)) return;
          await updateDoc(doc(db, 'projects', projectId), { bookingConfig: config });
       },
       handleCreateBookingSlot: async (projectId, start, end, label) => {
+         if (!isProjectWritable(projectId)) return;
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
          await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label, bookedBy: null, waitlist: [], createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: label || `${start} - ${end}` });
       },
-      handleDeleteBookingSlot: async (slotId) => deleteDoc(doc(db, 'booking_slots', slotId)),
+      handleDeleteBookingSlot: async (slotId) => {
+         const slot = bookingSlots.find((entry) => entry.id === slotId);
+         if (!slot || !isProjectWritable(slot.projectId)) return;
+         await deleteDoc(doc(db, 'booking_slots', slotId));
+      },
       handleBookSlot: async (slotId, bookingData) => {
          if (!user) return;
          const slot = bookingSlots.find((entry) => entry.id === slotId);
+         if (!slot || !isProjectWritable(slot.projectId)) return;
          const patch = createBookingPatch(slot, user, currentUserName(), bookingData, nowMs());
          if (!patch) return;
          await updateDoc(doc(db, 'booking_slots', slotId), patch);
@@ -406,6 +431,7 @@ function AppContent() {
       handleToggleBookingWaitlist: async (slotId, bookingData = {}) => {
          if (!user) return null;
          const slot = bookingSlots.find((entry) => entry.id === slotId);
+         if (!slot || !isProjectWritable(slot.projectId)) return null;
          const waitlistPatch = createBookingWaitlistPatch(slot, user, currentUserName(), bookingData, nowMs());
          if (!waitlistPatch) return null;
          await updateDoc(doc(db, 'booking_slots', slotId), { waitlist: waitlistPatch.waitlist });
@@ -414,6 +440,7 @@ function AppContent() {
       handleKickUser: async (slotId, recipientId, projectId, reason) => {
          if (!user) return;
          const slot = bookingSlots.find((entry) => entry.id === slotId);
+         if (!slot || !isProjectWritable(slot.projectId)) return;
          const release = createBookingReleasePatch(slot, nowMs());
          if (!release) return;
          await updateDoc(doc(db, 'booking_slots', slotId), release.patch);
@@ -452,15 +479,19 @@ function AppContent() {
         await batch.commit();
       },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
-         if (!user || !title.trim()) return;
+         if (!user || !title.trim() || !isProjectWritable(projectId)) return;
          await addDoc(collection(db, 'claim_items'), { projectId, title, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.claimCreated, subject: title });
       },
       handleDeleteClaimItem: async (itemId) => {
+         const item = claimItems.find((entry) => entry.id === itemId);
+         if (!item || !isProjectWritable(item.projectId)) return;
          await deleteDoc(doc(db, 'claim_items', itemId));
       },
-      handleToggleClaim: async (item, userName) => {
+      handleToggleClaim: async (claimItem, userName) => {
          if (!user) return;
+         const item = claimItems.find((entry) => entry.id === claimItem?.id);
+         if (!item || !isProjectWritable(item.projectId)) return;
          const ref = doc(db, 'claim_items', item.id);
          const claimWrite = createClaimToggleData(item, user, userName || currentUserName(), nowMs());
          if (!claimWrite) return;
