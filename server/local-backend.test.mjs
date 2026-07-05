@@ -1491,6 +1491,213 @@ test('HTTP data API restricts managed child creation to project owners and norma
   });
 });
 
+test('HTTP data API restricts booking slot updates to booking and waitlist guards', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const carol = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'carol@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Booking rules', type: 'book', status: 'active', createdAt: 1 } },
+      });
+
+      const slot = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          data: { projectId: project.doc.id, start: '2026-07-05', end: '2026-07-05', label: 'Morning', createdAt: 2 },
+        },
+      });
+
+      const memberMetadataUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { label: 'Hijacked slot' },
+        },
+      });
+      assert.equal(memberMetadataUpdate.status, 403);
+      assert.equal(memberMetadataUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('booking_slots', slot.doc.id)).label, 'Morning');
+
+      const forgedBooking = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: bob.user.uid,
+            bookerName: 'Bob',
+            bookingData: { phone: '222' },
+            bookedAt: 3,
+          },
+        },
+      });
+      assert.equal(forgedBooking.status, 403);
+      assert.equal(forgedBooking.body.error.code, 'data/forbidden');
+
+      const forgedOpenWaitlist = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { waitlist: [{ uid: bob.user.uid, name: 'Bob', bookingData: { phone: '222' }, joinedAt: 4 }] },
+        },
+      });
+      assert.equal(forgedOpenWaitlist.status, 403);
+      assert.equal(forgedOpenWaitlist.body.error.code, 'data/forbidden');
+
+      const aliceBooking = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: alice.user.uid,
+            bookerName: 'Alice',
+            bookingData: { phone: '111' },
+            bookedAt: 5,
+          },
+        },
+      });
+      assert.equal(aliceBooking.doc.bookedBy, alice.user.uid);
+      assert.equal(aliceBooking.doc.bookerName, 'Alice');
+      assert.deepEqual(aliceBooking.doc.bookingData, { phone: '111' });
+
+      const stealBooking = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: bob.user.uid,
+            bookerName: 'Bob',
+            bookingData: { phone: '222' },
+            bookedAt: 6,
+          },
+        },
+      });
+      assert.equal(stealBooking.status, 409);
+      assert.equal(stealBooking.body.error.code, 'data/slot-booked');
+
+      const bobWaitlist = [{ uid: bob.user.uid, name: 'Bob', bookingData: { phone: '222' }, joinedAt: 7 }];
+      const bobJoinWaitlist = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { waitlist: bobWaitlist },
+        },
+      });
+      assert.deepEqual(bobJoinWaitlist.doc.waitlist, bobWaitlist);
+
+      const forgedWaitlistRewrite = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            waitlist: [
+              { uid: bob.user.uid, name: 'Changed Bob', bookingData: { phone: '999' }, joinedAt: 7 },
+              { uid: carol.user.uid, name: 'Carol', bookingData: { phone: '333' }, joinedAt: 8 },
+            ],
+          },
+        },
+      });
+      assert.equal(forgedWaitlistRewrite.status, 403);
+      assert.equal(forgedWaitlistRewrite.body.error.code, 'data/forbidden');
+      assert.deepEqual((await store.get('booking_slots', slot.doc.id)).waitlist, bobWaitlist);
+
+      const forgedRelease = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: bob.user.uid,
+            bookerName: 'Bob',
+            bookingData: { phone: '222' },
+            bookedAt: 9,
+            waitlist: [],
+          },
+        },
+      });
+      assert.equal(forgedRelease.status, 403);
+      assert.equal(forgedRelease.body.error.code, 'data/forbidden');
+
+      const ownerRelease = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: {
+            bookedBy: bob.user.uid,
+            bookerName: 'Bob',
+            bookingData: { phone: '222' },
+            bookedAt: 10,
+            waitlist: [],
+          },
+        },
+      });
+      assert.equal(ownerRelease.doc.bookedBy, bob.user.uid);
+      assert.equal(ownerRelease.doc.bookerName, 'Bob');
+      assert.deepEqual(ownerRelease.doc.bookingData, { phone: '222' });
+      assert.deepEqual(ownerRelease.doc.waitlist, []);
+
+      const ownerMetadataUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { label: 'Updated morning' },
+        },
+      });
+      assert.equal(ownerMetadataUpdate.doc.label, 'Updated morning');
+      assert.equal(ownerMetadataUpdate.doc.bookedBy, bob.user.uid);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts claim item updates to current-user claim toggles', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

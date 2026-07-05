@@ -34,6 +34,7 @@ const DATA_BATCH_OPERATION_TYPES = new Set(['add', 'set', 'update', 'delete']);
 const DEFAULT_ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
+const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
 const PROJECT_CHILD_COLLECTION_FIELDS = new Map([
   ['voting_items', 'projectId'],
   ['rooms', 'projectId'],
@@ -484,6 +485,10 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
     return normalizeManagedProjectChildCreateData({ user, collection, data });
   }
 
+  if (collection === 'booking_slots') {
+    return authorizeBookingSlotOperation({ user, type, data, existing, project });
+  }
+
   if (collection === 'claim_items') {
     return authorizeClaimItemOperation({ user, type, data, existing, project });
   }
@@ -520,6 +525,153 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   }
 
   return data || {};
+}
+
+function authorizeBookingSlotOperation({ user, type, data, existing, project }) {
+  const protectedData = preserveImmutableField(data, existing, 'projectId', type);
+  if (hasBookingRuntimeField(protectedData)) {
+    return authorizeBookingRuntimePatch({ user, type, data: protectedData, existing, project });
+  }
+
+  if (!canWriteProject(project, user)) forbidden();
+  if (type === 'set') {
+    return {
+      ...(protectedData || {}),
+      projectId: existing.projectId,
+      bookedBy: existing.bookedBy ?? null,
+      bookerName: existing.bookerName ?? null,
+      bookingData: existing.bookingData ?? null,
+      bookedAt: existing.bookedAt ?? null,
+      waitlist: normalizeBookingWaitlistData(existing.waitlist),
+    };
+  }
+  return protectedData || {};
+}
+
+function hasBookingRuntimeField(data) {
+  return Object.keys(data || {}).some((key) => BOOKING_RUNTIME_FIELDS.has(key));
+}
+
+function authorizeBookingRuntimePatch({ user, type, data, existing, project }) {
+  if (type !== 'update') forbidden();
+
+  const mutableKeys = Object.keys(data || {}).filter((key) => key !== 'projectId');
+  if (hasExactFields(mutableKeys, ['bookedBy', 'bookerName', 'bookingData', 'bookedAt'])) {
+    return authorizeDirectBookingPatch({ user, data, existing });
+  }
+
+  if (hasExactFields(mutableKeys, ['waitlist'])) {
+    return authorizeBookingWaitlistPatch({ user, data, existing });
+  }
+
+  if (hasExactFields(mutableKeys, ['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist'])) {
+    return authorizeBookingReleasePatch({ user, data, existing, project });
+  }
+
+  forbidden();
+}
+
+function authorizeDirectBookingPatch({ user, data, existing }) {
+  if (existing.bookedBy) {
+    throwDataError(409, 'data/slot-booked', 'Booking slot is already booked.');
+  }
+  if (data.bookedBy !== user.uid) forbidden();
+  if (normalizeBookingWaitlistData(existing.waitlist).length > 0) forbidden();
+
+  return {
+    ...(data || {}),
+    bookedBy: user.uid,
+    bookerName: cleanUserProvidedName(data.bookerName, user),
+    bookingData: normalizeBookingData(data.bookingData),
+  };
+}
+
+function authorizeBookingWaitlistPatch({ user, data, existing }) {
+  if (!existing.bookedBy || existing.bookedBy === user.uid) forbidden();
+
+  const currentWaitlist = normalizeBookingWaitlistData(existing.waitlist);
+  const nextWaitlist = normalizeBookingWaitlistData(data.waitlist);
+  const existingEntryIndex = currentWaitlist.findIndex((entry) => entry.uid === user.uid);
+
+  if (existingEntryIndex >= 0) {
+    const expected = currentWaitlist.filter((entry) => entry.uid !== user.uid);
+    if (!deepEqualData(nextWaitlist, expected)) forbidden();
+    return { waitlist: expected };
+  }
+
+  if (nextWaitlist.length !== currentWaitlist.length + 1) forbidden();
+  if (!deepEqualData(nextWaitlist.slice(0, currentWaitlist.length), currentWaitlist)) forbidden();
+
+  const addedEntry = nextWaitlist[nextWaitlist.length - 1];
+  if (addedEntry.uid !== user.uid) forbidden();
+
+  const normalizedEntry = {
+    ...addedEntry,
+    uid: user.uid,
+    name: cleanUserProvidedName(addedEntry.name, user),
+    bookingData: normalizeBookingData(addedEntry.bookingData),
+  };
+  const expected = [...currentWaitlist, normalizedEntry];
+  if (!deepEqualData(nextWaitlist, expected)) forbidden();
+
+  return { waitlist: expected };
+}
+
+function authorizeBookingReleasePatch({ user, data, existing, project }) {
+  if (!canWriteProject(project, user)) forbidden();
+  if (!existing.bookedBy) {
+    throwDataError(409, 'data/slot-open', 'Booking slot is not booked.');
+  }
+
+  const [promoted, ...remainingWaitlist] = normalizeBookingWaitlistData(existing.waitlist);
+  const expected = promoted
+    ? {
+        bookedBy: promoted.uid,
+        bookerName: promoted.name,
+        bookingData: normalizeBookingData(promoted.bookingData),
+        bookedAt: data.bookedAt,
+        waitlist: remainingWaitlist,
+      }
+    : {
+        bookedBy: null,
+        bookerName: null,
+        bookingData: null,
+        bookedAt: null,
+        waitlist: [],
+      };
+
+  if (!deepEqualData({
+    bookedBy: data.bookedBy ?? null,
+    bookerName: data.bookerName ?? null,
+    bookingData: data.bookingData ?? null,
+    bookedAt: data.bookedAt ?? null,
+    waitlist: normalizeBookingWaitlistData(data.waitlist),
+  }, expected)) {
+    forbidden();
+  }
+
+  return expected;
+}
+
+function hasExactFields(keys, fields) {
+  return keys.length === fields.length && fields.every((field) => keys.includes(field));
+}
+
+function normalizeBookingWaitlistData(waitlist) {
+  if (!Array.isArray(waitlist)) return [];
+  return waitlist
+    .filter((entry) => entry?.uid)
+    .map((entry) => ({
+      uid: entry.uid,
+      name: entry.name || '',
+      bookingData: normalizeBookingData(entry.bookingData),
+      joinedAt: entry.joinedAt,
+    }));
+}
+
+function normalizeBookingData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  return data;
 }
 
 function authorizeClaimItemOperation({ user, type, data, existing, project }) {
