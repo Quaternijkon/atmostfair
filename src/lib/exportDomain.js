@@ -52,16 +52,51 @@ function createQueueExport({ queueParticipants = [] }, t) {
 }
 
 function createBookingExport({ bookingSlots = [] }, t) {
-  const bookedSlots = bookingSlots.filter((slot) => slot.bookedBy || slot.bookerName || hasKeys(slot.bookingData));
-  const dynamicFields = collectDynamicKeys(bookedSlots.map((slot) => slot.bookingData));
-  const rows = bookedSlots.map((slot) => [
-    slot.label,
-    slot.start,
-    slot.end,
-    slot.bookerName,
-    slot.bookedBy,
-    formatExportDate(slot.bookedAt),
-    ...dynamicFields.map((field) => slot.bookingData?.[field]),
+  const participants = [];
+
+  for (const slot of bookingSlots) {
+    if (!slot) continue;
+    if (slot.bookedBy || slot.bookerName || hasKeys(slot.bookingData)) {
+      participants.push({
+        slot,
+        status: t('booked'),
+        name: slot.bookerName,
+        uid: slot.bookedBy,
+        bookedAt: slot.bookedAt,
+        waitlistOrder: '',
+        joinedAt: '',
+        bookingData: slot.bookingData || {},
+      });
+    }
+
+    const waitlist = Array.isArray(slot.waitlist) ? slot.waitlist : [];
+    waitlist.forEach((entry, index) => {
+      if (!entry || (!entry.uid && !entry.name && !hasKeys(entry.bookingData))) return;
+      participants.push({
+        slot,
+        status: t('waitlisted'),
+        name: entry.name,
+        uid: entry.uid,
+        bookedAt: '',
+        waitlistOrder: index + 1,
+        joinedAt: entry.joinedAt,
+        bookingData: entry.bookingData || {},
+      });
+    });
+  }
+
+  const dynamicFields = collectDynamicKeys(participants.map((entry) => entry.bookingData));
+  const rows = participants.map((entry) => [
+    entry.slot.label,
+    entry.slot.start,
+    entry.slot.end,
+    entry.status,
+    entry.name,
+    entry.uid,
+    formatExportDate(entry.bookedAt),
+    entry.waitlistOrder,
+    formatExportDate(entry.joinedAt),
+    ...dynamicFields.map((field) => entry.bookingData?.[field]),
   ]);
 
   return {
@@ -70,9 +105,12 @@ function createBookingExport({ bookingSlots = [] }, t) {
       t('exportSlotLabel'),
       t('startDate'),
       t('endDate'),
+      t('exportBookingStatus'),
       t('nameLabel'),
-      t('exportBookedBy'),
+      t('exportParticipantId'),
       t('exportBookedAt'),
+      t('exportWaitlistOrder'),
+      t('exportJoinedAt'),
       ...dynamicFields,
     ],
     rows,

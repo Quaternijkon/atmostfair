@@ -14,15 +14,18 @@ const root = process.cwd();
 const LABELS = {
   book: 'Reserve',
   exportAvailability: 'Availability',
+  exportBookingStatus: 'Status',
   exportBookedAt: 'Booked At',
   exportBookedBy: 'Booked By',
   exportClaimCount: 'Claim Count',
   exportClaimants: 'Claimants',
   exportFile: 'export',
   exportJoinedAt: 'Joined At',
+  exportParticipantId: 'Participant ID',
   exportParticipants: 'Export participants',
   exportQueueOrder: 'Queue Order',
   exportSlotLabel: 'Slot',
+  exportWaitlistOrder: 'Waitlist Order',
   maxClaims: 'Max People',
   nameLabel: 'Name',
   noExportData: 'No participant data to export',
@@ -32,6 +35,8 @@ const LABELS = {
   submittedAtCsv: 'Submitted At',
   taskTitle: 'Task / Item',
   valueLabel: 'Value (0-100)',
+  booked: 'Booked',
+  waitlisted: 'Waitlisted',
 };
 
 function t(key, params = {}) {
@@ -80,11 +85,20 @@ test('participant export builds localized CSV for each participant workflow', ()
         bookedBy: 'u1',
         bookedAt: 1714554000000,
         bookingData: { Phone: '123', Note: 'needs, projector' },
+        waitlist: [
+          {
+            uid: 'u2',
+            name: 'Cal',
+            joinedAt: 1714557600000,
+            bookingData: { Phone: '456', Note: 'backup' },
+          },
+        ],
       },
     ],
   }, t);
-  assert.match(bookingExport.csv, /^Slot,Start Date,End Date,Name,Booked By,Booked At,Phone,Note\n/);
-  assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Bo,u1,2024-05-01T09:00:00.000Z,123,"needs, projector"/);
+  assert.match(bookingExport.csv, /^Slot,Start Date,End Date,Status,Name,Participant ID,Booked At,Waitlist Order,Joined At,Phone,Note\n/);
+  assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Booked,Bo,u1,2024-05-01T09:00:00.000Z,,,123,"needs, projector"/);
+  assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Waitlisted,Cal,u2,,1,2024-05-01T10:00:00.000Z,456,backup/);
 
   const scheduleExport = createProjectParticipantExport({
     id: 'p3',
@@ -170,13 +184,15 @@ test('project detail exposes owner/admin participant export without native dialo
   for (const key of [
     'exportAvailability',
     'exportBookedAt',
-    'exportBookedBy',
+    'exportBookingStatus',
     'exportClaimCount',
     'exportClaimants',
     'exportJoinedAt',
+    'exportParticipantId',
     'exportParticipants',
     'exportQueueOrder',
     'exportSlotLabel',
+    'exportWaitlistOrder',
     'noExportData',
   ]) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);

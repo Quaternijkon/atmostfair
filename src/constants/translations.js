@@ -25,8 +25,11 @@ export const TRANSLATIONS = {
     exportQueueOrder: "Queue Order",
     exportAvailability: "Availability",
     exportSlotLabel: "Slot",
+    exportBookingStatus: "Status",
+    exportParticipantId: "Participant ID",
     exportBookedBy: "Booked By",
     exportBookedAt: "Booked At",
+    exportWaitlistOrder: "Waitlist Order",
     exportClaimCount: "Claim Count",
     exportClaimants: "Claimants",
     // Nav
@@ -562,8 +565,11 @@ export const TRANSLATIONS = {
     exportQueueOrder: "队列序号",
     exportAvailability: "可用时间",
     exportSlotLabel: "时段",
+    exportBookingStatus: "状态",
+    exportParticipantId: "参与者 ID",
     exportBookedBy: "预订用户 ID",
     exportBookedAt: "预订时间",
+    exportWaitlistOrder: "候补序号",
     exportClaimCount: "认领人数",
     exportClaimants: "认领人",
     // Nav
