@@ -1336,6 +1336,192 @@ test('HTTP data API rejects unauthorized active project child deletes', async ()
   });
 });
 
+test('HTTP data API restricts room member writes to self-join and managed removal', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+      const carol = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'carol@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Team rules', type: 'team', status: 'active', createdAt: 1 } },
+      });
+
+      const room = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'rooms',
+          data: {
+            projectId: project.doc.id,
+            name: 'Red team',
+            ownerId: bob.user.uid,
+            maxMembers: 2,
+            members: [
+              { uid: bob.user.uid, name: 'Bob', joinedAt: 2 },
+              { uid: carol.user.uid, name: 'Carol', joinedAt: 2 },
+            ],
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(room.doc.ownerId, alice.user.uid);
+      assert.deepEqual(room.doc.members, [{ uid: alice.user.uid, name: 'alice', joinedAt: 2 }]);
+
+      const memberMetadataUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { name: 'Hijacked team', maxMembers: 99 },
+        },
+      });
+      assert.equal(memberMetadataUpdate.status, 403);
+      assert.equal(memberMetadataUpdate.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('rooms', room.doc.id)).name, 'Red team');
+
+      const forgedJoin = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayUnion({ uid: carol.user.uid, name: 'Carol', joinedAt: 3 }) },
+        },
+      });
+      assert.equal(forgedJoin.status, 403);
+      assert.equal(forgedJoin.body.error.code, 'data/forbidden');
+
+      const bobMember = { uid: bob.user.uid, name: 'Bob', joinedAt: 4 };
+      const bobJoin = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayUnion(bobMember) },
+        },
+      });
+      assert.deepEqual(bobJoin.doc.members, [
+        { uid: alice.user.uid, name: 'alice', joinedAt: 2 },
+        bobMember,
+      ]);
+
+      const carolOverCapacity = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayUnion({ uid: carol.user.uid, name: 'Carol', joinedAt: 5 }) },
+        },
+      });
+      assert.equal(carolOverCapacity.status, 409);
+      assert.equal(carolOverCapacity.body.error.code, 'data/room-full');
+
+      const directRewrite = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: [{ uid: carol.user.uid, name: 'Carol', joinedAt: 6 }] },
+        },
+      });
+      assert.equal(directRewrite.status, 403);
+      assert.equal(directRewrite.body.error.code, 'data/forbidden');
+
+      const forgedRemoval = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayRemove(bobMember) },
+        },
+      });
+      assert.equal(forgedRemoval.status, 403);
+      assert.equal(forgedRemoval.body.error.code, 'data/forbidden');
+      assert.deepEqual((await store.get('rooms', room.doc.id)).members, [
+        { uid: alice.user.uid, name: 'alice', joinedAt: 2 },
+        bobMember,
+      ]);
+
+      const bobLeave = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayRemove(bobMember) },
+        },
+      });
+      assert.deepEqual(bobLeave.doc.members, [{ uid: alice.user.uid, name: 'alice', joinedAt: 2 }]);
+
+      await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayUnion(bobMember) },
+        },
+      });
+
+      const roomOwnerKick = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { members: arrayRemove(bobMember) },
+        },
+      });
+      assert.deepEqual(roomOwnerKick.doc.members, [{ uid: alice.user.uid, name: 'alice', joinedAt: 2 }]);
+
+      const projectOwnerMetadata = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'rooms',
+          id: room.doc.id,
+          data: { name: 'Blue team', maxMembers: 3 },
+        },
+      });
+      assert.equal(projectOwnerMetadata.doc.name, 'Blue team');
+      assert.equal(projectOwnerMetadata.doc.maxMembers, 3);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts managed child creation to project owners and normalizes runtime fields', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

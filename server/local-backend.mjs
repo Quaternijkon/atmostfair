@@ -382,6 +382,10 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     return authorizeVotingItemOperation({ store, user, context, type, data, existing, project });
   }
 
+  if (collection === 'rooms') {
+    return authorizeRoomOperation({ user, type, data, existing, project });
+  }
+
   if (
     collection === 'queue_participants'
     || collection === 'roulette_participants'
@@ -525,6 +529,147 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   }
 
   return data || {};
+}
+
+function authorizeRoomOperation({ user, type, data, existing, project }) {
+  if (!existing) {
+    return normalizeRoomCreateData({ user, data });
+  }
+
+  const protectedData = preserveImmutableField(data, existing, 'projectId', type);
+  assertImmutableField(protectedData, existing, 'ownerId');
+
+  if (Object.hasOwn(protectedData || {}, 'members')) {
+    return authorizeRoomMembersPatch({ user, type, data: protectedData, existing, project });
+  }
+
+  if (!canManageRoom(project, existing, user)) forbidden();
+  const metadataPatch = normalizeRoomMetadataPatch(protectedData, existing);
+
+  if (type === 'set') {
+    return {
+      ...(metadataPatch || {}),
+      projectId: existing.projectId,
+      ownerId: existing.ownerId,
+      members: Array.isArray(existing.members) ? existing.members : [],
+    };
+  }
+
+  return metadataPatch || {};
+}
+
+function normalizeRoomCreateData({ user, data }) {
+  const requestedMembers = Array.isArray(data?.members) ? data.members : [];
+  const requestedMember = requestedMembers.find((member) => member?.uid === user.uid) || { joinedAt: data?.createdAt };
+  return {
+    ...(data || {}),
+    ownerId: user.uid,
+    maxMembers: normalizeRoomMaxMembers(data?.maxMembers),
+    members: [normalizeRoomMember(requestedMember, user)],
+  };
+}
+
+function normalizeRoomMetadataPatch(data, existing) {
+  const patch = data || {};
+  if (!Object.hasOwn(patch, 'maxMembers')) return patch;
+
+  const maxMembers = normalizeRoomMaxMembers(patch.maxMembers);
+  const currentMembers = normalizeRoomMembers(existing.members);
+  if (maxMembers < currentMembers.length) {
+    throwDataError(409, 'data/room-capacity', 'Room capacity cannot be less than current members.');
+  }
+
+  return {
+    ...patch,
+    maxMembers,
+  };
+}
+
+function authorizeRoomMembersPatch({ user, type, data, existing, project }) {
+  if (type !== 'update') forbidden();
+
+  const mutableKeys = Object.keys(data || {}).filter((key) => key !== 'projectId');
+  if (mutableKeys.length !== 1 || mutableKeys[0] !== 'members') forbidden();
+
+  const transform = data.members || {};
+  const values = Array.isArray(transform.values) ? transform.values : [];
+  if (values.length !== 1 || !values[0] || typeof values[0] !== 'object') forbidden();
+
+  if (transform.__type === 'arrayUnion') {
+    return authorizeRoomMemberAdd({ user, data, existing, member: values[0] });
+  }
+
+  if (transform.__type === 'arrayRemove') {
+    return authorizeRoomMemberRemove({ user, data, existing, project, member: values[0] });
+  }
+
+  forbidden();
+}
+
+function authorizeRoomMemberAdd({ user, data, existing, member }) {
+  if (member.uid !== user.uid) forbidden();
+
+  const members = normalizeRoomMembers(existing.members);
+  if (members.some((entry) => entry.uid === user.uid)) {
+    throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
+  }
+
+  const maxMembers = normalizeRoomMaxMembers(existing.maxMembers);
+  if (members.length >= maxMembers) {
+    throwDataError(409, 'data/room-full', 'Room is already full.');
+  }
+
+  return {
+    ...(data || {}),
+    members: {
+      __type: 'arrayUnion',
+      values: [normalizeRoomMember(member, user)],
+    },
+  };
+}
+
+function authorizeRoomMemberRemove({ user, data, existing, project, member }) {
+  const members = Array.isArray(existing.members) ? existing.members : [];
+  const existingMember = members.find((entry) => entry?.uid === member.uid && deepEqualData(entry, member));
+  if (!existingMember) forbidden();
+
+  if (existingMember.uid !== user.uid && !canManageRoom(project, existing, user)) forbidden();
+
+  return {
+    ...(data || {}),
+    members: {
+      __type: 'arrayRemove',
+      values: [existingMember],
+    },
+  };
+}
+
+function canManageRoom(project, room, user) {
+  return canWriteProject(project, user) || room?.ownerId === user.uid;
+}
+
+function normalizeRoomMember(member, user) {
+  return {
+    uid: user.uid,
+    name: cleanUserProvidedName(member?.name, user),
+    joinedAt: member?.joinedAt,
+  };
+}
+
+function normalizeRoomMembers(members) {
+  if (!Array.isArray(members)) return [];
+  return members
+    .filter((member) => member?.uid)
+    .map((member) => ({
+      uid: member.uid,
+      name: member.name || '',
+      joinedAt: member.joinedAt,
+    }));
+}
+
+function normalizeRoomMaxMembers(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 4;
 }
 
 function authorizeBookingSlotOperation({ user, type, data, existing, project }) {
