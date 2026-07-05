@@ -626,11 +626,27 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
     admin: await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8'),
   };
 
-  for (const key of ['actionFailed', 'authServiceUnavailable', 'errorWithMessage', 'exportFile', 'activeStatus']) {
+  for (const key of [
+    'actionFailed',
+    'authServiceUnavailable',
+    'errorWithMessage',
+    'exportFile',
+    'activeStatus',
+    'invalidEmail',
+    'weakPassword',
+  ]) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
 
+  assert.match(files.login, /role="alert"/, 'Login form errors should be announced to assistive technology');
+  assert.match(files.login, /aria-live="assertive"/, 'Login form errors should be treated as assertive live updates');
+  assert.match(files.login, /id="auth-error"/, 'Login inputs should be able to reference the current auth error');
+  assert.match(files.login, /aria-describedby=\{error \? 'auth-error' : undefined\}/, 'Login inputs should describe their current auth error');
+  assert.match(files.login, /isEmailInputValid/, 'Login should validate email format before calling the backend');
+  assert.match(files.login, /setError\(t\('invalidEmail'\)\)/, 'Invalid email should use localized frontend copy');
+  assert.match(files.login, /auth\/invalid-email[\s\S]{0,160}t\('invalidEmail'\)/, 'Backend invalid-email errors should use localized copy');
+  assert.match(files.login, /auth\/weak-password[\s\S]{0,160}t\('weakPassword'\)/, 'Backend weak-password errors should use localized copy');
   assert.match(files.login, /t\('actionFailed'/, 'Login failures should use a localized action-failed template');
   assert.match(files.login, /status\s*>=\s*500[\s\S]{0,160}t\('authServiceUnavailable'\)/, 'Login should replace server outage responses with localized service-unavailable copy');
   assert.doesNotMatch(files.login, /setError\(e\.message\)/, 'Login should not expose raw transport errors such as Request failed with status 502');

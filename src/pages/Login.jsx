@@ -14,36 +14,51 @@ export default function Login({ lang, setLang, t }) {
   const [guestName, setGuestName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const isEmailInputValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
   const authErrorMessage = (action, authError) => t('actionFailed', {
     action,
     message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
   });
+  const localizedAuthErrorMessage = (action, authError) => {
+    if (authError?.code === 'auth/invalid-email') return t('invalidEmail');
+    if (authError?.code === 'auth/weak-password') return t('weakPassword');
+    return authErrorMessage(action, authError);
+  };
 
   // Standard Email/Pass with Auto-Registration
   const handleEmailAuth = async (e) => {
     e.preventDefault();
+    const cleanEmail = email.trim();
+    if (!isEmailInputValid(cleanEmail)) {
+      setError(t('invalidEmail'));
+      return;
+    }
+    if (password.length < 6) {
+      setError(t('weakPassword'));
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, cleanEmail, password);
     } catch (e) {
       if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
         try {
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
           if (userCredential.user) {
-            await updateProfile(userCredential.user, { displayName: email.split('@')[0] });
+            await updateProfile(userCredential.user, { displayName: cleanEmail.split('@')[0] });
           }
         } catch (createError) {
           if (createError.code === 'auth/email-already-in-use') {
             setError(t('passwordError'));
           } else {
-            setError(authErrorMessage(t('signIn'), createError));
+            setError(localizedAuthErrorMessage(t('signIn'), createError));
           }
         }
       } else if (e.code === 'auth/wrong-password') {
         setError(t('passwordError'));
       } else {
-        setError(authErrorMessage(t('signIn'), e));
+        setError(localizedAuthErrorMessage(t('signIn'), e));
       }
     } finally {
       setLoading(false);
@@ -109,12 +124,12 @@ export default function Login({ lang, setLang, t }) {
           </div>
 
           {error && (
-            <div className="mb-4 rounded-2xl border border-google-red/20 bg-google-red/10 p-3 text-sm font-medium text-google-red">
+            <div id="auth-error" role="alert" aria-live="assertive" className="mb-4 rounded-2xl border border-google-red/20 bg-google-red/10 p-3 text-sm font-medium text-google-red">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleEmailAuth} className="space-y-4">
+          <form onSubmit={handleEmailAuth} className="space-y-4" noValidate>
             <div>
               <label className="app-label">{t('emailAddr')}</label>
               <input
@@ -124,6 +139,7 @@ export default function Login({ lang, setLang, t }) {
                 onChange={e => setEmail(e.target.value)}
                 className="app-input"
                 autoComplete="email"
+                aria-describedby={error ? 'auth-error' : undefined}
               />
             </div>
 
@@ -136,6 +152,7 @@ export default function Login({ lang, setLang, t }) {
                 onChange={e => setPassword(e.target.value)}
                 className="app-input"
                 autoComplete="current-password"
+                aria-describedby={error ? 'auth-error' : undefined}
               />
             </div>
 
@@ -157,6 +174,7 @@ export default function Login({ lang, setLang, t }) {
                 className="app-input"
                 placeholder={t('guestName')}
                 autoComplete="nickname"
+                aria-describedby={error ? 'auth-error' : undefined}
               />
               <button type="submit" disabled={loading} className="app-button-tonal whitespace-nowrap">
                 {t('guestLogin')}
