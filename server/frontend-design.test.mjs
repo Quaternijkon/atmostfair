@@ -1237,6 +1237,32 @@ test('announcement lifecycle management is visible and time-window aware', async
   assert.match(files.admin, /isCreatingAnnouncement \? t\('processing'\) : t\('createAnnouncement'\)/, 'Admin announcement submit button should show localized progress copy');
 });
 
+test('announcement publish and delete actions prevent duplicate submits and expose pending state', async () => {
+  const admin = await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.errorWithMessage, 'missing English error template');
+  assert.ok(TRANSLATIONS.zh.errorWithMessage, 'missing Chinese error template');
+
+  assert.match(admin, /pendingAnnouncementActionKeysRef\s*=\s*useRef\(new Set\(\)\)/, 'Admin announcement row actions should track pending keys in a ref');
+  assert.match(admin, /if \(pendingAnnouncementActionKeysRef\.current\.has\(actionKey\)\) return;/, 'Admin announcement row actions should ignore duplicate clicks for the same row action');
+  assert.match(admin, /pendingAnnouncementActionKeysRef\.current\.add\(actionKey\)[\s\S]{0,220}setPendingAnnouncementActionKeys\(\[\.\.\.pendingAnnouncementActionKeysRef\.current\]\)/, 'Admin announcement row actions should expose pending keys immediately');
+  assert.match(admin, /await action\(\)/, 'Admin announcement row actions should await writes while pending');
+  assert.match(admin, /finally[\s\S]{0,260}pendingAnnouncementActionKeysRef\.current\.delete\(actionKey\)[\s\S]{0,160}setPendingAnnouncementActionKeys\(\[\.\.\.pendingAnnouncementActionKeysRef\.current\]\)/, 'Admin announcement row actions should clear pending state after writes settle');
+  assert.match(admin, /showToast\(t\('errorWithMessage', \{ title: actionLabel, message: error\?\.message \|\| t\('failed'\) \}\), 'error'\)/, 'Admin announcement row failures should use localized app feedback');
+  assert.match(admin, /await runAnnouncementAction\(`toggle:\$\{announcement\.id\}`/, 'Announcement publish toggles should route through the pending action guard');
+  assert.match(admin, /onConfirm:\s*\(\) => handleDeleteAnnouncementConfirm\(announcement\)/, 'Announcement delete confirmation should route through the pending delete handler');
+  assert.match(admin, /await runAnnouncementAction\(`delete:\$\{announcement\.id\}`/, 'Announcement deletes should route through the pending action guard');
+  assert.match(admin, /pendingAnnouncementActionKeys\.includes\(`toggle:\$\{announcement\.id\}`\)/, 'Announcement rows should derive toggle pending state from the announcement id');
+  assert.match(admin, /pendingAnnouncementActionKeys\.includes\(`delete:\$\{announcement\.id\}`\)/, 'Announcement rows should derive delete pending state from the announcement id');
+  assert.match(admin, /disabled=\{isAnnouncementRowPending\}/, 'Announcement row actions should be disabled while a row action is pending');
+  assert.match(admin, /aria-busy=\{isToggleAnnouncementPending\}/, 'Announcement publish buttons should expose busy state');
+  assert.match(admin, /aria-busy=\{isDeleteAnnouncementPending\}/, 'Announcement delete buttons should expose busy state');
+  assert.match(admin, /isToggleAnnouncementPending \? t\('processing'\) : t\(announcement\.active \? 'unpublishAnnouncement' : 'publishAnnouncement'\)/, 'Announcement publish buttons should show localized pending copy');
+  assert.match(admin, /title=\{isDeleteAnnouncementPending \? t\('processing'\) : t\('delete'\)\}/, 'Announcement delete buttons should expose localized pending copy');
+});
+
 test('auth and user fallbacks avoid visible English fragments', async () => {
   const files = {
     login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),

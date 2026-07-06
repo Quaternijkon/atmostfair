@@ -60,6 +60,8 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   const [announcementForm, setAnnouncementForm] = useState(EMPTY_ANNOUNCEMENT_FORM);
   const [isCreatingAnnouncement, setIsCreatingAnnouncement] = useState(false);
   const isCreatingAnnouncementRef = useRef(false);
+  const [pendingAnnouncementActionKeys, setPendingAnnouncementActionKeys] = useState([]);
+  const pendingAnnouncementActionKeysRef = useRef(new Set());
 
   useEffect(() => {
     let active = true;
@@ -150,16 +152,37 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
     }
   };
 
+  const runAnnouncementAction = async (actionKey, actionLabel, action) => {
+    if (pendingAnnouncementActionKeysRef.current.has(actionKey)) return;
+
+    pendingAnnouncementActionKeysRef.current.add(actionKey);
+    setPendingAnnouncementActionKeys([...pendingAnnouncementActionKeysRef.current]);
+    try {
+      await action();
+    } catch (error) {
+      showToast(t('errorWithMessage', { title: actionLabel, message: error?.message || t('failed') }), 'error');
+    } finally {
+      pendingAnnouncementActionKeysRef.current.delete(actionKey);
+      setPendingAnnouncementActionKeys([...pendingAnnouncementActionKeysRef.current]);
+    }
+  };
+
   const toggleAnnouncement = async (announcement) => {
     const patch = normalizeAnnouncementUpdateData({ active: !announcement.active }, announcement);
     if (!patch) return;
-    try {
+    await runAnnouncementAction(`toggle:${announcement.id}`, t(announcement.active ? 'unpublishAnnouncement' : 'publishAnnouncement'), async () => {
       await updateDoc(doc(db, 'announcements', announcement.id), patch);
       await refreshAnnouncements();
       showToast(t('announcementUpdated'), 'success');
-    } catch (error) {
-      showToast(t('errorWithMessage', { title: t('announcements'), message: error.message }), 'error');
-    }
+    });
+  };
+
+  const handleDeleteAnnouncementConfirm = async (announcement) => {
+    await runAnnouncementAction(`delete:${announcement.id}`, t('delete'), async () => {
+      await deleteDoc(doc(db, 'announcements', announcement.id));
+      await refreshAnnouncements();
+      showToast(t('announcementDeleted'), 'success');
+    });
   };
 
   const deleteAnnouncement = (announcement) => {
@@ -169,11 +192,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
-      onConfirm: async () => {
-        await deleteDoc(doc(db, 'announcements', announcement.id));
-        await refreshAnnouncements();
-        showToast(t('announcementDeleted'), 'success');
-      },
+      onConfirm: () => handleDeleteAnnouncementConfirm(announcement),
     });
   };
 
@@ -357,6 +376,9 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
               <div className="max-h-[380px] divide-y divide-m3-outline-variant/20 overflow-y-auto">
                 {announcements.map((announcement) => {
                   const visibleNow = announcementNow !== null && isAnnouncementVisible(announcement, announcementNow);
+                  const isToggleAnnouncementPending = pendingAnnouncementActionKeys.includes(`toggle:${announcement.id}`);
+                  const isDeleteAnnouncementPending = pendingAnnouncementActionKeys.includes(`delete:${announcement.id}`);
+                  const isAnnouncementRowPending = isToggleAnnouncementPending || isDeleteAnnouncementPending;
                   const statusKey = !announcement.active
                     ? 'announcementInactive'
                     : visibleNow
@@ -384,10 +406,23 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                         {announcement.endsAt ? <span>{t('announcementEndsAt')}: {formatDate(announcement.endsAt, t)}</span> : null}
                       </div>
                       <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => toggleAnnouncement(announcement)} className="app-button-quiet px-3 text-xs text-google-blue">
-                          {t(announcement.active ? 'unpublishAnnouncement' : 'publishAnnouncement')}
+                        <button
+                          type="button"
+                          onClick={() => toggleAnnouncement(announcement)}
+                          disabled={isAnnouncementRowPending}
+                          aria-busy={isToggleAnnouncementPending}
+                          className="app-button-quiet px-3 text-xs text-google-blue"
+                        >
+                          {isToggleAnnouncementPending ? t('processing') : t(announcement.active ? 'unpublishAnnouncement' : 'publishAnnouncement')}
                         </button>
-                        <button type="button" onClick={() => deleteAnnouncement(announcement)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={t('delete')}>
+                        <button
+                          type="button"
+                          onClick={() => deleteAnnouncement(announcement)}
+                          disabled={isAnnouncementRowPending}
+                          aria-busy={isDeleteAnnouncementPending}
+                          className="app-icon-button hover:bg-google-red/10 hover:text-google-red"
+                          title={isDeleteAnnouncementPending ? t('processing') : t('delete')}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
