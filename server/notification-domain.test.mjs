@@ -110,15 +110,35 @@ test('notification center actions prevent duplicate submits and expose pending s
   assert.match(app, /await runNotificationAction\(`read:\$\{nId\}`/, 'Single notification reads should route through the pending action guard');
   assert.match(app, /await runNotificationAction\('mark-all-read'/, 'Mark-all notification reads should route through the pending action guard');
   assert.match(app, /await runNotificationAction\('clear-read'/, 'Clear-read notification actions should route through the pending action guard');
-  assert.match(app, /disabled=\{!notifications\.some\(n => !n\.read\) \|\| isMarkingAllNotificationsRead\}/, 'Mark-all button should be disabled while pending');
+  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => !n\.read\) \|\| isMarkingAllNotificationsRead\}/, 'Mark-all button should be disabled while pending or notification loading failed');
   assert.match(app, /aria-busy=\{isMarkingAllNotificationsRead\}/, 'Mark-all button should expose busy state');
   assert.match(app, /isMarkingAllNotificationsRead \? t\('processing'\) : t\('markAllRead'\)/, 'Mark-all button should show localized pending copy');
-  assert.match(app, /disabled=\{!notifications\.some\(n => n\.read\) \|\| isClearingReadNotifications\}/, 'Clear-read button should be disabled while pending');
+  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => n\.read\) \|\| isClearingReadNotifications\}/, 'Clear-read button should be disabled while pending or notification loading failed');
   assert.match(app, /aria-busy=\{isClearingReadNotifications\}/, 'Clear-read button should expose busy state');
   assert.match(app, /isClearingReadNotifications \? t\('processing'\) : t\('clearRead'\)/, 'Clear-read button should show localized pending copy');
   assert.match(app, /pendingNotificationActionKeys\.includes\(`read:\$\{n\.id\}`\)/, 'Notification rows should derive pending state from the notification id');
   assert.match(app, /disabled=\{isNotificationReadPending\}/, 'Notification rows should be disabled while marking read');
   assert.match(app, /aria-busy=\{isNotificationReadPending\}/, 'Notification rows should expose busy state');
+});
+
+test('notification center exposes a recoverable load error state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.notificationsLoadFailed, 'missing English notification load failure translation');
+  assert.ok(TRANSLATIONS.zh.notificationsLoadFailed, 'missing Chinese notification load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(app, /RotateCcw/, 'Notification retry should use the shared retry icon');
+  assert.match(app, /\[notificationsLoadError,\s*setNotificationsLoadError\]\s*=\s*useState\(false\)/, 'App should track notification load errors separately from an empty notification center');
+  assert.match(app, /\[notificationsReloadKey,\s*setNotificationsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed notification subscriptions');
+  assert.match(app, /setNotificationsLoadError\(false\)[\s\S]{0,360}setNotifications\(/, 'Successful notification reads should clear the load error before rendering notifications');
+  assert.match(app, /onSnapshot\(collection\(db, 'notifications'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setNotificationsLoadError\(true\)/, 'Notification center should handle subscription errors');
+  assert.match(app, /\}, \[notificationsReloadKey, projectsReloadKey, user\]\)/, 'Notification retry should recreate the data subscriptions');
+  assert.match(app, /notificationsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('notificationsLoadFailed'\)/, 'Notification center should render announced localized load failure copy');
+  assert.match(app, /onClick=\{\(\) => setNotificationsReloadKey\(\(current\) => current \+ 1\)\}/, 'Notification retry should refresh the subscription');
+  assert.match(app, /t\('chatRetry'\)/, 'Notification retry button should use localized copy');
+  assert.match(app, /notificationsLoadError \? \(/, 'Notification empty state should be gated behind the notification load error state');
 });
 
 test('friend chat opens mark matching message notifications read', async () => {

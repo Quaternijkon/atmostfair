@@ -124,6 +124,8 @@ function AppContent() {
   const [claimItems, setClaimItems] = useState([]);
   const [gameRooms, setGameRooms] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [notificationsLoadError, setNotificationsLoadError] = useState(false);
+  const [notificationsReloadKey, setNotificationsReloadKey] = useState(0);
   const [projectActivities, setProjectActivities] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingNotificationActionKeys, setPendingNotificationActionKeys] = useState([]);
@@ -181,6 +183,7 @@ function AppContent() {
       setUserProfile(null);
       setProjectsLoaded(false);
       setProjectsLoadError(false);
+      setNotificationsLoadError(false);
       setAuthChecking(false);
       if (u) {
           try {
@@ -222,10 +225,16 @@ function AppContent() {
     const unsubBookingSlots = onSnapshot(collection(db, 'booking_slots'), (s) => setBookingSlots(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubGameRooms = onSnapshot(collection(db, 'game_rooms'), (s) => setGameRooms(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt)));
+    const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => {
+      setNotificationsLoadError(false);
+      setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt));
+    }, (error) => {
+      console.error("Error loading notifications:", error);
+      setNotificationsLoadError(true);
+    });
     const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
     return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubGameRooms(); unsubNotifications(); unsubProjectActivities(); };
-  }, [projectsReloadKey, user]);
+  }, [notificationsReloadKey, projectsReloadKey, user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
     const activity = createProjectActivityData({
@@ -727,7 +736,7 @@ function AppContent() {
                                      <button
                                        type="button"
                                        onClick={actions.handleMarkAllNotificationsRead}
-                                       disabled={!notifications.some(n => !n.read) || isMarkingAllNotificationsRead}
+                                       disabled={notificationsLoadError || !notifications.some(n => !n.read) || isMarkingAllNotificationsRead}
                                        aria-busy={isMarkingAllNotificationsRead}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
@@ -736,7 +745,7 @@ function AppContent() {
                                      <button
                                        type="button"
                                        onClick={actions.handleClearReadNotifications}
-                                       disabled={!notifications.some(n => n.read) || isClearingReadNotifications}
+                                       disabled={notificationsLoadError || !notifications.some(n => n.read) || isClearingReadNotifications}
                                        aria-busy={isClearingReadNotifications}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
@@ -745,7 +754,19 @@ function AppContent() {
                                  </div>
                              </div>
                              <div className="max-h-64 overflow-y-auto">
-                                 {notifications.length === 0 ? (
+                                 {notificationsLoadError ? (
+                                     <div role="alert" className="flex min-h-32 flex-col items-center justify-center gap-3 p-4 text-center text-xs text-m3-on-surface-variant">
+                                         <p>{t('notificationsLoadFailed')}</p>
+                                         <button
+                                           type="button"
+                                           onClick={() => setNotificationsReloadKey((current) => current + 1)}
+                                           className="app-button-quiet text-google-blue"
+                                         >
+                                           <RotateCcw className="h-4 w-4" />
+                                           {t('chatRetry')}
+                                         </button>
+                                     </div>
+                                 ) : notifications.length === 0 ? (
                                      <div className="p-4 text-center text-xs text-m3-on-surface-variant">{t('noNotifications')}</div>
                                  ) : (
                                      notifications.map(n => {

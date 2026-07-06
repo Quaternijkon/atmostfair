@@ -176,7 +176,7 @@ test('project list exposes a recoverable load error state', async () => {
   assert.match(app, /\[projectsReloadKey,\s*setProjectsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed project subscriptions');
   assert.match(app, /setProjectsLoadError\(false\)[\s\S]{0,360}setProjects\(/, 'Successful project reads should clear the load error before rendering projects');
   assert.match(app, /onSnapshot\(collection\(db, 'projects'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setProjectsLoadError\(true\)/, 'Project list should handle subscription errors');
-  assert.match(app, /\}, \[projectsReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
+  assert.match(app, /\}, \[notificationsReloadKey, projectsReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
   assert.match(app, /projectsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('projectsLoadFailed'\)/, 'Project list should render announced localized load failure copy');
   assert.match(app, /onClick=\{\(\) => setProjectsReloadKey\(\(current\) => current \+ 1\)\}/, 'Project list retry should refresh the subscription');
   assert.match(app, /t\('chatRetry'\)/, 'Project list retry button should use localized copy');
