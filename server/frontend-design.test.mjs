@@ -602,6 +602,28 @@ test('booking modal submissions prevent duplicate submits and expose pending sta
   assert.match(booking, /showToast\(t\('bookingFailed'\), 'error'\)/, 'Booking modal failures should use localized app feedback');
 });
 
+test('booking owner slot toggles prevent duplicate writes without blocking batch toggles', async () => {
+  const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.bookingSlotActionFailed, 'missing English booking slot action failure translation');
+  assert.ok(TRANSLATIONS.zh.bookingSlotActionFailed, 'missing Chinese booking slot action failure translation');
+
+  assert.match(booking, /pendingSlotToggleKeysRef\s*=\s*useRef\(new Set\(\)\)/, 'Booking slot toggles should track pending keys in a ref');
+  assert.match(booking, /const slotKey = getSlotToggleKey\(start, end\)/, 'Booking slot toggles should derive a stable key per start and end');
+  assert.match(booking, /if \(pendingSlotToggleKeysRef\.current\.has\(slotKey\)\) return;/, 'Booking slot toggles should ignore duplicate clicks for the same slot');
+  assert.match(booking, /pendingSlotToggleKeysRef\.current\.add\(slotKey\)[\s\S]{0,220}setPendingSlotToggleKeys\(\[\.\.\.pendingSlotToggleKeysRef\.current\]\)/, 'Booking slot toggles should expose pending keys immediately');
+  assert.match(booking, /await actions\.handleCreateBookingSlot\(project\.id, start, end, label\)/, 'Booking slot creation should be awaited while pending');
+  assert.match(booking, /await actions\.handleDeleteBookingSlot\(existing\.id\)/, 'Booking slot deletion should be awaited while pending');
+  assert.match(booking, /finally[\s\S]{0,260}pendingSlotToggleKeysRef\.current\.delete\(slotKey\)[\s\S]{0,160}setPendingSlotToggleKeys\(\[\.\.\.pendingSlotToggleKeysRef\.current\]\)/, 'Booking slot toggles should clear pending state after the write settles');
+  assert.match(booking, /showToast\(t\('bookingSlotActionFailed'\), 'error'\)/, 'Booking slot toggle failures should use localized app feedback');
+  assert.match(booking, /pendingSlotToggleKeys\.includes\(slotKey\)/, 'Booking slot cells should derive pending state from the slot key');
+  assert.match(booking, /disabled: isSlotTogglePending/, 'Pending slot controls should be disabled');
+  assert.match(booking, /'aria-busy': isSlotTogglePending/, 'Pending slot controls should expose busy state');
+  assert.match(booking, /isSlotTogglePending[\s\S]{0,180}t\('processing'\)/, 'Pending slot controls should show localized progress copy');
+});
+
 test('paused and finished collaboration workspaces hide item deletion controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
