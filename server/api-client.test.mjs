@@ -28,6 +28,32 @@ test('apiRequest hides raw status text for server outages', async (t) => {
   );
 });
 
+test('apiRequest hides raw thrown status text for gateway outages', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const error = new Error('Request failed with status 502');
+    error.status = 502;
+    throw error;
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await assert.rejects(
+    () => apiRequest('/api/auth/email/login', {
+      body: { email: 'user@example.com', password: 'secret123' },
+      token: null,
+    }),
+    (error) => {
+      assert.equal(error.status, 502);
+      assert.equal(error.code, 'request/service-unavailable');
+      assert.equal(error.message, 'Service is temporarily unavailable.');
+      assert.doesNotMatch(error.message, /Request failed with status 502/);
+      return true;
+    },
+  );
+});
+
 test('apiRequest retries transient gateway failures once', async (t) => {
   const originalFetch = globalThis.fetch;
   let calls = 0;

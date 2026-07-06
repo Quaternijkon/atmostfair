@@ -30,7 +30,18 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
   };
 
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt += 1) {
-    const response = await fetch(requestUrl, requestInit);
+    let response;
+    try {
+      response = await fetch(requestUrl, requestInit);
+    } catch (error) {
+      const status = getTransportErrorStatus(error);
+      if ((!status || RETRYABLE_STATUS_CODES.has(status)) && attempt < MAX_RETRY_ATTEMPTS) continue;
+      throwApiError({
+        payload: {},
+        serviceUnavailable: !status || status >= 500,
+        status: status || 503,
+      });
+    }
     const payload = await response.json().catch(() => ({}));
     if (response.ok) return payload;
     if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRY_ATTEMPTS) continue;
@@ -38,6 +49,17 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
     const serviceUnavailable = response.status >= 500;
     throwApiError({ payload, serviceUnavailable, status: response.status });
   }
+}
+
+function getTransportErrorStatus(error) {
+  const directStatus = Number(error?.status || error?.response?.status);
+  if (Number.isInteger(directStatus) && directStatus >= 100 && directStatus <= 599) return directStatus;
+
+  const statusMatch = String(error?.message || '').match(/\bstatus\s+(\d{3})\b/i);
+  if (!statusMatch) return null;
+
+  const messageStatus = Number(statusMatch[1]);
+  return Number.isInteger(messageStatus) ? messageStatus : null;
 }
 
 function throwApiError({ payload, serviceUnavailable, status }) {
