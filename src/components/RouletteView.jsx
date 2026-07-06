@@ -47,6 +47,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   const isJoiningRouletteRef = useRef(false);
   const [isDrawingRoulette, setIsDrawingRoulette] = useState(false);
   const isDrawingRouletteRef = useRef(false);
+  const [isSavingRouletteConfig, setIsSavingRouletteConfig] = useState(false);
+  const isSavingRouletteConfigRef = useRef(false);
   
   // -- Config State --
   const [activeTab, setActiveTab] = useState(() => project.rouletteConfig?.mode || 'classic');
@@ -213,9 +215,21 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
 
   // -- Handlers --
   
-  const handleSaveConfig = () => {
-      actions.handleUpdateRouletteConfig(project.id, { ...config, mode: activeTab });
-      showToast(t('rSaveConfig'), 'success');
+  const handleSaveConfig = async () => {
+      if (isSavingRouletteConfigRef.current) return;
+
+      isSavingRouletteConfigRef.current = true;
+      setIsSavingRouletteConfig(true);
+      try {
+          await actions.handleUpdateRouletteConfig(project.id, { ...config, mode: activeTab });
+          showToast(t('rSaveConfig'), 'success');
+      } catch (error) {
+          console.error(error);
+          showToast(t('rouletteConfigSaveFailed'), 'error');
+      } finally {
+          isSavingRouletteConfigRef.current = false;
+          setIsSavingRouletteConfig(false);
+      }
   };
   
   const handleDraw = async () => {
@@ -290,6 +304,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                   <button 
                     key={tab.id}
                     onClick={() => { setActiveTab(tab.id); setConfig({...config, mode: tab.id}); }}
+                    disabled={isSavingRouletteConfig}
                     className={`touch-target relative px-3 pb-2 text-sm font-medium transition-all ${activeTab === tab.id ? 'text-google-blue' : 'text-m3-on-surface-variant'}`}
                   >
                      {tab.label}
@@ -301,24 +316,24 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           <div className="space-y-4">
               {activeTab === 'multi' && (
                   <div className="space-y-3">
-                      <div className="flex justify-between items-center"><label className="text-sm font-medium">{t('rPrizes')}</label> <button onClick={() => setConfig({...config, prizes: [...(config.prizes||[]), {name: '', count: 1}]})} className="app-button-quiet px-3 text-xs text-google-blue"><Plus className="w-3 h-3"/> {t('rAddPrize')}</button></div>
+                      <div className="flex justify-between items-center"><label className="text-sm font-medium">{t('rPrizes')}</label> <button onClick={() => setConfig({...config, prizes: [...(config.prizes||[]), {name: '', count: 1}]})} disabled={isSavingRouletteConfig} className="app-button-quiet px-3 text-xs text-google-blue"><Plus className="w-3 h-3"/> {t('rAddPrize')}</button></div>
                       {(config.prizes || []).map((prize, idx) => (
                           <div key={idx} className="flex gap-2">
-                              <input type="text" value={prize.name} onChange={e => {const n=[...config.prizes]; n[idx].name=e.target.value; setConfig({...config, prizes:n})}} placeholder={t('rPrizeName')} className="app-input flex-1" />
-                              <input type="number" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=parseInt(e.target.value); setConfig({...config, prizes:n})}} className="app-input w-24" />
-                              <button onClick={() => {const n=[...config.prizes]; n.splice(idx,1); setConfig({...config, prizes:n})}} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-4 h-4" /></button>
+                              <input type="text" value={prize.name} onChange={e => {const n=[...config.prizes]; n[idx].name=e.target.value; setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} placeholder={t('rPrizeName')} className="app-input flex-1" />
+                              <input type="number" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=parseInt(e.target.value); setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} className="app-input w-24" />
+                              <button onClick={() => {const n=[...config.prizes]; n.splice(idx,1); setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-4 h-4" /></button>
                           </div>
                       ))}
                       <div className="flex gap-4 mt-4">
                           <label className="app-chip cursor-pointer bg-m3-surface hover:bg-m3-surface-container-high">
-                              <input type="radio" checked={config.order !== 'rev'} onChange={() => setConfig({...config, order: 'fwd'})} /> {t('rOrderFwd')}
+                              <input type="radio" checked={config.order !== 'rev'} onChange={() => setConfig({...config, order: 'fwd'})} disabled={isSavingRouletteConfig} /> {t('rOrderFwd')}
                           </label>
                            <label className="app-chip cursor-pointer bg-m3-surface hover:bg-m3-surface-container-high">
-                              <input type="radio" checked={config.order === 'rev'} onChange={() => setConfig({...config, order: 'rev'})} /> {t('rOrderRev')}
+                              <input type="radio" checked={config.order === 'rev'} onChange={() => setConfig({...config, order: 'rev'})} disabled={isSavingRouletteConfig} /> {t('rOrderRev')}
                           </label>
                       </div>
                       <label className="flex items-center gap-2 text-sm mt-2">
-                          <input type="checkbox" checked={config.allowRepeat} onChange={e => setConfig({...config, allowRepeat: e.target.checked})} /> {t('rAllowRepeat')}
+                          <input type="checkbox" checked={config.allowRepeat} onChange={e => setConfig({...config, allowRepeat: e.target.checked})} disabled={isSavingRouletteConfig} /> {t('rAllowRepeat')}
                       </label>
                   </div>
               )}
@@ -326,7 +341,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
               {activeTab === 'elim' && (
                   <div>
                        <label className="block text-sm font-medium mb-1">{t('rWinnersCount')}</label>
-                       <input type="number" min="1" value={config.survivorCount} onChange={e => setConfig({...config, survivorCount: e.target.value})} className="app-input" />
+                       <input type="number" min="1" value={config.survivorCount} onChange={e => setConfig({...config, survivorCount: e.target.value})} disabled={isSavingRouletteConfig} className="app-input" />
                   </div>
               )}
               
@@ -334,13 +349,13 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                   <h4 className="text-sm font-medium mb-3 flex items-center gap-2"><Settings className="w-4 h-4" /> {t('rReplaySettings')}</h4>
                   <div className="flex items-center gap-6">
                       <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={config.enableReplay} onChange={e => setConfig({...config, enableReplay: e.target.checked})} className="accent-google-blue w-4 h-4" /> 
+                          <input type="checkbox" checked={config.enableReplay} onChange={e => setConfig({...config, enableReplay: e.target.checked})} disabled={isSavingRouletteConfig} className="accent-google-blue w-4 h-4" />
                           {t('rEnableReplay')}
                       </label>
                       {config.enableReplay && (
                           <div className="flex items-center gap-2">
                               <span className="text-xs">{t('rReplaySpeed')}</span>
-                              <input type="range" min="0.5" max="5" step="0.5" value={config.replaySpeed} onChange={e => setConfig({...config, replaySpeed: parseFloat(e.target.value)})} className="w-24 accent-google-blue" />
+                              <input type="range" min="0.5" max="5" step="0.5" value={config.replaySpeed} onChange={e => setConfig({...config, replaySpeed: parseFloat(e.target.value)})} disabled={isSavingRouletteConfig} className="w-24 accent-google-blue" />
                               <span className="text-xs font-mono">{config.replaySpeed}s</span>
                           </div>
                       )}
@@ -349,13 +364,13 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
               
               <div className="mt-4 pt-4 border-t border-m3-outline-variant/20">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={config.creatorWeightPublic} onChange={e => setConfig({...config, creatorWeightPublic: e.target.checked})} className="accent-google-blue w-4 h-4" /> 
+                          <input type="checkbox" checked={config.creatorWeightPublic} onChange={e => setConfig({...config, creatorWeightPublic: e.target.checked})} disabled={isSavingRouletteConfig} className="accent-google-blue w-4 h-4" />
                           {t('rCreatorWeightPublic')}
                     </label>
               </div>
 
-              <button onClick={handleSaveConfig} className="app-button-tonal mt-4 w-full">
-                  {t('rSaveConfig')}
+              <button onClick={handleSaveConfig} disabled={isSavingRouletteConfig} aria-busy={isSavingRouletteConfig} className="app-button-tonal mt-4 w-full">
+                  {isSavingRouletteConfig ? t('processing') : t('rSaveConfig')}
               </button>
           </div>
       </div>

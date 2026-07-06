@@ -733,6 +733,26 @@ test('roulette workspace exposes localized replayable audit steps', async () => 
   assert.doesNotMatch(files.roulette, />Audit|>Formula|>Step|No audit/i, 'Roulette audit visible copy should be localized');
 });
 
+test('roulette config saves prevent duplicate submits and expose pending state', async () => {
+  const roulette = await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.rouletteConfigSaveFailed, 'missing English roulette config failure translation');
+  assert.ok(TRANSLATIONS.zh.rouletteConfigSaveFailed, 'missing Chinese roulette config failure translation');
+
+  assert.match(roulette, /isSavingRouletteConfigRef\s*=\s*useRef\(false\)/, 'Roulette config saves should use a synchronous action lock');
+  assert.match(roulette, /if \(isSavingRouletteConfigRef\.current\) return;/, 'Roulette config saves should ignore duplicate clicks before rerender');
+  assert.match(roulette, /isSavingRouletteConfigRef\.current = true[\s\S]{0,160}setIsSavingRouletteConfig\(true\)/, 'Roulette config saves should expose pending state before writing');
+  assert.match(roulette, /await actions\.handleUpdateRouletteConfig\(project\.id, \{ \.\.\.config, mode: activeTab \}\)/, 'Roulette config saves should await the write while pending');
+  assert.match(roulette, /await actions\.handleUpdateRouletteConfig[\s\S]{0,220}showToast\(t\('rSaveConfig'\), 'success'\)/, 'Roulette config saves should show success only after the write resolves');
+  assert.match(roulette, /finally \{[\s\S]{0,160}isSavingRouletteConfigRef\.current = false[\s\S]{0,120}setIsSavingRouletteConfig\(false\)/, 'Roulette config saves should clear pending state when they settle');
+  assert.match(roulette, /showToast\(t\('rouletteConfigSaveFailed'\), 'error'\)/, 'Roulette config save failures should use localized app feedback');
+  assert.match(roulette, /disabled=\{isSavingRouletteConfig\}/, 'Roulette config controls should be disabled while saving');
+  assert.match(roulette, /aria-busy=\{isSavingRouletteConfig\}/, 'Roulette config save button should expose busy state');
+  assert.match(roulette, /isSavingRouletteConfig \? t\('processing'\) : t\('rSaveConfig'\)/, 'Roulette config save button should show localized progress copy');
+});
+
 test('queue and roulette result actions prevent duplicate submits and expose pending state', async () => {
   const files = {
     queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),
