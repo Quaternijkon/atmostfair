@@ -20,8 +20,32 @@ export default function FriendSystem({ user, onClose, t }) {
     const [chatInput, setChatInput] = useState('');
     const [isSendingFriendMessage, setIsSendingFriendMessage] = useState(false);
     const isSendingFriendMessageRef = useRef(false);
+    const [pendingFriendActionIds, setPendingFriendActionIds] = useState(() => new Set());
+    const pendingFriendActionIdsRef = useRef(new Set());
     const [searchResults, setSearchResults] = useState([]);
     const currentUserName = () => user.displayName || user.email?.split('@')[0] || t('userLabel');
+    const isFriendActionPending = (actionId) => pendingFriendActionIds.has(actionId);
+
+    const runFriendAction = async (actionId, action) => {
+        if (!actionId || pendingFriendActionIdsRef.current.has(actionId)) return false;
+
+        pendingFriendActionIdsRef.current = new Set(pendingFriendActionIdsRef.current).add(actionId);
+        setPendingFriendActionIds(new Set(pendingFriendActionIdsRef.current));
+
+        try {
+            await action();
+            return true;
+        } catch (error) {
+            console.error(error);
+            showToast(t('friendActionFailed'), 'error');
+            return false;
+        } finally {
+            const nextPendingIds = new Set(pendingFriendActionIdsRef.current);
+            nextPendingIds.delete(actionId);
+            pendingFriendActionIdsRef.current = nextPendingIds;
+            setPendingFriendActionIds(new Set(pendingFriendActionIdsRef.current));
+        }
+    };
 
     // 1. Fetch Friends & Requests
     useEffect(() => {
@@ -127,7 +151,7 @@ export default function FriendSystem({ user, onClose, t }) {
         }
     };
 
-    const sendRequest = async (targetUser) => {
+    const sendRequest = async (targetUser) => runFriendAction(`request:${targetUser.uid}`, async () => {
         const requestData = createFriendRequestData(relationships, user, targetUser, nowMs());
         if (!requestData) {
             showToast(t('friendRequestUnavailable'), 'info');
@@ -141,17 +165,21 @@ export default function FriendSystem({ user, onClose, t }) {
         setSearchTerm('');
         
         // Notify via mailbox
-        await addDoc(collection(db, 'notifications'), {
-            recipientId: targetUser.uid,
-            type: 'friend_req',
-            title: t('friendRequestTitle'),
-            message: t('friendRequestMessage', { name: user.displayName || t('userLabel') }),
-            read: false,
-            createdAt: nowMs()
-        });
-    };
+        try {
+            await addDoc(collection(db, 'notifications'), {
+                recipientId: targetUser.uid,
+                type: 'friend_req',
+                title: t('friendRequestTitle'),
+                message: t('friendRequestMessage', { name: user.displayName || t('userLabel') }),
+                read: false,
+                createdAt: nowMs()
+            });
+        } catch (error) {
+            console.error(error);
+        }
+    });
 
-    const acceptRequest = async (rel) => {
+    const acceptRequest = async (rel) => runFriendAction(`accept:${rel.id}`, async () => {
         const acceptPatch = createFriendAcceptPatch(rel, user);
         if (!acceptPatch) {
             showToast(t('friendActionUnavailable'), 'info');
@@ -159,16 +187,16 @@ export default function FriendSystem({ user, onClose, t }) {
         }
         await updateDoc(doc(db, 'friendships', rel.id), acceptPatch);
         showToast(t('friendAdded'), 'success');
-    };
+    });
     
-    const rejectRequest = async (rel) => {
+    const rejectRequest = async (rel) => runFriendAction(`reject:${rel.id}`, async () => {
         const rejectableId = getRejectableFriendRequestId(rel, user);
         if (!rejectableId) {
             showToast(t('friendActionUnavailable'), 'info');
             return;
         }
         await deleteDoc(doc(db, 'friendships', rejectableId));
-    };
+    });
 
     const sendMessage = async (e) => {
         e.preventDefault();
@@ -252,18 +280,23 @@ export default function FriendSystem({ user, onClose, t }) {
                         {requests.length > 0 && view !== 'add' && (
                             <div className="px-2 py-2 mb-2">
                                 <div className="text-xs font-bold text-m3-on-surface-variant uppercase mb-2 px-2">{t('requests')}</div>
-                                {requests.map(req => (
-                                    <div key={req.id} className="app-card mb-2 p-3">
-                                        <div className="flex items-center gap-3 mb-3">
-                                            <Avatar name={req.otherName} size="sm" />
-                                            <span className="text-sm font-medium text-m3-on-surface">{req.otherName}</span>
+                                {requests.map(req => {
+                                    const isAcceptingRequest = isFriendActionPending(`accept:${req.id}`);
+                                    const isRejectingRequest = isFriendActionPending(`reject:${req.id}`);
+
+                                    return (
+                                        <div key={req.id} className="app-card mb-2 p-3">
+                                            <div className="flex items-center gap-3 mb-3">
+                                                <Avatar name={req.otherName} size="sm" />
+                                                <span className="text-sm font-medium text-m3-on-surface">{req.otherName}</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => acceptRequest(req)} disabled={isAcceptingRequest || isRejectingRequest} aria-busy={isAcceptingRequest} className="app-button flex-1 bg-google-blue/10 px-3 text-xs text-google-blue hover:bg-google-blue/20">{isAcceptingRequest ? t('processing') : t('accept')}</button>
+                                                <button onClick={() => rejectRequest(req)} disabled={isAcceptingRequest || isRejectingRequest} aria-busy={isRejectingRequest} className="app-button flex-1 bg-m3-surface-container-highest px-3 text-xs text-m3-on-surface-variant hover:bg-m3-outline-variant">{isRejectingRequest ? t('processing') : t('ignore')}</button>
+                                            </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => acceptRequest(req)} className="app-button flex-1 bg-google-blue/10 px-3 text-xs text-google-blue hover:bg-google-blue/20">{t('accept')}</button>
-                                            <button onClick={() => rejectRequest(req)} className="app-button flex-1 bg-m3-surface-container-highest px-3 text-xs text-m3-on-surface-variant hover:bg-m3-outline-variant">{t('ignore')}</button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -290,18 +323,22 @@ export default function FriendSystem({ user, onClose, t }) {
                                 )}
 
                                 <div className="space-y-2">
-                                    {searchResults.map(u => (
-                                        <div key={u.uid} className="app-card flex items-center justify-between p-3">
-                                             <div className="flex items-center gap-3 overflow-hidden">
-                                                 <Avatar name={u.displayName} size="sm"/>
-                                                 <div className="min-w-0">
-                                                     <div className="text-sm font-medium text-m3-on-surface truncate">{u.displayName}</div>
-                                                     <div className="text-xs text-m3-on-surface-variant truncate">{u.email}</div>
+                                    {searchResults.map(u => {
+                                        const isRequestingFriend = isFriendActionPending(`request:${u.uid}`);
+
+                                        return (
+                                            <div key={u.uid} className="app-card flex items-center justify-between p-3">
+                                                 <div className="flex items-center gap-3 overflow-hidden">
+                                                     <Avatar name={u.displayName} size="sm"/>
+                                                     <div className="min-w-0">
+                                                         <div className="text-sm font-medium text-m3-on-surface truncate">{u.displayName}</div>
+                                                         <div className="text-xs text-m3-on-surface-variant truncate">{u.email}</div>
+                                                     </div>
                                                  </div>
-                                             </div>
-                                             <button onClick={() => sendRequest(u)} className="app-icon-button text-google-blue hover:bg-google-blue/10"><UserPlus className="w-5 h-5"/></button>
-                                        </div>
-                                    ))}
+                                                 <button onClick={() => sendRequest(u)} disabled={isRequestingFriend} aria-busy={isRequestingFriend} className={`app-icon-button text-google-blue hover:bg-google-blue/10 ${isRequestingFriend ? 'w-auto px-3 text-xs' : ''}`}>{isRequestingFriend ? t('processing') : <UserPlus className="w-5 h-5"/>}</button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         ) : (

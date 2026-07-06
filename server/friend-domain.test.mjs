@@ -205,3 +205,28 @@ test('friend system routes relationship writes through authorization guards', as
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
 });
+
+test('friend request actions prevent duplicate submits and expose pending state', async () => {
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.friendActionFailed, 'missing English friend action failure translation');
+  assert.ok(TRANSLATIONS.zh.friendActionFailed, 'missing Chinese friend action failure translation');
+
+  assert.match(friendSystem, /pendingFriendActionIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Friend actions should use a synchronous action lock');
+  assert.match(friendSystem, /pendingFriendActionIdsRef\.current\.has\(actionId\)/, 'Friend actions should ignore duplicate clicks before state rerenders');
+  assert.match(friendSystem, /setPendingFriendActionIds\(new Set\(pendingFriendActionIdsRef\.current\)\)/, 'Friend actions should expose pending state in React state');
+  assert.match(friendSystem, /showToast\(t\('friendActionFailed'\), 'error'\)/, 'Friend action failures should use localized app feedback');
+  assert.match(friendSystem, /runFriendAction\(`request:\$\{targetUser\.uid\}`/, 'Friend requests should run through the shared pending action guard');
+  assert.match(friendSystem, /runFriendAction\(`accept:\$\{rel\.id\}`/, 'Friend accepts should run through the shared pending action guard');
+  assert.match(friendSystem, /runFriendAction\(`reject:\$\{rel\.id\}`/, 'Friend rejects should run through the shared pending action guard');
+  assert.match(friendSystem, /aria-busy=\{isAcceptingRequest\}/, 'Accept buttons should expose pending state to assistive technology');
+  assert.match(friendSystem, /aria-busy=\{isRejectingRequest\}/, 'Reject buttons should expose pending state to assistive technology');
+  assert.match(friendSystem, /aria-busy=\{isRequestingFriend\}/, 'Friend request buttons should expose pending state to assistive technology');
+  assert.match(friendSystem, /disabled=\{isAcceptingRequest \|\| isRejectingRequest\}/, 'Request decision buttons should be disabled while either decision is pending');
+  assert.match(friendSystem, /disabled=\{isRequestingFriend\}/, 'Friend request buttons should be disabled while sending');
+  assert.match(friendSystem, /isAcceptingRequest \? t\('processing'\) : t\('accept'\)/, 'Accept buttons should show localized progress copy');
+  assert.match(friendSystem, /isRejectingRequest \? t\('processing'\) : t\('ignore'\)/, 'Reject buttons should show localized progress copy');
+  assert.match(friendSystem, /isRequestingFriend \? t\('processing'\) :/, 'Friend request buttons should show localized progress copy');
+});
