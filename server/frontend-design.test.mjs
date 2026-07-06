@@ -1263,6 +1263,37 @@ test('announcement publish and delete actions prevent duplicate submits and expo
   assert.match(admin, /title=\{isDeleteAnnouncementPending \? t\('processing'\) : t\('delete'\)\}/, 'Announcement delete buttons should expose localized pending copy');
 });
 
+test('admin destructive maintenance actions prevent duplicate submits and expose pending state', async () => {
+  const admin = await readFile(path.join(root, 'src/components/AdminDashboard.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.errorWithMessage, 'missing English error template');
+  assert.ok(TRANSLATIONS.zh.errorWithMessage, 'missing Chinese error template');
+  assert.ok(TRANSLATIONS.en.projectDeleted, 'missing English project deleted feedback');
+  assert.ok(TRANSLATIONS.zh.projectDeleted, 'missing Chinese project deleted feedback');
+
+  assert.match(admin, /pendingAdminActionKeysRef\s*=\s*useRef\(new Set\(\)\)/, 'Admin destructive actions should track pending keys in a ref');
+  assert.match(admin, /if \(pendingAdminActionKeysRef\.current\.has\(actionKey\)\) return;/, 'Admin destructive actions should ignore duplicate confirms for the same action');
+  assert.match(admin, /pendingAdminActionKeysRef\.current\.add\(actionKey\)[\s\S]{0,220}setPendingAdminActionKeys\(\[\.\.\.pendingAdminActionKeysRef\.current\]\)/, 'Admin destructive actions should expose pending keys immediately');
+  assert.match(admin, /await action\(\)/, 'Admin destructive actions should await writes while pending');
+  assert.match(admin, /finally[\s\S]{0,260}pendingAdminActionKeysRef\.current\.delete\(actionKey\)[\s\S]{0,160}setPendingAdminActionKeys\(\[\.\.\.pendingAdminActionKeysRef\.current\]\)/, 'Admin destructive actions should clear pending state after writes settle');
+  assert.match(admin, /showToast\(t\('errorWithMessage', \{ title: actionLabel, message: error\?\.message \|\| t\('failed'\) \}\), 'error'\)/, 'Admin destructive action failures should use localized app feedback');
+  assert.match(admin, /await runAdminAction\('clean-orphans'/, 'Orphan cleanup should route through the pending action guard');
+  assert.match(admin, /onConfirm:\s*handleCleanOrphansConfirm/, 'Orphan cleanup confirmation should route through the guarded cleanup handler');
+  assert.match(admin, /disabled=\{!hasOrphans \|\| isCleaningOrphans\}/, 'Orphan cleanup button should be disabled while cleaning');
+  assert.match(admin, /aria-busy=\{isCleaningOrphans\}/, 'Orphan cleanup button should expose busy state');
+  assert.match(admin, /isCleaningOrphans \? t\('processing'\) : t\('cleanOrphans'\)/, 'Orphan cleanup button should show localized pending copy');
+  assert.match(admin, /await runAdminAction\(`delete-project:\$\{project\.id\}`/, 'Admin project deletes should route through the pending action guard');
+  assert.match(admin, /onConfirm:\s*\(\) => handleDeleteProjectConfirm\(project\)/, 'Admin project delete confirmation should route through the guarded delete handler');
+  assert.match(admin, /showToast\(t\('projectDeleted'\), 'success'\)/, 'Admin project deletes should provide localized success feedback');
+  assert.match(admin, /pendingAdminActionKeys\.includes\(`delete-project:\$\{p\.id\}`\)/, 'Admin project rows should derive delete pending state from the project id');
+  assert.match(admin, /disabled=\{isProjectDeletePending\}/, 'Admin project delete buttons should be disabled while deleting');
+  assert.match(admin, /aria-busy=\{isProjectDeletePending\}/, 'Admin project delete buttons should expose busy state');
+  assert.match(admin, /title=\{isProjectDeletePending \? t\('processing'\) : t\('forceDelete'\)\}/, 'Admin project delete buttons should expose localized pending copy');
+  assert.doesNotMatch(admin, /showToast\(t\('orphanError'\) \+/, 'Admin cleanup errors should not concatenate localized fragments with raw messages');
+});
+
 test('auth and user fallbacks avoid visible English fragments', async () => {
   const files = {
     login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),

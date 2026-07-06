@@ -62,6 +62,8 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   const isCreatingAnnouncementRef = useRef(false);
   const [pendingAnnouncementActionKeys, setPendingAnnouncementActionKeys] = useState([]);
   const pendingAnnouncementActionKeysRef = useRef(new Set());
+  const [pendingAdminActionKeys, setPendingAdminActionKeys] = useState([]);
+  const pendingAdminActionKeysRef = useRef(new Set());
 
   useEffect(() => {
     let active = true;
@@ -119,6 +121,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   };
 
   const hasOrphans = orphanPlan.operations.length > 0;
+  const isCleaningOrphans = pendingAdminActionKeys.includes('clean-orphans');
   const updateAnnouncementForm = (patch) => setAnnouncementForm((current) => ({ ...current, ...patch }));
 
   const refreshAnnouncements = async () => {
@@ -196,51 +199,73 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
     });
   };
 
+  const runAdminAction = async (actionKey, actionLabel, action) => {
+    if (pendingAdminActionKeysRef.current.has(actionKey)) return;
+
+    pendingAdminActionKeysRef.current.add(actionKey);
+    setPendingAdminActionKeys([...pendingAdminActionKeysRef.current]);
+    try {
+      await action();
+    } catch (error) {
+      showToast(t('errorWithMessage', { title: actionLabel, message: error?.message || t('failed') }), 'error');
+    } finally {
+      pendingAdminActionKeysRef.current.delete(actionKey);
+      setPendingAdminActionKeys([...pendingAdminActionKeysRef.current]);
+    }
+  };
+
+  const handleCleanOrphansConfirm = async () => {
+    await runAdminAction('clean-orphans', t('cleanOrphans'), async () => {
+      const promises = orphanPlan.operations.map((operation) => deleteDoc(doc(db, operation.collection, operation.id)));
+      await Promise.all(promises);
+      setRemoteProjectDocs((current) => {
+        const deletedRemoteIds = new Map();
+        orphanPlan.operations
+          .filter((operation) => ADMIN_ORPHAN_REMOTE_COLLECTIONS.includes(operation.collection))
+          .forEach((operation) => {
+            const ids = deletedRemoteIds.get(operation.collection) || new Set();
+            ids.add(operation.id);
+            deletedRemoteIds.set(operation.collection, ids);
+          });
+
+        return Object.fromEntries(Object.entries(current).map(([collectionName, docs]) => [
+          collectionName,
+          (docs || []).filter((entry) => !deletedRemoteIds.get(collectionName)?.has(entry.id)),
+        ]));
+      });
+      showToast(t('orphanSuccess'), 'success');
+    });
+  };
+
   const cleanOrphans = async () => {
+    if (pendingAdminActionKeysRef.current.has('clean-orphans')) return;
     confirm({
       title: t('cleanOrphans'),
       message: `${t('orphanConfirm', { items: orphans.items.length, rooms: orphans.rooms.length, participants: orphans.participants.length })}\n${t('orphanExtraCounts', { fields: orphans.fields.length, submissions: orphans.submissions.length, schedules: orphans.schedules.length, booking: orphans.booking.length, claims: orphans.claims.length, queue: orphans.queue.length })}\n${t('orphanSystemCounts', { chats: orphans.chats.length, games: orphans.games.length, notifications: orphans.notifications.length, activities: orphans.activities.length })}`,
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
-      onConfirm: async () => {
-        try {
-          const promises = orphanPlan.operations.map((operation) => deleteDoc(doc(db, operation.collection, operation.id)));
-          await Promise.all(promises);
-          setRemoteProjectDocs((current) => {
-            const deletedRemoteIds = new Map();
-            orphanPlan.operations
-              .filter((operation) => ADMIN_ORPHAN_REMOTE_COLLECTIONS.includes(operation.collection))
-              .forEach((operation) => {
-                const ids = deletedRemoteIds.get(operation.collection) || new Set();
-                ids.add(operation.id);
-                deletedRemoteIds.set(operation.collection, ids);
-              });
+      onConfirm: handleCleanOrphansConfirm,
+    });
+  };
 
-            return Object.fromEntries(Object.entries(current).map(([collectionName, docs]) => [
-              collectionName,
-              (docs || []).filter((entry) => !deletedRemoteIds.get(collectionName)?.has(entry.id)),
-            ]));
-          });
-          showToast(t('orphanSuccess'), 'success');
-        } catch (e) {
-          showToast(t('orphanError') + e.message, 'error');
-        }
-      }
+  const handleDeleteProjectConfirm = async (project) => {
+    await runAdminAction(`delete-project:${project.id}`, t('forceDelete'), async () => {
+      await onDeleteProject(project.id);
+      showToast(t('projectDeleted'), 'success');
     });
   };
 
   const deleteProject = async (project) => {
     if (!project?.id || typeof onDeleteProject !== 'function') return;
+    if (pendingAdminActionKeysRef.current.has(`delete-project:${project.id}`)) return;
     confirm({
       title: t('deleteProject'),
       message: t('projectDeleteConfirm', { title: project.title, id: project.id }),
       confirmText: t('delete'),
       cancelText: t('cancel'),
       type: 'destructive',
-      onConfirm: async () => {
-        await onDeleteProject(project.id);
-      }
+      onConfirm: () => handleDeleteProjectConfirm(project),
     });
   }
 
@@ -452,11 +477,12 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
           </div>
           <button
             onClick={cleanOrphans}
-            disabled={!hasOrphans}
+            disabled={!hasOrphans || isCleaningOrphans}
+            aria-busy={isCleaningOrphans}
             className={`app-button whitespace-nowrap ${hasOrphans ? 'bg-google-red text-white hover:shadow-elevation-2' : 'bg-m3-on-surface/10 text-m3-on-surface-variant'}`}
           >
             <Trash2 className="w-4 h-4" />
-            {t('cleanOrphans')}
+            {isCleaningOrphans ? t('processing') : t('cleanOrphans')}
           </button>
         </div>
       </div>
@@ -468,34 +494,43 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
           <span className="text-xs text-m3-on-surface-variant font-normal">{t('sortedByDate')}</span>
         </div>
         <div className="max-h-[500px] overflow-y-auto">
-          {projects.map(p => (
-            <div key={p.id} className="group flex items-center justify-between border-b border-m3-outline-variant/10 p-4 hover:bg-m3-on-surface/5">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold 
-                      ${p.type === 'vote' ? 'bg-google-blue/10 text-google-blue' : p.type === 'team' ? 'bg-google-red/10 text-google-red' : 'bg-google-yellow/10 text-google-yellow'}`}>
-                  {p.type[0].toUpperCase()}
-                </div>
-                <div>
-                  <div className="font-medium text-m3-on-surface group-hover:text-google-blue transition-colors">{p.title}</div>
-                  <div className="text-xs text-m3-on-surface-variant font-mono flex gap-2">
-                    <span>ID: {p.id}</span>
-                    <span>•</span>
-                    <span>{formatDate(p.createdAt, t)}</span>
-                    <span>•</span>
-                    <span>{t('creators')}: {p.creatorName}</span>
+          {projects.map(p => {
+            const isProjectDeletePending = pendingAdminActionKeys.includes(`delete-project:${p.id}`);
+            return (
+              <div key={p.id} className="group flex items-center justify-between border-b border-m3-outline-variant/10 p-4 hover:bg-m3-on-surface/5">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+                        ${p.type === 'vote' ? 'bg-google-blue/10 text-google-blue' : p.type === 'team' ? 'bg-google-red/10 text-google-red' : 'bg-google-yellow/10 text-google-yellow'}`}>
+                    {p.type[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="font-medium text-m3-on-surface group-hover:text-google-blue transition-colors">{p.title}</div>
+                    <div className="text-xs text-m3-on-surface-variant font-mono flex gap-2">
+                      <span>ID: {p.id}</span>
+                      <span>•</span>
+                      <span>{formatDate(p.createdAt, t)}</span>
+                      <span>•</span>
+                      <span>{t('creators')}: {p.creatorName}</span>
+                    </div>
                   </div>
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className={`app-chip py-0.5 ${p.status === 'active' ? 'app-chip-green' : 'bg-m3-on-surface/10 text-m3-on-surface-variant'}`}>
+                    {p.status === 'active' ? t('activeStatus') : p.status === 'stopped' ? t('paused') : p.status === 'finished' ? t('finished') : p.status}
+                  </span>
+                  <button
+                    onClick={() => deleteProject(p)}
+                    disabled={isProjectDeletePending}
+                    aria-busy={isProjectDeletePending}
+                    className="app-icon-button hover:bg-google-red/10 hover:text-google-red"
+                    title={isProjectDeletePending ? t('processing') : t('forceDelete')}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={`app-chip py-0.5 ${p.status === 'active' ? 'app-chip-green' : 'bg-m3-on-surface/10 text-m3-on-surface-variant'}`}>
-                  {p.status === 'active' ? t('activeStatus') : p.status === 'stopped' ? t('paused') : p.status === 'finished' ? t('finished') : p.status}
-                </span>
-                <button onClick={() => deleteProject(p)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={t('forceDelete')}>
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {projects.length === 0 && <div className="p-8 text-center text-m3-on-surface-variant/50">{t('dbEmpty')}</div>}
         </div>
       </div>
