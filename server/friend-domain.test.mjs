@@ -287,3 +287,38 @@ test('friend search prevents duplicate submits and exposes pending state', async
   assert.match(friendSystem, /aria-busy=\{isSearchingFriends\}/, 'Friend search button should expose busy state');
   assert.match(friendSystem, /isSearchingFriends \? t\('processing'\) : t\('go'\)/, 'Friend search button should show localized progress copy');
 });
+
+test('friend search separates initial guidance from settled empty results', async () => {
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.noFriendSearchResults, 'missing English no-result friend search translation');
+  assert.ok(TRANSLATIONS.zh.noFriendSearchResults, 'missing Chinese no-result friend search translation');
+
+  assert.match(
+    friendSystem,
+    /\[hasSearchedFriends,\s*setHasSearchedFriends\]\s*=\s*useState\(false\)/,
+    'Friend search should track whether the current query has completed',
+  );
+  assert.match(
+    friendSystem,
+    /setSearchResults\(Array\.from\(results\.values\(\)\)\);[\s\S]{0,120}setHasSearchedFriends\(true\);/,
+    'Friend search should only mark an empty result after the query succeeds',
+  );
+  assert.match(
+    friendSystem,
+    /const nextTerm = e\.target\.value;[\s\S]{0,180}setSearchTerm\(nextTerm\)[\s\S]{0,180}setHasSearchedFriends\(false\)/,
+    'Changing the search text should reset the settled empty state',
+  );
+  assert.match(
+    friendSystem,
+    /showFriendSearchHint\s*=\s*!isSearchingFriends && !hasSearchedFriends && searchTerm\.trim\(\)/,
+    'Friend search hint should appear only before a settled search',
+  );
+  assert.match(
+    friendSystem,
+    /showFriendSearchEmpty\s*=\s*!isSearchingFriends && hasSearchedFriends && searchResults\.length === 0/,
+    'Friend search empty state should not render while a query is still pending',
+  );
+  assert.match(friendSystem, /t\('noFriendSearchResults'\)/, 'Friend search should render localized no-result copy');
+  assert.match(friendSystem, /role="status"/, 'Friend search result feedback should be announced accessibly');
+});

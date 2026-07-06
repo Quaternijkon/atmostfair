@@ -16,6 +16,7 @@ export default function FriendSystem({ user, onClose, t }) {
     const [requests, setRequests] = useState([]); 
     const [searchTerm, setSearchTerm] = useState('');
     const [isSearchingFriends, setIsSearchingFriends] = useState(false);
+    const [hasSearchedFriends, setHasSearchedFriends] = useState(false);
     const [activeChatFriend, setActiveChatFriend] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
@@ -27,6 +28,8 @@ export default function FriendSystem({ user, onClose, t }) {
     const [searchResults, setSearchResults] = useState([]);
     const currentUserName = () => user.displayName || user.email?.split('@')[0] || t('userLabel');
     const isFriendActionPending = (actionId) => pendingFriendActionIds.has(actionId);
+    const showFriendSearchHint = !isSearchingFriends && !hasSearchedFriends && searchTerm.trim();
+    const showFriendSearchEmpty = !isSearchingFriends && hasSearchedFriends && searchResults.length === 0;
 
     const runFriendAction = async (actionId, action) => {
         if (!actionId || pendingFriendActionIdsRef.current.has(actionId)) return false;
@@ -114,6 +117,7 @@ export default function FriendSystem({ user, onClose, t }) {
         isSearchingFriendsRef.current = true;
         setIsSearchingFriends(true);
         setSearchResults([]);
+        setHasSearchedFriends(false);
 
         const usersRef = collection(db, 'users');
         const results = new Map(); // Use Map to deduplicate by UID
@@ -148,6 +152,7 @@ export default function FriendSystem({ user, onClose, t }) {
             results.delete(user.uid);
 
             setSearchResults(Array.from(results.values()));
+            setHasSearchedFriends(true);
         } catch(e) { 
             console.error(e); 
             // Fallback if index missing for name search
@@ -173,6 +178,7 @@ export default function FriendSystem({ user, onClose, t }) {
         showToast(t('friendRequestSent'), 'success');
         setView('list');
         setSearchResults([]);
+        setHasSearchedFriends(false);
         setSearchTerm('');
         
         // Notify via mailbox
@@ -302,7 +308,7 @@ export default function FriendSystem({ user, onClose, t }) {
                     {/* Action Area */}
                     <div className="p-4 pb-2 shrink-0">
                         <button 
-                            onClick={() => { setView(view === 'add' ? 'list' : 'add'); setSearchTerm(''); setSearchResults([]); }}
+                            onClick={() => { setView(view === 'add' ? 'list' : 'add'); setSearchTerm(''); setSearchResults([]); setHasSearchedFriends(false); }}
                             className={`app-button w-full ${view === 'add' ? 'bg-m3-secondary-container text-m3-on-secondary-container shadow-sm' : 'border border-m3-outline-variant bg-m3-surface hover:bg-m3-surface-container-high'}`}
                         >
                             {view === 'add' ? <ArrowLeft className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />} 
@@ -343,7 +349,12 @@ export default function FriendSystem({ user, onClose, t }) {
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-m3-on-surface-variant" />
                                         <input
                                             value={searchTerm}
-                                            onChange={e=>setSearchTerm(e.target.value)}
+                                            onChange={e => {
+                                                const nextTerm = e.target.value;
+                                                setSearchTerm(nextTerm);
+                                                setHasSearchedFriends(false);
+                                                setSearchResults([]);
+                                            }}
                                             onKeyDown={e => e.key === 'Enter' && handleSearch()}
                                             className="app-input rounded-full pl-9"
                                             placeholder={t('searchPlaceholderUser')}
@@ -361,9 +372,17 @@ export default function FriendSystem({ user, onClose, t }) {
                                     </button>
                                 </div>
 
-                                {searchResults.length === 0 && searchTerm && (
-                                    <div className="text-center text-sm text-m3-on-surface-variant mt-8 px-4 opacity-70">
+                                {showFriendSearchHint && (
+                                    <div role="status" aria-live="polite" className="text-center text-sm text-m3-on-surface-variant mt-8 px-4 opacity-70">
                                         {t('searchHint')}
+                                    </div>
+                                )}
+
+                                {showFriendSearchEmpty && (
+                                    <div role="status" aria-live="polite" className="app-card-quiet mt-8 flex flex-col items-center gap-2 p-5 text-center text-sm text-m3-on-surface-variant">
+                                        <Search className="h-7 w-7 text-google-blue" />
+                                        <span className="font-medium text-m3-on-surface">{t('noFriendSearchResults')}</span>
+                                        <span className="text-xs">{t('searchHint')}</span>
                                     </div>
                                 )}
 
