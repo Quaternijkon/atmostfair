@@ -155,8 +155,9 @@ export default function Login({ lang, setLang, t }) {
 
           <form onSubmit={handleEmailAuth} className="space-y-4" noValidate>
             <div>
-              <label className="app-label">{t('emailAddr')}</label>
+              <label className="app-label" htmlFor="auth-email">{t('emailAddr')}</label>
               <input
+                id="auth-email"
                 type="email"
                 required
                 value={email}
@@ -169,8 +170,9 @@ export default function Login({ lang, setLang, t }) {
             </div>
 
             <div>
-              <label className="app-label">{t('password')}</label>
+              <label className="app-label" htmlFor="auth-password">{t('password')}</label>
               <input
+                id="auth-password"
                 type="password"
                 required
                 value={password}
@@ -190,9 +192,10 @@ export default function Login({ lang, setLang, t }) {
           <div className="my-7 border-t border-m3-outline-variant/45" />
 
           <form onSubmit={handleGuestLogin} className="space-y-3">
-            <label className="app-label">{t('guestName')}</label>
+            <label className="app-label" htmlFor="guest-name">{t('guestName')}</label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
+                id="guest-name"
                 type="text"
                 required
                 value={guestName}

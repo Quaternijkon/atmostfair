@@ -1382,6 +1382,27 @@ test('auth submit actions prevent duplicate submits and expose pending state', a
   assert.match(login, /isGuestPending \? t\('processing'\) : t\('guestLogin'\)/, 'Guest auth button should show localized pending copy');
 });
 
+test('auth form fields have explicit accessible label associations', async () => {
+  const login = await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8');
+
+  for (const [fieldId, labelKey] of [
+    ['auth-email', 'emailAddr'],
+    ['auth-password', 'password'],
+    ['guest-name', 'guestName'],
+  ]) {
+    assert.match(
+      login,
+      new RegExp(`<label className="app-label" htmlFor="${fieldId}">\\{t\\('${labelKey}'\\)\\}</label>`),
+      `${fieldId} should have a visible label associated by htmlFor`,
+    );
+    assert.match(
+      login,
+      new RegExp(`id="${fieldId}"[\\s\\S]{0,420}aria-describedby=\\{error \\? 'auth-error' : undefined\\}`),
+      `${fieldId} input should expose a stable id and retain error description`,
+    );
+  }
+});
+
 test('workspace timestamps and defaults avoid render-time unstable values', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
