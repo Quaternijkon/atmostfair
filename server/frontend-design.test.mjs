@@ -823,6 +823,25 @@ test('booking workspace exposes localized waitlist states for full slots', async
   assert.doesNotMatch(files.booking, />Join waitlist<|>Leave waitlist<|>Waitlisted<|waitlist:/i, 'Booking waitlist visible copy should be localized');
 });
 
+test('booking config saves prevent duplicate submits and expose pending state', async () => {
+  const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.bookingConfigSaveFailed, 'missing English booking config failure translation');
+  assert.ok(TRANSLATIONS.zh.bookingConfigSaveFailed, 'missing Chinese booking config failure translation');
+
+  assert.match(booking, /isSavingBookingConfigRef\s*=\s*useRef\(false\)/, 'Booking config saves should use a synchronous action lock');
+  assert.match(booking, /if \(isSavingBookingConfigRef\.current\) return;/, 'Booking config saves should ignore duplicate clicks before rerender');
+  assert.match(booking, /isSavingBookingConfigRef\.current = true[\s\S]{0,160}setIsSavingBookingConfig\(true\)/, 'Booking config saves should expose pending state before writing');
+  assert.match(booking, /await actions\.handleUpdateBookingConfig\(project\.id, bookingConfig\)/, 'Booking config saves should await the write while pending');
+  assert.match(booking, /finally \{[\s\S]{0,160}isSavingBookingConfigRef\.current = false[\s\S]{0,120}setIsSavingBookingConfig\(false\)/, 'Booking config saves should clear pending state when they settle');
+  assert.match(booking, /showToast\(t\('bookingConfigSaveFailed'\), 'error'\)/, 'Booking config save failures should use localized app feedback');
+  assert.match(booking, /disabled=\{isSavingBookingConfig\}/, 'Booking config form controls should be disabled while saving');
+  assert.match(booking, /aria-busy=\{isSavingBookingConfig\}/, 'Booking config save button should expose busy state');
+  assert.match(booking, /isSavingBookingConfig \? t\('processing'\) : t\('saveConfig'\)/, 'Booking config save button should show localized progress copy');
+});
+
 test('booking waitlist toggles prevent duplicate submits and expose pending state', async () => {
   const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
 

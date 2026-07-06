@@ -28,6 +28,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   const [bookingForm, setBookingForm] = useState({});
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const isSubmittingBookingRef = useRef(false);
+  const [isSavingBookingConfig, setIsSavingBookingConfig] = useState(false);
+  const isSavingBookingConfigRef = useRef(false);
   const [isKickingBooking, setIsKickingBooking] = useState(false);
   const isKickingBookingRef = useRef(false);
   const [pendingSlotToggleKeys, setPendingSlotToggleKeys] = useState([]);
@@ -52,14 +54,27 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
   // --- Handlers ---
 
-  const handleSaveConfig = () => {
+  const handleSaveConfig = async () => {
     if (!canInteract) return;
+    if (isSavingBookingConfigRef.current) return;
+
     const bookingConfig = createBookingConfigData(config);
     if (!bookingConfig) {
       showToast(t('rangeError'), 'error');
       return;
     }
-    actions.handleUpdateBookingConfig(project.id, bookingConfig);
+
+    isSavingBookingConfigRef.current = true;
+    setIsSavingBookingConfig(true);
+    try {
+      await actions.handleUpdateBookingConfig(project.id, bookingConfig);
+    } catch (error) {
+      console.error(error);
+      showToast(t('bookingConfigSaveFailed'), 'error');
+    } finally {
+      isSavingBookingConfigRef.current = false;
+      setIsSavingBookingConfig(false);
+    }
   };
 
   const toggleSlot = async (start, end, label) => {
@@ -188,7 +203,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
               <div className="space-y-4 max-w-md">
                    <div>
                       <label className="app-label">{t('scheduleMode')}</label>
-                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} className="app-input">
+                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} disabled={isSavingBookingConfig} className="app-input">
                           <option value="date">{t('modeDate')}</option>
                           <option value="half">{t('modeHalf')}</option>
                       </select>
@@ -196,18 +211,20 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                   <div className="grid grid-cols-2 gap-4">
                       <div>
                           <label className="app-label">{t('startDate')}</label>
-                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} className="app-input" />
+                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} disabled={isSavingBookingConfig} className="app-input" />
                       </div>
                       <div>
                           <label className="app-label">{t('endDate')}</label>
-                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} className="app-input" />
+                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} disabled={isSavingBookingConfig} className="app-input" />
                       </div>
                   </div>
                   <div>
                       <label className="app-label">{t('requiredInfo')}</label>
-	                      <input type="text" value={config.requiredFields} onChange={e => setConfig({...config, requiredFields: e.target.value})} className="app-input" placeholder={t('requiredInfoPlaceholder')} />
+	                      <input type="text" value={config.requiredFields} onChange={e => setConfig({...config, requiredFields: e.target.value})} disabled={isSavingBookingConfig} className="app-input" placeholder={t('requiredInfoPlaceholder')} />
                   </div>
-                  <button onClick={handleSaveConfig} className="app-button-primary w-full">{t('saveConfig')}</button>
+                  <button onClick={handleSaveConfig} disabled={isSavingBookingConfig} aria-busy={isSavingBookingConfig} className="app-button-primary w-full">
+                      {isSavingBookingConfig ? t('processing') : t('saveConfig')}
+                  </button>
               </div>
           </div>
       );
