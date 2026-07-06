@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
 import { useUI } from '../components/UIContext';
@@ -170,6 +170,8 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const [isUnlockingProject, setIsUnlockingProject] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [pendingProjectAction, setPendingProjectAction] = useState(null);
+  const pendingProjectActionRef = useRef(null);
 
   const project = projects.find(p => p.id === id);
 
@@ -269,6 +271,11 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   }[project.type] || t('project');
   const projectRoutePrefix = getProjectRoutePrefix(project.type);
   const projectShareUrl = createProjectShareUrl(typeof window === 'undefined' ? '' : window.location.href, project);
+  const isProjectActionPending = Boolean(pendingProjectAction);
+  const isDuplicateProjectPending = pendingProjectAction === 'duplicate';
+  const isArchiveProjectPending = pendingProjectAction === 'archive' || pendingProjectAction === 'restore';
+  const isStatusProjectPending = pendingProjectAction === 'pause' || pendingProjectAction === 'resume';
+  const isDeleteProjectPending = pendingProjectAction === 'delete';
   
   const copyId = async () => {
     try {
@@ -279,28 +286,92 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
       showToast(t('shareUnavailable'), 'error');
     }
   };
+  const runProjectAction = async (actionKey, actionLabel, action, fallbackResult = false) => {
+    if (pendingProjectActionRef.current) return fallbackResult;
+
+    pendingProjectActionRef.current = actionKey;
+    setPendingProjectAction(actionKey);
+    try {
+      return await action();
+    } catch (error) {
+      console.error(error);
+      showToast(t('actionFailed', { action: actionLabel, message: error?.message || t('failed') }), 'error');
+      return fallbackResult;
+    } finally {
+      pendingProjectActionRef.current = null;
+      setPendingProjectAction(null);
+    }
+  };
+  const handleDuplicateProjectConfirm = async () => {
+    const duplicatedProjectId = await runProjectAction(
+      'duplicate',
+      t('duplicateProject'),
+      () => actions.handleDuplicateProject(project, t('copySuffix')),
+      null,
+    );
+    if (duplicatedProjectId) navigate(`/${projectRoutePrefix}/${duplicatedProjectId}`);
+  };
   const handleDuplicateProject = () => {
+    if (pendingProjectActionRef.current) return;
     confirm({
       title: t('duplicateProject'),
       message: t('duplicateProjectConfirm'),
       confirmText: t('duplicate'),
       cancelText: t('cancel'),
-      onConfirm: async () => {
-        const duplicatedProjectId = await actions.handleDuplicateProject(project, t('copySuffix'));
-        if (duplicatedProjectId) navigate(`/${projectRoutePrefix}/${duplicatedProjectId}`);
-      },
+      onConfirm: handleDuplicateProjectConfirm,
     });
   };
+  const handleArchiveProjectConfirm = async (archived) => {
+    const completed = await runProjectAction(
+      archived ? 'archive' : 'restore',
+      archived ? t('archiveProject') : t('restoreProject'),
+      async () => {
+        await actions.handleArchiveProject(project, archived);
+        return true;
+      },
+    );
+    if (completed && archived) navigate('/');
+  };
   const handleArchiveProject = (archived) => {
+    if (pendingProjectActionRef.current) return;
     confirm({
       title: archived ? t('archiveProject') : t('restoreProject'),
       message: archived ? t('archiveProjectConfirm') : t('restoreProjectConfirm'),
       confirmText: archived ? t('archive') : t('restore'),
       cancelText: t('cancel'),
-      onConfirm: async () => {
-        await actions.handleArchiveProject(project, archived);
-        if (archived) navigate('/');
+      onConfirm: () => handleArchiveProjectConfirm(archived),
+    });
+  };
+  const handleToggleProjectStatus = async () => {
+    await runProjectAction(
+      isStopped ? 'resume' : 'pause',
+      isStopped ? t('resume') : t('pause'),
+      async () => {
+        await actions.handleToggleProjectStatus(project);
+        return true;
       },
+    );
+  };
+  const handleDeleteProjectConfirm = async () => {
+    const deleted = await runProjectAction(
+      'delete',
+      t('deleteProject'),
+      async () => {
+        await actions.handleDeleteProject(project.id);
+        return true;
+      },
+    );
+    if (deleted) navigate('/');
+  };
+  const handleDeleteProject = () => {
+    if (pendingProjectActionRef.current) return;
+    confirm({
+      title: t('deleteProject'),
+      message: t('deleteConfirm'),
+      confirmText: t('delete'),
+      cancelText: t('cancel'),
+      type: 'destructive',
+      onConfirm: handleDeleteProjectConfirm,
     });
   };
 
@@ -398,28 +469,43 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
                    <Download className="w-4 h-4" /> <span className="hidden lg:inline">{t('exportParticipants')}</span>
                  </button>
                )}
-               <button onClick={handleDuplicateProject} className="app-button-quiet border border-m3-outline-variant/45">
-                 <Copy className="w-4 h-4" /> <span className="hidden lg:inline">{t('duplicate')}</span>
+               <button
+                 onClick={handleDuplicateProject}
+                 disabled={isProjectActionPending}
+                 aria-busy={isDuplicateProjectPending}
+                 className="app-button-quiet border border-m3-outline-variant/45"
+                 title={isDuplicateProjectPending ? t('processing') : t('duplicate')}
+               >
+                 <Copy className="w-4 h-4" /> <span className="hidden lg:inline">{isDuplicateProjectPending ? t('processing') : t('duplicate')}</span>
                </button>
-               <button onClick={() => handleArchiveProject(!isArchived)} className="app-button-quiet border border-m3-outline-variant/45">
+               <button
+                 onClick={() => handleArchiveProject(!isArchived)}
+                 disabled={isProjectActionPending}
+                 aria-busy={isArchiveProjectPending}
+                 className="app-button-quiet border border-m3-outline-variant/45"
+                 title={isArchiveProjectPending ? t('processing') : (isArchived ? t('restore') : t('archive'))}
+               >
                  {isArchived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-                 <span className="hidden lg:inline">{isArchived ? t('restore') : t('archive')}</span>
+                 <span className="hidden lg:inline">{isArchiveProjectPending ? t('processing') : (isArchived ? t('restore') : t('archive'))}</span>
                </button>
                {!isArchived && !isFinished && (
-                 <button onClick={() => actions.handleToggleProjectStatus(project)} className={isStopped ? 'app-button-tonal' : 'app-button-quiet border border-m3-outline-variant/45'}>{isStopped ? t('resume') : t('pause')}</button>
+                 <button
+                   onClick={handleToggleProjectStatus}
+                   disabled={isProjectActionPending}
+                   aria-busy={isStatusProjectPending}
+                   className={isStopped ? 'app-button-tonal' : 'app-button-quiet border border-m3-outline-variant/45'}
+                 >
+                   {isStatusProjectPending ? t('processing') : (isStopped ? t('resume') : t('pause'))}
+                 </button>
                )}
                <button 
-                 onClick={() => confirm({
-                   title: t('deleteProject'),
-                   message: t('deleteConfirm'),
-                   confirmText: t('delete'),
-                   cancelText: t('cancel'),
-                   type: 'destructive',
-                   onConfirm: () => { actions.handleDeleteProject(project.id); navigate('/'); }
-                 })} 
+                 onClick={handleDeleteProject}
+                 disabled={isProjectActionPending}
+                 aria-busy={isDeleteProjectPending}
                  className={isFinished ? 'app-button bg-google-red text-white hover:shadow-elevation-1' : 'app-button-danger'}
+                 title={isDeleteProjectPending ? t('processing') : t('delete')}
                >
-                 <Trash2 className="w-4 h-4" /> <span className={isFinished ? '' : 'hidden lg:inline'}>{isFinished ? t('deleteProject') : t('delete')}</span>
+                 <Trash2 className="w-4 h-4" /> <span className={isFinished ? '' : 'hidden lg:inline'}>{isDeleteProjectPending ? t('processing') : (isFinished ? t('deleteProject') : t('delete'))}</span>
                </button>
              </div>
            )}

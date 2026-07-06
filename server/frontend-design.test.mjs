@@ -126,6 +126,31 @@ test('project detail distinguishes loading from missing projects with recovery c
   assert.doesNotMatch(files.detail, /<h2[^>]*>\{t\('loading'\)\}<\/h2>[\s\S]{0,160}<button/, 'Project detail should not show an infinite loading state with only a dashboard button');
 });
 
+test('project detail actions await writes before navigation and expose pending state', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.actionFailed, 'missing English action failure template');
+  assert.ok(TRANSLATIONS.zh.actionFailed, 'missing Chinese action failure template');
+
+  assert.match(detail, /pendingProjectActionRef\s*=\s*useRef\(null\)/, 'Project actions should use a synchronous action lock');
+  assert.match(detail, /if \(pendingProjectActionRef\.current\) return fallbackResult;/, 'Project actions should ignore duplicate confirmations before state rerenders');
+  assert.match(detail, /setPendingProjectAction\(actionKey\)[\s\S]{0,900}finally[\s\S]{0,240}setPendingProjectAction\(null\)/, 'Project actions should expose pending state for the whole write');
+  assert.match(detail, /showToast\(t\('actionFailed', \{ action: actionLabel, message: error\?\.message \|\| t\('failed'\) \}\), 'error'\)/, 'Project action failures should use localized app feedback');
+  assert.match(detail, /onConfirm:\s*handleDuplicateProjectConfirm/, 'Project duplicate confirmation should route through the guarded duplicate handler');
+  assert.match(detail, /onConfirm:\s*\(\) => handleArchiveProjectConfirm\(archived\)/, 'Project archive confirmation should route through the guarded archive handler');
+  assert.match(detail, /onConfirm:\s*handleDeleteProjectConfirm/, 'Project delete confirmation should route through the guarded delete handler');
+  assert.match(detail, /await actions\.handleDeleteProject\(project\.id\)[\s\S]{0,180}return true/, 'Project deletion should await the write and return success before navigation');
+  assert.match(detail, /if \(deleted\) navigate\('\/'\)/, 'Project deletion should navigate only after the delete write succeeds');
+  assert.doesNotMatch(detail, /onConfirm:\s*\(\) => \{ actions\.handleDeleteProject\(project\.id\); navigate\('\/'\); \}/, 'Project deletion should not navigate before the async delete resolves');
+  assert.match(detail, /disabled=\{isProjectActionPending\}/, 'Project action buttons should be disabled while another project action is pending');
+  assert.match(detail, /aria-busy=\{isDuplicateProjectPending\}/, 'Project duplicate button should expose pending state');
+  assert.match(detail, /aria-busy=\{isArchiveProjectPending\}/, 'Project archive button should expose pending state');
+  assert.match(detail, /aria-busy=\{isDeleteProjectPending\}/, 'Project delete button should expose pending state');
+  assert.match(detail, /isDeleteProjectPending \? t\('processing'\) :/, 'Project delete button should show localized pending copy');
+});
+
 test('password-protected project unlocks use server access grants', async () => {
   const files = {
     dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
