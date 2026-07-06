@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, limit, addDoc, onSnapshot, where, db } from '../lib/localData';
 import { formatDate, formatTime as formatLocaleTime } from '../lib/locale';
-import { Send } from './Icons'; 
+import { RotateCcw, Send } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
 import { nowMs } from '../lib/time';
@@ -12,6 +12,8 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [isSendingMessage, setIsSendingMessage] = useState(false);
+    const [chatLoadError, setChatLoadError] = useState(false);
+    const [chatReloadKey, setChatReloadKey] = useState(0);
     const dummyRef = useRef(null);
     const isSendingMessageRef = useRef(false);
     const { showToast } = useUI();
@@ -30,12 +32,16 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setChatLoadError(false);
             setMessages(msgs);
             setTimeout(() => dummyRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }, (error) => {
+            console.error("Error loading messages:", error);
+            setChatLoadError(true);
         });
 
         return () => unsubscribe();
-    }, [projectId]);
+    }, [projectId, chatReloadKey]);
 
     const handleSend = async (e) => {
         e.preventDefault();
@@ -81,12 +87,24 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
 
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-m3-surface/50">
-                {messages.length === 0 && (
+                {chatLoadError ? (
+                    <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 text-center text-sm text-m3-on-surface-variant">
+                        <p>{t('chatLoadFailed')}</p>
+                        <button
+                            type="button"
+                            onClick={() => setChatReloadKey((current) => current + 1)}
+                            className="app-button-quiet text-google-blue"
+                        >
+                            <RotateCcw className="h-4 w-4" />
+                            {t('chatRetry')}
+                        </button>
+                    </div>
+                ) : messages.length === 0 && (
                     <div className="text-center text-m3-on-surface-variant text-sm mt-10 opacity-50">
                         {t('noMessagesYet')}
                     </div>
                 )}
-                {messages.map((msg, idx) => {
+                {!chatLoadError && messages.map((msg, idx) => {
                     const isMine = msg.uid === activeUser.uid;
                     const showHeader = idx === 0 || messages[idx-1].uid !== msg.uid || (msg.createdAt - messages[idx-1].createdAt) > 300000; // 5 mins gap
 

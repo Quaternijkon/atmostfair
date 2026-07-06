@@ -1243,6 +1243,24 @@ test('chat send forms prevent duplicate submits and expose pending state', async
   assert.match(files.friends, /showToast\(t\('messageSendFailed'\), 'error'\)/, 'Friend chat send failures should use localized app feedback');
 });
 
+test('project chat exposes a recoverable load error state', async () => {
+  const chat = await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.chatLoadFailed, 'missing English chat load failure translation');
+  assert.ok(TRANSLATIONS.zh.chatLoadFailed, 'missing Chinese chat load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English chat retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese chat retry translation');
+
+  assert.match(chat, /const \[chatLoadError, setChatLoadError\] = useState\(false\)/, 'Project chat should track load errors separately from an empty thread');
+  assert.match(chat, /const \[chatReloadKey, setChatReloadKey\] = useState\(0\)/, 'Project chat should expose a retry trigger for failed subscriptions');
+  assert.match(chat, /setChatLoadError\(false\)[\s\S]{0,360}setMessages\(msgs\)/, 'Successful chat reads should clear the load error before rendering messages');
+  assert.match(chat, /onSnapshot\(q,[\s\S]{0,520}\(error\) => \{[\s\S]{0,260}setChatLoadError\(true\)/, 'Project chat should handle subscription errors');
+  assert.match(chat, /\}, \[projectId, chatReloadKey\]\)/, 'Project chat retry should recreate the subscription');
+  assert.match(chat, /chatLoadError[\s\S]{0,520}t\('chatLoadFailed'\)/, 'Project chat should render localized load failure copy');
+  assert.match(chat, /onClick=\{\(\) => setChatReloadKey\(\(current\) => current \+ 1\)\}/, 'Project chat retry should refresh the subscription');
+  assert.match(chat, /t\('chatRetry'\)/, 'Project chat retry button should use localized copy');
+});
+
 test('project child text inputs expose a shared display length limit', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
