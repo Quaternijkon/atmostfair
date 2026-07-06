@@ -35,7 +35,7 @@ const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
 const normalizeCreatorNameInput = (value) => String(value || '').slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
 const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
-export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
+export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], isUserProfileAvailable = true, onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
   // Navigation State: 'collect' | 'connect' | 'select' | 'play'
   const [activeTab, setActiveTab] = useState('collect');
@@ -507,13 +507,13 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
         </div>
       )}
 
-      {loadingGrid(filteredProjects, handleProjectClick, styles, t, normalizedPinnedProjectIds, onToggleProjectPin, hasActiveFilters, handleClearFilters)}
+      {loadingGrid(filteredProjects, handleProjectClick, styles, t, normalizedPinnedProjectIds, isUserProfileAvailable, onToggleProjectPin, hasActiveFilters, handleClearFilters)}
     </div>
   );
 }
 
 // Helper to render grid to keep main component clean
-const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProjectIds, onToggleProjectPin, hasActiveFilters, onClearFilters) => (
+const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProjectIds, isUserProfileAvailable, onToggleProjectPin, hasActiveFilters, onClearFilters) => (
   <div className="workspace-grid min-h-[50vh] content-start">
     <AnimatePresence mode="popLayout">
       {filteredProjects.map((project) => {
@@ -566,6 +566,7 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProj
           </button>
           <button
             type="button"
+            disabled={!isUserProfileAvailable}
             aria-pressed={isPinned}
             aria-label={t(isPinned ? 'unpinProject' : 'pinProject', { title: project.title })}
             title={t(isPinned ? 'unpinProject' : 'pinProject', { title: project.title })}
@@ -573,7 +574,7 @@ const loadingGrid = (filteredProjects, handleProjectClick, styles, t, pinnedProj
               event.stopPropagation();
               onToggleProjectPin(project.id);
             }}
-            className={`app-icon-button absolute right-3 top-3 z-10 h-11 min-h-11 w-11 ${isPinned ? 'border-google-yellow/40 bg-google-yellow/20 text-[#8a5a00]' : 'bg-white/80 text-m3-on-surface-variant hover:text-google-blue'}`}
+            className={`app-icon-button absolute right-3 top-3 z-10 h-11 min-h-11 w-11 disabled:cursor-not-allowed disabled:opacity-45 ${isPinned ? 'border-google-yellow/40 bg-google-yellow/20 text-[#8a5a00]' : 'bg-white/80 text-m3-on-surface-variant hover:text-google-blue'}`}
           >
             <PinIcon className="w-4 h-4" />
             {isPinned && <span className="sr-only">{t('pinnedProject')}</span>}

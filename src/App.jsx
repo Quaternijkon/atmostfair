@@ -113,6 +113,8 @@ function AppContent() {
   const [projectsLoadError, setProjectsLoadError] = useState(false);
   const [projectsReloadKey, setProjectsReloadKey] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
+  const [userProfileLoadError, setUserProfileLoadError] = useState(false);
+  const [userProfileReloadKey, setUserProfileReloadKey] = useState(0);
   const [items, setItems] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
@@ -187,6 +189,7 @@ function AppContent() {
       setUserProfile(null);
       setProjectsLoaded(false);
       setProjectsLoadError(false);
+      setUserProfileLoadError(false);
       setNotificationsLoadError(false);
       setProjectActivitiesLoadError(false);
       setWorkspaceDataLoadErrors({});
@@ -218,7 +221,11 @@ function AppContent() {
     });
 
     const unsubUserProfile = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      setUserProfileLoadError(false);
       setUserProfile(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+    }, (error) => {
+      console.error("Error loading user profile:", error);
+      setUserProfileLoadError(true);
     });
     const unsubProjects = onSnapshot(collection(db, 'projects'), (s) => {
       setProjectsLoadError(false);
@@ -254,7 +261,7 @@ function AppContent() {
       setProjectActivitiesLoadError(true);
     });
     return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubGameRooms(); unsubNotifications(); unsubProjectActivities(); };
-  }, [notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user]);
+  }, [notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, userProfileReloadKey, workspaceDataReloadKey, user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
     const activity = createProjectActivityData({
@@ -653,6 +660,7 @@ function AppContent() {
       handleToggleProjectPin: async (projectId) => {
         const cleanProjectId = String(projectId || '').trim();
         if (!user || !cleanProjectId || !projects.some((project) => project.id === cleanProjectId)) return;
+        if (userProfileLoadError) return;
         const nextPinnedProjectIds = pinnedProjectIds.includes(cleanProjectId)
           ? pinnedProjectIds.filter((entry) => entry !== cleanProjectId)
           : [cleanProjectId, ...pinnedProjectIds].slice(0, 100);
@@ -668,6 +676,7 @@ function AppContent() {
       handleRecordProjectOpen: async (projectId) => {
         const cleanProjectId = String(projectId || '').trim();
         if (!user || !cleanProjectId) return;
+        if (userProfileLoadError) return;
         const patch = createRecentProjectIdsPatch(cleanProjectId, recentProjectIds, 100);
         if (!patch) return;
         const previousRecentProjectIds = recentProjectIds;
@@ -838,6 +847,22 @@ function AppContent() {
               </div>
             </nav>
 
+            {userProfileLoadError && (
+              <div className="mx-auto w-full max-w-7xl px-4 pt-4">
+                <div role="alert" className="app-card-quiet flex flex-col gap-3 px-4 py-3 text-sm text-m3-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
+                  <p>{t('userProfileLoadFailed')}</p>
+                  <button
+                    type="button"
+                    onClick={() => setUserProfileReloadKey((current) => current + 1)}
+                    className="app-button-quiet self-start text-google-blue sm:self-auto"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t('chatRetry')}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <main id="main-content" tabIndex={-1} className="app-main">
               <Suspense fallback={<RouteLoadingFallback label={t('loading')} />}>
                 {projectsLoadError ? (
@@ -881,6 +906,7 @@ function AppContent() {
                                 projects={projects}
                                 pinnedProjectIds={pinnedProjectIds}
                                 recentProjectIds={recentProjectIds}
+                                isUserProfileAvailable={!userProfileLoadError}
                                 onToggleProjectPin={actions.handleToggleProjectPin}
                                 onRecordProjectOpen={actions.handleRecordProjectOpen}
                                 onCreateProject={(title, type, creatorName, password) => handleCreateProject(title, type, creatorName, password, showToast)}

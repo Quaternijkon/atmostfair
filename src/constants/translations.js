@@ -56,6 +56,7 @@ export const TRANSLATIONS = {
     hello: "Hello",
     loading: "Loading...",
     skipToContent: "Skip to main content",
+    userProfileLoadFailed: "Personal settings failed to load. Pinning and recent projects are paused until data refreshes.",
     // Home
     searchPlaceholder: "Search {label} projects...",
     searchDefault: "Search projects...",
@@ -706,6 +707,7 @@ export const TRANSLATIONS = {
     hello: "你好",
     loading: "加载中...",
     skipToContent: "跳到主要内容",
+    userProfileLoadFailed: "个人设置加载失败，刷新数据前已暂停置顶和最近访问。",
     // Home
     searchPlaceholder: "搜索 {label} 项目...",
     searchDefault: "搜索项目...",

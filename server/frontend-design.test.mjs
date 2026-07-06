@@ -176,11 +176,36 @@ test('project list exposes a recoverable load error state', async () => {
   assert.match(app, /\[projectsReloadKey,\s*setProjectsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed project subscriptions');
   assert.match(app, /setProjectsLoadError\(false\)[\s\S]{0,360}setProjects\(/, 'Successful project reads should clear the load error before rendering projects');
   assert.match(app, /onSnapshot\(collection\(db, 'projects'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setProjectsLoadError\(true\)/, 'Project list should handle subscription errors');
-  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
+  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, userProfileReloadKey, workspaceDataReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
   assert.match(app, /projectsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('projectsLoadFailed'\)/, 'Project list should render announced localized load failure copy');
   assert.match(app, /onClick=\{\(\) => setProjectsReloadKey\(\(current\) => current \+ 1\)\}/, 'Project list retry should refresh the subscription');
   assert.match(app, /t\('chatRetry'\)/, 'Project list retry button should use localized copy');
   assert.match(app, /projectsLoadError \? \(/, 'Project routes should be gated behind the project list load error state');
+});
+
+test('user profile exposes a recoverable load error state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.userProfileLoadFailed, 'missing English user profile load failure translation');
+  assert.ok(TRANSLATIONS.zh.userProfileLoadFailed, 'missing Chinese user profile load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(app, /\[userProfileLoadError,\s*setUserProfileLoadError\]\s*=\s*useState\(false\)/, 'App should track user profile subscription failures');
+  assert.match(app, /\[userProfileReloadKey,\s*setUserProfileReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed user profile subscriptions');
+  assert.match(app, /setUserProfileLoadError\(false\)[\s\S]{0,260}setUserProfile\(/, 'Successful user profile reads should clear the load error before rendering preferences');
+  assert.match(app, /onSnapshot\(doc\(db, 'users', user\.uid\),[\s\S]{0,520}\(error\) => \{[\s\S]{0,220}setUserProfileLoadError\(true\)/, 'User profile subscription failures should set a recoverable error state');
+  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, userProfileReloadKey, workspaceDataReloadKey, user\]\)/, 'User profile retry should recreate the subscription');
+  assert.match(app, /setUserProfileLoadError\(false\)/, 'Auth state changes should clear stale user profile load errors');
+  assert.match(app, /userProfileLoadError[\s\S]{0,420}role="alert"[\s\S]{0,420}t\('userProfileLoadFailed'\)/, 'Account preferences should render announced localized load failure copy');
+  assert.match(app, /onClick=\{\(\) => setUserProfileReloadKey\(\(current\) => current \+ 1\)\}/, 'User profile retry should refresh the subscription');
+  assert.match(app, /isUserProfileAvailable=\{!userProfileLoadError\}/, 'Dashboard should receive whether user profile actions are trusted');
+  assert.match(app, /if \(userProfileLoadError\) return;[\s\S]{0,900}setDoc\(doc\(db, 'users', user\.uid\), \{ pinnedProjectIds:/, 'Project pin writes should pause while user profile data is untrusted');
+  assert.match(app, /if \(userProfileLoadError\) return;[\s\S]{0,900}setDoc\(doc\(db, 'users', user\.uid\), \{ recentProjectIds:/, 'Recent project writes should pause while user profile data is untrusted');
+
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+  assert.match(dashboard, /isUserProfileAvailable = true/, 'Dashboard should default user profile actions to available');
+  assert.match(dashboard, /disabled=\{!isUserProfileAvailable\}/, 'Project pin buttons should be disabled while user profile data is untrusted');
 });
 
 test('project workspaces expose recoverable child data load errors', async () => {
@@ -215,7 +240,7 @@ test('project workspaces expose recoverable child data load errors', async () =>
   for (const collectionName of childCollections) {
     assert.match(files.app, new RegExp(`subscribeWorkspaceCollection\\('${collectionName}'`), `App should recover ${collectionName} subscriptions`);
   }
-  assert.match(files.app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Workspace data retry should recreate child collection subscriptions');
+  assert.match(files.app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, userProfileReloadKey, workspaceDataReloadKey, user\]\)/, 'Workspace data retry should recreate child collection subscriptions');
   assert.match(files.app, /workspaceDataLoadErrors=\{workspaceDataLoadErrors\}/, 'Project detail should receive child collection load errors');
   assert.match(files.app, /onRetryWorkspaceData=\{retryWorkspaceData\}/, 'Project detail should receive a child data retry action');
 
