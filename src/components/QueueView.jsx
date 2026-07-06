@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ListOrdered, ClipboardList } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
@@ -6,7 +6,9 @@ import { useUI } from './UIContext';
 export default function QueueView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const [joinName, setJoinName] = useState(user.displayName || '');
   const [joinValue, setJoinValue] = useState(() => Math.floor(Math.random() * 101));
-  const { confirm } = useUI();
+  const [isGeneratingQueue, setIsGeneratingQueue] = useState(false);
+  const isGeneratingQueueRef = useRef(false);
+  const { confirm, showToast } = useUI();
 
   // Sort: If finished, by queueOrder. Else by join time.
   const sortedParticipants = [...participants].sort((a, b) => {
@@ -18,13 +20,31 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
   const count = participants.length;
   const queueAuditSteps = project.queueResult?.steps || [];
 
+  const generateQueue = async () => {
+    if (isGeneratingQueueRef.current) return;
+
+    isGeneratingQueueRef.current = true;
+    setIsGeneratingQueue(true);
+    try {
+      await actions.handleGenerateQueue(project.id);
+    } catch (error) {
+      console.error(error);
+      showToast(t('resultGenerationFailed'), 'error');
+    } finally {
+      isGeneratingQueueRef.current = false;
+      setIsGeneratingQueue(false);
+    }
+  };
+
   const handleGenerate = () => {
+    if (isGeneratingQueueRef.current) return;
+
     confirm({
       title: t('startQueue'),
       message: t('startQueueConfirm'),
       confirmText: t('startQueue'),
       cancelText: t('cancel'),
-      onConfirm: () => actions.handleGenerateQueue(project.id),
+      onConfirm: generateQueue,
     });
   };
 
@@ -91,8 +111,8 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
                  </div>
                  
                  {(isOwner || isAdmin) && !isStopped && count > 0 && (
-                     <button onClick={handleGenerate} className="app-button bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2">
-                        {t('startQueue')}
+                     <button onClick={handleGenerate} disabled={isGeneratingQueue} aria-busy={isGeneratingQueue} className="app-button bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2">
+                        {isGeneratingQueue ? t('processing') : t('startQueue')}
                      </button>
                  )}
              </div>

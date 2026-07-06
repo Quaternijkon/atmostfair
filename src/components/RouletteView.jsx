@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForward, RotateCcw, X, Pause } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
@@ -43,6 +43,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   // -- Local User State --
   const [joinName, setJoinName] = useState(user.displayName || '');
   const [joinValue, setJoinValue] = useState(50);
+  const [isDrawingRoulette, setIsDrawingRoulette] = useState(false);
+  const isDrawingRouletteRef = useRef(false);
   
   // -- Config State --
   const [activeTab, setActiveTab] = useState(() => project.rouletteConfig?.mode || 'classic');
@@ -199,9 +201,21 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       showToast(t('rSaveConfig'), 'success');
   };
   
-  const handleDraw = () => {
+  const handleDraw = async () => {
+      if (isDrawingRouletteRef.current) return;
       if (sortedParticipants.length === 0) return;
-      actions.handleSaveRouletteResult(project.id, { ...config, mode: activeTab });
+
+      isDrawingRouletteRef.current = true;
+      setIsDrawingRoulette(true);
+      try {
+          await actions.handleSaveRouletteResult(project.id, { ...config, mode: activeTab });
+      } catch (error) {
+          console.error(error);
+          showToast(t('resultGenerationFailed'), 'error');
+      } finally {
+          isDrawingRouletteRef.current = false;
+          setIsDrawingRoulette(false);
+      }
   };
   
   // Use project result if available, otherwise simulation
@@ -496,14 +510,14 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
             </div>
             
             {isOwner && !isFinished && !isStopped && (
-                 <button onClick={handleDraw} disabled={participants.length < 1} className="app-button w-full bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2 md:w-auto">
-                     <Crown className="w-5 h-5" /> {t('rStartDraw')}
+                 <button onClick={handleDraw} disabled={isDrawingRoulette || participants.length < 1} aria-busy={isDrawingRoulette} className="app-button w-full bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2 md:w-auto">
+                     <Crown className="w-5 h-5" /> {isDrawingRoulette ? t('processing') : t('rStartDraw')}
                  </button>
             )}
              {isOwner && !isFinished && isStopped && (
                  <div className="text-center">
 	                     <div className="mb-2 text-google-red font-bold">{t('projectStopped')}</div>
-                     <button onClick={handleDraw} className="app-button bg-google-yellow px-6">{t('rStartDraw')}</button>
+                     <button onClick={handleDraw} disabled={isDrawingRoulette} aria-busy={isDrawingRoulette} className="app-button bg-google-yellow px-6">{isDrawingRoulette ? t('processing') : t('rStartDraw')}</button>
                  </div>
             )}
           </div>

@@ -494,6 +494,35 @@ test('roulette workspace exposes localized replayable audit steps', async () => 
   assert.doesNotMatch(files.roulette, />Audit|>Formula|>Step|No audit/i, 'Roulette audit visible copy should be localized');
 });
 
+test('queue and roulette result actions prevent duplicate submits and expose pending state', async () => {
+  const files = {
+    queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),
+    roulette: await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8'),
+  };
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.resultGenerationFailed, 'missing English result failure translation');
+  assert.ok(TRANSLATIONS.zh.resultGenerationFailed, 'missing Chinese result failure translation');
+
+  assert.match(files.queue, /isGeneratingQueueRef\s*=\s*useRef\(false\)/, 'Queue generation should use a synchronous action lock');
+  assert.match(files.queue, /if \(isGeneratingQueueRef\.current\) return;/, 'Queue generation should ignore duplicate confirms before state rerenders');
+  assert.match(files.queue, /setIsGeneratingQueue\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsGeneratingQueue\(false\)/, 'Queue generation should expose pending state for the whole write');
+  assert.match(files.queue, /showToast\(t\('resultGenerationFailed'\), 'error'\)/, 'Queue generation failures should use localized app feedback');
+  assert.match(files.queue, /onConfirm:\s*generateQueue/, 'Queue confirm dialog should call the guarded generation action');
+  assert.match(files.queue, /aria-busy=\{isGeneratingQueue\}/, 'Queue generation button should expose pending state to assistive technology');
+  assert.match(files.queue, /disabled=\{isGeneratingQueue\}/, 'Queue generation button should be disabled while pending');
+  assert.match(files.queue, /isGeneratingQueue \? t\('processing'\) : t\('startQueue'\)/, 'Queue generation button should show localized progress copy');
+
+  assert.match(files.roulette, /isDrawingRouletteRef\s*=\s*useRef\(false\)/, 'Roulette drawing should use a synchronous action lock');
+  assert.match(files.roulette, /if \(isDrawingRouletteRef\.current\) return;/, 'Roulette drawing should ignore duplicate clicks before state rerenders');
+  assert.match(files.roulette, /setIsDrawingRoulette\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsDrawingRoulette\(false\)/, 'Roulette drawing should expose pending state for the whole write');
+  assert.match(files.roulette, /showToast\(t\('resultGenerationFailed'\), 'error'\)/, 'Roulette drawing failures should use localized app feedback');
+  assert.match(files.roulette, /aria-busy=\{isDrawingRoulette\}/, 'Roulette draw buttons should expose pending state to assistive technology');
+  assert.match(files.roulette, /disabled=\{isDrawingRoulette \|\| participants\.length < 1\}/, 'Roulette draw button should be disabled while pending or empty');
+  assert.match(files.roulette, /isDrawingRoulette \? t\('processing'\) : t\('rStartDraw'\)/, 'Roulette draw buttons should show localized progress copy');
+});
+
 test('booking workspace exposes localized waitlist states for full slots', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
