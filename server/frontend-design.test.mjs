@@ -208,6 +208,43 @@ test('user profile exposes a recoverable load error state', async () => {
   assert.match(dashboard, /disabled=\{!isUserProfileAvailable\}/, 'Project pin buttons should be disabled while user profile data is untrusted');
 });
 
+test('service health failures are visible before auth and globally recoverable', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    login: await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8'),
+    apiClient: await readFile(path.join(root, 'src/lib/apiClient.js'), 'utf8'),
+  };
+
+  assert.ok(TRANSLATIONS.en.serviceHealthUnavailable, 'missing English service health failure translation');
+  assert.ok(TRANSLATIONS.zh.serviceHealthUnavailable, 'missing Chinese service health failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(files.apiClient, /export async function checkApiHealth\(\)/, 'API client should expose a reusable health check');
+  assert.match(files.apiClient, /apiRequest\('\/api\/health', \{[\s\S]{0,120}method: 'GET'[\s\S]{0,120}token: null/, 'Health check should call the public health endpoint without auth');
+  assert.match(files.app, /import \{ checkApiHealth \} from '\.\/lib\/apiClient'/, 'App should use the shared health check');
+  assert.match(files.app, /\[serviceHealthError,\s*setServiceHealthError\]\s*=\s*useState\(false\)/, 'App should track API availability failures');
+  assert.match(files.app, /\[serviceHealthReloadKey,\s*setServiceHealthReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a health retry trigger');
+  assert.match(files.app, /checkApiHealth\(\)[\s\S]{0,220}setServiceHealthError\(false\)[\s\S]{0,220}setServiceHealthError\(true\)/, 'App should clear or set service health failures from the health check');
+  assert.match(files.app, /\}, \[serviceHealthReloadKey\]\)/, 'Service health retry should recreate the health check');
+  assert.match(files.app, /const retryServiceHealth = \(\) => \{[\s\S]{0,120}setServiceHealthReloadKey\(\(current\) => current \+ 1\)/, 'App should provide a retry action for service health');
+  assert.match(files.app, /<Login[\s\S]{0,220}isServiceUnavailable=\{serviceHealthError\}[\s\S]{0,220}onRetryServiceHealth=\{retryServiceHealth\}/, 'Login should receive service health state and retry action');
+  assert.match(files.app, /<Login[\s\S]{0,260}onServiceHealthFailure=\{\(\) => setServiceHealthError\(true\)\}/, 'Login should be able to mark service health failed after auth outages');
+  assert.match(files.app, /serviceHealthError[\s\S]{0,420}role="alert"[\s\S]{0,420}t\('serviceHealthUnavailable'\)/, 'Authenticated shell should announce service health failures');
+  assert.match(files.app, /serviceHealthError[\s\S]{0,700}onClick=\{retryServiceHealth\}/, 'Global service health alert should retry the health check');
+  assert.match(files.app, /serviceHealthError[\s\S]{0,700}RotateCcw/, 'Global service health retry should use the shared retry icon');
+
+  assert.match(files.login, /isServiceUnavailable = false/, 'Login should default service health state for isolated rendering');
+  assert.match(files.login, /onRetryServiceHealth = \(\) => \{\}/, 'Login should default health retry for isolated rendering');
+  assert.match(files.login, /onServiceHealthFailure = \(\) => \{\}/, 'Login should default health failure reporting for isolated rendering');
+  assert.match(files.login, /authError\?\.status >= 500[\s\S]{0,120}onServiceHealthFailure\(\)/, 'Login should mark service health failed when auth requests return server outages');
+  assert.match(files.login, /isServiceUnavailable[\s\S]{0,420}role="alert"[\s\S]{0,420}t\('serviceHealthUnavailable'\)/, 'Login should announce service health failures');
+  assert.match(files.login, /onClick=\{onRetryServiceHealth\}/, 'Login service health alert should retry the health check');
+  assert.match(files.login, /RotateCcw/, 'Login service health retry should use the shared retry icon');
+  assert.match(files.login, /const isAuthDisabled = isAuthPending \|\| isServiceUnavailable/, 'Login should disable auth actions while service health is failed');
+  assert.match(files.login, /disabled=\{isAuthDisabled\}/, 'Login auth buttons should use the combined disabled state');
+});
+
 test('project workspaces expose recoverable child data load errors', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
@@ -1734,8 +1771,9 @@ test('auth submit actions prevent duplicate submits and expose pending state', a
   assert.match(login, /finally \{[\s\S]{0,80}finishAuthAction\('guest'\)/, 'Guest auth should clear its pending guard in finally');
   assert.match(login, /const isEmailPending = pendingAuthAction === 'email'/, 'Email button should derive its own pending state');
   assert.match(login, /const isGuestPending = pendingAuthAction === 'guest'/, 'Guest button should derive its own pending state');
-  assert.match(login, /const isAuthPending = Boolean\(pendingAuthAction\)/, 'All auth buttons should share a disabled state while any auth action is pending');
-  assert.match(login, /disabled=\{isAuthPending\}/, 'Auth buttons should be disabled while any auth action is pending');
+  assert.match(login, /const isAuthPending = Boolean\(pendingAuthAction\)/, 'All auth buttons should share a pending state while any auth action is pending');
+  assert.match(login, /const isAuthDisabled = isAuthPending \|\| isServiceUnavailable/, 'Auth buttons should combine pending and service health disabled states');
+  assert.match(login, /disabled=\{isAuthDisabled\}/, 'Auth buttons should be disabled while any auth action is pending or service health is failed');
   assert.match(login, /aria-busy=\{isEmailPending\}/, 'Email auth button should expose its busy state');
   assert.match(login, /isEmailPending \? t\('processing'\) : t\('loginReg'\)/, 'Email auth button should show localized pending copy');
   assert.match(login, /aria-busy=\{isGuestPending\}/, 'Guest auth button should expose its busy state');

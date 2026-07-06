@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useState, useEffect, useRef } from 
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, signOut, auth } from './lib/localAuth';
+import { checkApiHealth } from './lib/apiClient';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc, getDocs, query, where, db } from './lib/localData';
 import { formatDate } from './lib/locale';
 import { nowMs } from './lib/time';
@@ -104,6 +105,8 @@ function AppContent() {
   const [authChecking, setAuthChecking] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const isSigningOutRef = useRef(false);
+  const [serviceHealthError, setServiceHealthError] = useState(false);
+  const [serviceHealthReloadKey, setServiceHealthReloadKey] = useState(0);
   const [showAdmin, setShowAdmin] = useState(false);
 
   const isAdmin = user && (ADMIN_EMAILS.includes(user.email) || ADMIN_EMAILS.length === 0);
@@ -165,6 +168,22 @@ function AppContent() {
       setIsSigningOut(false);
     }
   };
+
+  useEffect(() => {
+    let isActive = true;
+    (async () => {
+      try {
+        await checkApiHealth();
+        if (isActive) setServiceHealthError(false);
+      } catch (error) {
+        if (isActive) setServiceHealthError(true);
+        console.error('Error checking service health:', error);
+      }
+    })();
+    return () => {
+      isActive = false;
+    };
+  }, [serviceHealthReloadKey]);
 
   const loadProjectCascadeDocs = async (projectId) => {
     const docsByCollection = {
@@ -700,6 +719,10 @@ function AppContent() {
     setWorkspaceDataReloadKey((current) => current + 1);
   };
 
+  const retryServiceHealth = () => {
+    setServiceHealthReloadKey((current) => current + 1);
+  };
+
   const handleCreateProject = async (title, type, creatorName, password, showToast) => {
     const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
     if (!projectData) {
@@ -732,7 +755,14 @@ function AppContent() {
           const actions = createActions(showToast);
           return !user ? (
           <Suspense fallback={<RouteLoadingFallback label={t('loading')} />}>
-            <Login lang={lang} setLang={setLang} t={t} />
+            <Login
+              lang={lang}
+              setLang={setLang}
+              t={t}
+              isServiceUnavailable={serviceHealthError}
+              onRetryServiceHealth={retryServiceHealth}
+              onServiceHealthFailure={() => setServiceHealthError(true)}
+            />
           </Suspense>
         ) : (
           <div className="app-shell">
@@ -846,6 +876,22 @@ function AppContent() {
                 </div>
               </div>
             </nav>
+
+            {serviceHealthError && (
+              <div className="mx-auto w-full max-w-7xl px-4 pt-4">
+                <div role="alert" className="app-card-quiet flex flex-col gap-3 px-4 py-3 text-sm text-m3-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
+                  <p>{t('serviceHealthUnavailable')}</p>
+                  <button
+                    type="button"
+                    onClick={retryServiceHealth}
+                    className="app-button-quiet self-start text-google-blue sm:self-auto"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t('chatRetry')}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {userProfileLoadError && (
               <div className="mx-auto w-full max-w-7xl px-4 pt-4">

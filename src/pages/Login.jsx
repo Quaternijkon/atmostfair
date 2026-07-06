@@ -15,8 +15,16 @@ import {
 } from '../lib/authDomain';
 import { normalizeUserDisplayName, USER_DISPLAY_NAME_MAX_LENGTH } from '../lib/userDomain';
 import AtmostfairLogo from '../components/Logo';
+import { RotateCcw } from '../components/Icons';
 
-export default function Login({ lang, setLang, t }) {
+export default function Login({
+  lang,
+  setLang,
+  t,
+  isServiceUnavailable = false,
+  onRetryServiceHealth = () => {},
+  onServiceHealthFailure = () => {},
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -27,10 +35,14 @@ export default function Login({ lang, setLang, t }) {
   const isEmailPending = pendingAuthAction === 'email';
   const isGuestPending = pendingAuthAction === 'guest';
   const isAuthPending = Boolean(pendingAuthAction);
-  const authErrorMessage = (action, authError) => t('actionFailed', {
-    action,
-    message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
-  });
+  const isAuthDisabled = isAuthPending || isServiceUnavailable;
+  const authErrorMessage = (action, authError) => {
+    if (authError?.status >= 500) onServiceHealthFailure();
+    return t('actionFailed', {
+      action,
+      message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
+    });
+  };
   const localizedAuthErrorMessage = (action, authError) => {
     if (authError?.code === 'auth/invalid-email') return t('invalidEmail');
     if (authError?.code === 'auth/weak-password') return t('weakPassword');
@@ -153,6 +165,16 @@ export default function Login({ lang, setLang, t }) {
             </div>
           )}
 
+          {isServiceUnavailable && (
+            <div role="alert" aria-live="assertive" className="mb-4 flex flex-col gap-3 rounded-2xl border border-google-yellow/30 bg-google-yellow/10 p-3 text-sm font-medium text-m3-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
+              <p>{t('serviceHealthUnavailable')}</p>
+              <button type="button" onClick={onRetryServiceHealth} className="app-button-quiet self-start text-google-blue sm:self-auto">
+                <RotateCcw className="h-4 w-4" />
+                {t('chatRetry')}
+              </button>
+            </div>
+          )}
+
           <form onSubmit={handleEmailAuth} className="space-y-4" noValidate>
             <div>
               <label className="app-label" htmlFor="auth-email">{t('emailAddr')}</label>
@@ -184,7 +206,7 @@ export default function Login({ lang, setLang, t }) {
               />
             </div>
 
-            <button type="submit" disabled={isAuthPending} aria-busy={isEmailPending} className="app-button-primary w-full">
+            <button type="submit" disabled={isAuthDisabled} aria-busy={isEmailPending} className="app-button-primary w-full">
               {isEmailPending ? t('processing') : t('loginReg')}
             </button>
           </form>
@@ -206,7 +228,7 @@ export default function Login({ lang, setLang, t }) {
                 maxLength={USER_DISPLAY_NAME_MAX_LENGTH}
                 aria-describedby={error ? 'auth-error' : undefined}
               />
-              <button type="submit" disabled={isAuthPending} aria-busy={isGuestPending} className="app-button-tonal whitespace-nowrap">
+              <button type="submit" disabled={isAuthDisabled} aria-busy={isGuestPending} className="app-button-tonal whitespace-nowrap">
                 {isGuestPending ? t('processing') : t('guestLogin')}
               </button>
             </div>

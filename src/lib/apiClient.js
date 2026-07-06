@@ -51,6 +51,10 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
   }
 }
 
+export async function checkApiHealth() {
+  return apiRequest('/api/health', { method: 'GET', token: null });
+}
+
 function getTransportErrorStatus(error) {
   const directStatus = Number(error?.status || error?.response?.status);
   if (Number.isInteger(directStatus) && directStatus >= 100 && directStatus <= 599) return directStatus;
