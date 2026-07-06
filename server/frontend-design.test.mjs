@@ -176,11 +176,69 @@ test('project list exposes a recoverable load error state', async () => {
   assert.match(app, /\[projectsReloadKey,\s*setProjectsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed project subscriptions');
   assert.match(app, /setProjectsLoadError\(false\)[\s\S]{0,360}setProjects\(/, 'Successful project reads should clear the load error before rendering projects');
   assert.match(app, /onSnapshot\(collection\(db, 'projects'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setProjectsLoadError\(true\)/, 'Project list should handle subscription errors');
-  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
+  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
   assert.match(app, /projectsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('projectsLoadFailed'\)/, 'Project list should render announced localized load failure copy');
   assert.match(app, /onClick=\{\(\) => setProjectsReloadKey\(\(current\) => current \+ 1\)\}/, 'Project list retry should refresh the subscription');
   assert.match(app, /t\('chatRetry'\)/, 'Project list retry button should use localized copy');
   assert.match(app, /projectsLoadError \? \(/, 'Project routes should be gated behind the project list load error state');
+});
+
+test('project workspaces expose recoverable child data load errors', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+  };
+  const childCollections = [
+    'voting_items',
+    'rooms',
+    'roulette_participants',
+    'queue_participants',
+    'gather_fields',
+    'gather_submissions',
+    'schedule_submissions',
+    'booking_slots',
+    'claim_items',
+    'game_rooms',
+  ];
+
+  assert.ok(TRANSLATIONS.en.workspaceDataLoadFailed, 'missing English workspace data load failure translation');
+  assert.ok(TRANSLATIONS.zh.workspaceDataLoadFailed, 'missing Chinese workspace data load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(files.app, /workspaceDataLoadErrors/, 'App should track child collection load failures');
+  assert.match(files.app, /workspaceDataReloadKey/, 'App should expose a retry trigger for child collection subscriptions');
+  assert.match(files.app, /subscribeWorkspaceCollection/, 'App should route child collection subscriptions through a shared error handler');
+  assert.match(files.app, /setWorkspaceDataLoadErrors\(\(current\) => \(\{ \.\.\.current, \[collectionName\]: false \}\)\)/, 'Successful child snapshots should clear collection load errors');
+  assert.match(files.app, /setWorkspaceDataLoadErrors\(\(current\) => \(\{ \.\.\.current, \[collectionName\]: true \}\)\)/, 'Child subscription errors should mark the failed collection');
+  assert.match(files.app, /console\.error\(`Error loading workspace data \$\{collectionName\}:`, error\)/, 'Child subscription errors should identify the failed collection');
+  for (const collectionName of childCollections) {
+    assert.match(files.app, new RegExp(`subscribeWorkspaceCollection\\('${collectionName}'`), `App should recover ${collectionName} subscriptions`);
+  }
+  assert.match(files.app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Workspace data retry should recreate child collection subscriptions');
+  assert.match(files.app, /workspaceDataLoadErrors=\{workspaceDataLoadErrors\}/, 'Project detail should receive child collection load errors');
+  assert.match(files.app, /onRetryWorkspaceData=\{retryWorkspaceData\}/, 'Project detail should receive a child data retry action');
+
+  for (const [projectType, collectionPattern] of [
+    ['vote', 'voting_items'],
+    ['team', 'rooms'],
+    ['roulette', 'roulette_participants'],
+    ['queue', 'queue_participants'],
+    ['gather', 'gather_fields[\\s\\S]{0,80}gather_submissions'],
+    ['schedule', 'schedule_submissions'],
+    ['book', 'booking_slots'],
+    ['claim', 'claim_items'],
+    ['game_hub', 'game_rooms'],
+  ]) {
+    assert.match(files.detail, new RegExp(`${projectType}:[\\s\\S]{0,140}${collectionPattern}`), `Project detail should map ${projectType} to its child data collections`);
+  }
+  assert.match(files.detail, /workspaceDataLoadErrors = \{\}/, 'Project detail should default child collection load errors');
+  assert.match(files.detail, /onRetryWorkspaceData = \(\) => \{\}/, 'Project detail should default child data retry action');
+  assert.match(files.detail, /hasWorkspaceDataLoadError/, 'Project detail should derive a workspace load error for the current project type');
+  assert.match(files.detail, /hasWorkspaceDataLoadError[\s\S]{0,900}role="alert"[\s\S]{0,520}t\('workspaceDataLoadFailed'\)/, 'Project detail should announce localized workspace data failures');
+  assert.match(files.detail, /onClick=\{onRetryWorkspaceData\}/, 'Workspace data retry should call the retry action');
+  assert.match(files.detail, /t\('chatRetry'\)/, 'Workspace data retry should use localized copy');
+  assert.match(files.detail, /hasWorkspaceDataLoadError \? \(/, 'Workspace content should be gated behind the child data load error state');
 });
 
 test('project detail actions await writes before navigation and expose pending state', async () => {
@@ -250,7 +308,7 @@ test('project detail exposes localized project insights', async () => {
   assert.match(files.detail, /const projectGameRooms = \(gameRooms \|\| \[\]\)\.filter\(\(room\) => room\.projectId === project\.id\);/, 'Project detail should scope game room data before building insights');
   assert.match(files.detail, /gameRooms: projectGameRooms/, 'Project detail should pass scoped game room data into the insight summary');
   assert.match(files.app, /const \[gameRooms,\s*setGameRooms\] = useState\(\[\]\)/, 'App should keep game room data available for project insights');
-  assert.match(files.app, /onSnapshot\(collection\(db, 'game_rooms'\)/, 'App should subscribe to game rooms for project insights');
+  assert.match(files.app, /subscribeWorkspaceCollection\('game_rooms', setGameRooms\)/, 'App should subscribe to game rooms for project insights');
   assert.doesNotMatch(files.detail, />Project Insights<|>Next action<|>Review progress/, 'Project insights visible copy should be localized');
 });
 

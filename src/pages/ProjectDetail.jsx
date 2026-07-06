@@ -35,6 +35,18 @@ function downloadCsvExport(exportData) {
 
 const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
+const PROJECT_WORKSPACE_DATA_COLLECTIONS = {
+  vote: ['voting_items'],
+  team: ['rooms'],
+  roulette: ['roulette_participants'],
+  queue: ['queue_participants'],
+  gather: ['gather_fields', 'gather_submissions'],
+  schedule: ['schedule_submissions'],
+  book: ['booking_slots'],
+  claim: ['claim_items'],
+  game_hub: ['game_rooms'],
+};
+
 function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, loadError = false, onRetry = () => {}, t }) {
   const visibleActivities = (activities || []).slice(0, 8);
 
@@ -208,7 +220,7 @@ function ProjectInsightsCard({ projectInsightSummary, t }) {
   );
 }
 
-export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, projectActivitiesLoadError = false, onRetryProjectActivities = () => {}, actions, t }) {
+export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, projectActivitiesLoadError = false, onRetryProjectActivities = () => {}, workspaceDataLoadErrors = {}, onRetryWorkspaceData = () => {}, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -320,6 +332,8 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     game_hub: t('gameHub'),
     project: t('project'),
   }[project.type] || t('project');
+  const workspaceDataCollectionNames = PROJECT_WORKSPACE_DATA_COLLECTIONS[project.type] || [];
+  const hasWorkspaceDataLoadError = workspaceDataCollectionNames.some((collectionName) => workspaceDataLoadErrors[collectionName]);
   const projectRoutePrefix = getProjectRoutePrefix(project.type);
   const projectShareUrl = createProjectShareUrl(typeof window === 'undefined' ? '' : window.location.href, project);
   const isProjectActionPending = Boolean(pendingProjectAction);
@@ -581,24 +595,41 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         <div className="flex-1 w-full min-w-0 space-y-6">
-      {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={(item) => actions.handleVote(item, project.votingConfig)} votingConfig={project.votingConfig} onUpdateVotingConfig={actions.handleUpdateVotingConfig} isProjectOwner={isOwner} projectId={project.id} t={t} />}
-      {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
-      {project.type === 'roulette' && <RouletteView key={project.id} user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-      {project.type === 'game_hub' && <GameHubView project={project} user={user} isStopped={isStopped || isFinished} t={t} />}
-      {project.type === 'project' && (
-        <div className="app-card flex flex-col items-center justify-center p-12">
-            <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
-                <Info className="w-8 h-8" />
+          {hasWorkspaceDataLoadError ? (
+            <div role="alert" className="app-card flex flex-col gap-4 p-5">
+              <div className="flex gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-google-red" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-m3-on-surface">{t('workspaceDataLoadFailed')}</p>
+                  <button type="button" onClick={onRetryWorkspaceData} className="app-button-quiet mt-3 text-google-blue">
+                    <RotateCcw className="h-4 w-4" />
+                    {t('chatRetry')}
+                  </button>
+                </div>
+              </div>
             </div>
-            <h3 className="text-xl text-m3-on-surface mb-2">{t('project')}</h3>
-            <p className="text-m3-on-surface-variant">{t('projectView')}</p>
-        </div>
-      )}
+          ) : (
+            <>
+              {project.type === 'vote' && <VotingView user={user} isAdmin={isAdmin} items={projectItems} isStopped={isStopped || isFinished} onAdd={(title, name) => actions.handleAddItem(title, project.id, name)} onDelete={actions.handleDeleteItem} onVote={(item) => actions.handleVote(item, project.votingConfig)} votingConfig={project.votingConfig} onUpdateVotingConfig={actions.handleUpdateVotingConfig} isProjectOwner={isOwner} projectId={project.id} t={t} />}
+              {project.type === 'team' && <TeamView user={user} isAdmin={isAdmin} rooms={projectRooms} isStopped={isStopped || isFinished} onCreate={(name, max, cName) => actions.handleCreateRoom(name, max, project.id, cName)} onJoin={actions.handleJoinRoom} onKick={actions.handleKickMember} onDelete={actions.handleDeleteRoom} projectId={project.id} t={t} />}
+              {project.type === 'roulette' && <RouletteView key={project.id} user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'game_hub' && <GameHubView project={project} user={user} isStopped={isStopped || isFinished} t={t} />}
+              {project.type === 'project' && (
+                <div className="app-card flex flex-col items-center justify-center p-12">
+                    <div className="w-16 h-16 rounded-full bg-google-green/20 flex items-center justify-center mb-4 text-google-green">
+                        <Info className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-xl text-m3-on-surface mb-2">{t('project')}</h3>
+                    <p className="text-m3-on-surface-variant">{t('projectView')}</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
         
         <div className="w-full space-y-4 xl:sticky xl:top-24 xl:w-96 self-start">

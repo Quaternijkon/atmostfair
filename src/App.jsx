@@ -129,6 +129,8 @@ function AppContent() {
   const [projectActivities, setProjectActivities] = useState([]);
   const [projectActivitiesLoadError, setProjectActivitiesLoadError] = useState(false);
   const [projectActivitiesReloadKey, setProjectActivitiesReloadKey] = useState(0);
+  const [workspaceDataLoadErrors, setWorkspaceDataLoadErrors] = useState({});
+  const [workspaceDataReloadKey, setWorkspaceDataReloadKey] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingNotificationActionKeys, setPendingNotificationActionKeys] = useState([]);
   const pendingNotificationActionKeysRef = useRef(new Set());
@@ -187,6 +189,7 @@ function AppContent() {
       setProjectsLoadError(false);
       setNotificationsLoadError(false);
       setProjectActivitiesLoadError(false);
+      setWorkspaceDataLoadErrors({});
       setAuthChecking(false);
       if (u) {
           try {
@@ -206,6 +209,14 @@ function AppContent() {
   // Data Sync
   useEffect(() => {
     if (!user) return;
+    const subscribeWorkspaceCollection = (collectionName, setCollectionData) => onSnapshot(collection(db, collectionName), (s) => {
+      setWorkspaceDataLoadErrors((current) => ({ ...current, [collectionName]: false }));
+      setCollectionData(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error(`Error loading workspace data ${collectionName}:`, error);
+      setWorkspaceDataLoadErrors((current) => ({ ...current, [collectionName]: true }));
+    });
+
     const unsubUserProfile = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
       setUserProfile(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
     });
@@ -218,16 +229,16 @@ function AppContent() {
       setProjectsLoadError(true);
       setProjectsLoaded(true);
     });
-    const unsubItems = onSnapshot(collection(db, 'voting_items'), (s) => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubRooms = onSnapshot(collection(db, 'rooms'), (s) => setRooms(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubRoulette = onSnapshot(collection(db, 'roulette_participants'), (s) => setRouletteParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubQueue = onSnapshot(collection(db, 'queue_participants'), (s) => setQueueParticipants(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubGatherFields = onSnapshot(collection(db, 'gather_fields'), (s) => setGatherFields(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubGatherSubmissions = onSnapshot(collection(db, 'gather_submissions'), (s) => setGatherSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubScheduleSubmissions = onSnapshot(collection(db, 'schedule_submissions'), (s) => setScheduleSubmissions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubBookingSlots = onSnapshot(collection(db, 'booking_slots'), (s) => setBookingSlots(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubClaimItems = onSnapshot(collection(db, 'claim_items'), (s) => setClaimItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubGameRooms = onSnapshot(collection(db, 'game_rooms'), (s) => setGameRooms(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubItems = subscribeWorkspaceCollection('voting_items', setItems);
+    const unsubRooms = subscribeWorkspaceCollection('rooms', setRooms);
+    const unsubRoulette = subscribeWorkspaceCollection('roulette_participants', setRouletteParticipants);
+    const unsubQueue = subscribeWorkspaceCollection('queue_participants', setQueueParticipants);
+    const unsubGatherFields = subscribeWorkspaceCollection('gather_fields', setGatherFields);
+    const unsubGatherSubmissions = subscribeWorkspaceCollection('gather_submissions', setGatherSubmissions);
+    const unsubScheduleSubmissions = subscribeWorkspaceCollection('schedule_submissions', setScheduleSubmissions);
+    const unsubBookingSlots = subscribeWorkspaceCollection('booking_slots', setBookingSlots);
+    const unsubClaimItems = subscribeWorkspaceCollection('claim_items', setClaimItems);
+    const unsubGameRooms = subscribeWorkspaceCollection('game_rooms', setGameRooms);
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => {
       setNotificationsLoadError(false);
       setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt));
@@ -243,7 +254,7 @@ function AppContent() {
       setProjectActivitiesLoadError(true);
     });
     return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubGameRooms(); unsubNotifications(); unsubProjectActivities(); };
-  }, [notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, user]);
+  }, [notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
     const activity = createProjectActivityData({
@@ -676,6 +687,10 @@ function AppContent() {
     setProjectActivitiesReloadKey((current) => current + 1);
   };
 
+  const retryWorkspaceData = () => {
+    setWorkspaceDataReloadKey((current) => current + 1);
+  };
+
   const handleCreateProject = async (title, type, creatorName, password, showToast) => {
     const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
     if (!projectData) {
@@ -875,11 +890,11 @@ function AppContent() {
                             </PageTransition>
                           }
                         />
-                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} workspaceDataLoadErrors={workspaceDataLoadErrors} onRetryWorkspaceData={retryWorkspaceData} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} workspaceDataLoadErrors={workspaceDataLoadErrors} onRetryWorkspaceData={retryWorkspaceData} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} workspaceDataLoadErrors={workspaceDataLoadErrors} onRetryWorkspaceData={retryWorkspaceData} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} workspaceDataLoadErrors={workspaceDataLoadErrors} onRetryWorkspaceData={retryWorkspaceData} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} workspaceDataLoadErrors={workspaceDataLoadErrors} onRetryWorkspaceData={retryWorkspaceData} actions={actions} t={t} /></PageTransition>} />
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </AnimatePresence>

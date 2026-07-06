@@ -134,7 +134,7 @@ test('notification center exposes a recoverable load error state', async () => {
   assert.match(app, /\[notificationsReloadKey,\s*setNotificationsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed notification subscriptions');
   assert.match(app, /setNotificationsLoadError\(false\)[\s\S]{0,360}setNotifications\(/, 'Successful notification reads should clear the load error before rendering notifications');
   assert.match(app, /onSnapshot\(collection\(db, 'notifications'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setNotificationsLoadError\(true\)/, 'Notification center should handle subscription errors');
-  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, user\]\)/, 'Notification retry should recreate the data subscriptions');
+  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Notification retry should recreate the data subscriptions');
   assert.match(app, /notificationsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('notificationsLoadFailed'\)/, 'Notification center should render announced localized load failure copy');
   assert.match(app, /onClick=\{\(\) => setNotificationsReloadKey\(\(current\) => current \+ 1\)\}/, 'Notification retry should refresh the subscription');
   assert.match(app, /t\('chatRetry'\)/, 'Notification retry button should use localized copy');

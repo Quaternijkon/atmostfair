@@ -110,7 +110,7 @@ test('project activity timeline exposes a recoverable load error state', async (
   assert.match(app, /projectActivitiesReloadKey/, 'App should expose a retry trigger for project activity subscriptions');
   assert.match(app, /setProjectActivitiesLoadError\(false\)[\s\S]{0,260}setProjectActivities\(/, 'Successful project activity snapshots should clear load errors');
   assert.match(app, /onSnapshot\(collection\(db,\s*'project_activities'\),[\s\S]{0,700}\(error\) => \{[\s\S]{0,240}setProjectActivitiesLoadError\(true\)/, 'Project activity subscription failures should set an error state');
-  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, user\]\)/, 'Project activity retries should recreate the subscription');
+  assert.match(app, /\}, \[notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, workspaceDataReloadKey, user\]\)/, 'Project activity retries should recreate the subscription');
   assert.match(app, /projectActivitiesLoadError=\{projectActivitiesLoadError\}/, 'Project detail should receive the activity load error');
   assert.match(app, /onRetryProjectActivities=\{retryProjectActivities\}/, 'Project detail should receive an activity retry action');
 
