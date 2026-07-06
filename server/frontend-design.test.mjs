@@ -654,6 +654,35 @@ test('booking owner slot toggles prevent duplicate writes without blocking batch
   assert.match(booking, /isSlotTogglePending[\s\S]{0,180}t\('processing'\)/, 'Pending slot controls should show localized progress copy');
 });
 
+test('claim workspace actions prevent duplicate submits and expose pending state', async () => {
+  const claim = await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.claimActionFailed, 'missing English claim action failure translation');
+  assert.ok(TRANSLATIONS.zh.claimActionFailed, 'missing Chinese claim action failure translation');
+
+  assert.match(claim, /isCreatingClaimItemRef\s*=\s*useRef\(false\)/, 'Claim item creation should use a synchronous submit lock');
+  assert.match(claim, /if \(isCreatingClaimItemRef\.current\) return;/, 'Claim item creation should ignore duplicate submits before state rerenders');
+  assert.match(claim, /setIsCreatingClaimItem\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsCreatingClaimItem\(false\)/, 'Claim item creation should expose pending state for the whole write');
+  assert.match(claim, /await actions\.handleCreateClaimItem\(project\.id, newItem\.trim\(\), maxClaims\)/, 'Claim item creation should await the write while pending');
+  assert.match(claim, /showToast\(t\('claimActionFailed'\), 'error'\)/, 'Claim item creation failures should use localized app feedback');
+  assert.match(claim, /aria-busy=\{isCreatingClaimItem\}/, 'Claim creation form should expose pending state to assistive technology');
+  assert.match(claim, /disabled=\{isCreatingClaimItem\}/, 'Claim creation controls should be disabled while creating');
+  assert.match(claim, /isCreatingClaimItem \? t\('processing'\) : t\('create'\)/, 'Claim creation button should show localized progress copy');
+
+  assert.match(claim, /pendingClaimItemIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Claim toggles should track pending item ids in a ref');
+  assert.match(claim, /if \(pendingClaimItemIdsRef\.current\.has\(itemId\)\) return;/, 'Claim toggles should ignore duplicate clicks for the same item');
+  assert.match(claim, /pendingClaimItemIdsRef\.current\.add\(itemId\)[\s\S]{0,220}setPendingClaimItemIds\(\[\.\.\.pendingClaimItemIdsRef\.current\]\)/, 'Claim toggles should expose pending ids immediately');
+  assert.match(claim, /await actions\.handleToggleClaim\(item\)/, 'Claim toggles should await the write while pending');
+  assert.match(claim, /finally[\s\S]{0,260}pendingClaimItemIdsRef\.current\.delete\(itemId\)[\s\S]{0,160}setPendingClaimItemIds\(\[\.\.\.pendingClaimItemIdsRef\.current\]\)/, 'Claim toggles should clear pending state after the write settles');
+  assert.match(claim, /pendingClaimItemIds\.includes\(item\.id\)/, 'Claim rows should derive pending state from the item id');
+  assert.match(claim, /disabled=\{isClaimTogglePending\}/, 'Claim toggle buttons should be disabled while pending');
+  assert.match(claim, /aria-busy=\{isClaimTogglePending\}/, 'Claim toggle buttons should expose busy state');
+  assert.match(claim, /isClaimTogglePending \? t\('processing'\) : t\('unclaim'\)/, 'Unclaim button should show localized progress copy');
+  assert.match(claim, /isClaimTogglePending \? t\('processing'\) : t\('claim'\)/, 'Claim button should show localized progress copy');
+});
+
 test('paused and finished collaboration workspaces hide item deletion controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),

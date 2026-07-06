@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Plus, CheckSquare, MinusCircle, UserCheck, Trash2 } from './Icons';
 import { formatDateTime } from '../lib/locale';
 import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
@@ -9,17 +9,47 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
   const [newItem, setNewItem] = useState('');
   const [maxClaims, setMaxClaims] = useState(1);
   const [filterMyTasks, setFilterMyTasks] = useState(false);
+  const [isCreatingClaimItem, setIsCreatingClaimItem] = useState(false);
+  const isCreatingClaimItemRef = useRef(false);
+  const [pendingClaimItemIds, setPendingClaimItemIds] = useState([]);
+  const pendingClaimItemIdsRef = useRef(new Set());
 
-  const handleAddItem = (e) => {
+  const handleAddItem = async (e) => {
     e.preventDefault();
     if (!newItem.trim()) return;
-    actions.handleCreateClaimItem(project.id, newItem.trim(), maxClaims);
-    setNewItem('');
-    setMaxClaims(1);
+    if (isCreatingClaimItemRef.current) return;
+
+    isCreatingClaimItemRef.current = true;
+    setIsCreatingClaimItem(true);
+    try {
+      await actions.handleCreateClaimItem(project.id, newItem.trim(), maxClaims);
+      setNewItem('');
+      setMaxClaims(1);
+    } catch (error) {
+      console.error(error);
+      showToast(t('claimActionFailed'), 'error');
+    } finally {
+      isCreatingClaimItemRef.current = false;
+      setIsCreatingClaimItem(false);
+    }
   };
 
-  const handleToggleClaim = (item) => {
-      actions.handleToggleClaim(item);
+  const handleToggleClaim = async (item) => {
+      const itemId = item?.id;
+      if (!itemId) return;
+      if (pendingClaimItemIdsRef.current.has(itemId)) return;
+
+      pendingClaimItemIdsRef.current.add(itemId);
+      setPendingClaimItemIds([...pendingClaimItemIdsRef.current]);
+      try {
+          await actions.handleToggleClaim(item);
+      } catch (error) {
+          console.error(error);
+          showToast(t('claimActionFailed'), 'error');
+      } finally {
+          pendingClaimItemIdsRef.current.delete(itemId);
+          setPendingClaimItemIds([...pendingClaimItemIdsRef.current]);
+      }
   };
 
   const myClaimsCount = items.reduce((acc, item) => acc + (item.claimants.some(c => c.uid === user.uid) ? 1 : 0), 0);
@@ -46,7 +76,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
             <CheckSquare className="w-5 h-5 text-google-red" />
             {t('addItem')}
           </h3>
-          <form onSubmit={handleAddItem} className="flex flex-col md:flex-row gap-4">
+          <form onSubmit={handleAddItem} aria-busy={isCreatingClaimItem} className="flex flex-col md:flex-row gap-4">
              <div className="flex-1">
                 <input 
                     type="text" 
@@ -55,6 +85,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     placeholder={t('taskTitle')}
                     className="app-input"
                     maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH}
+                    disabled={isCreatingClaimItem}
                 />
              </div>
              <div className="flex items-center gap-2">
@@ -66,10 +97,11 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     value={maxClaims} 
                     onChange={(e) => setMaxClaims(parseInt(e.target.value))}
                     className="app-input w-24"
+                    disabled={isCreatingClaimItem}
                 />
              </div>
-             <button type="submit" className="app-button bg-google-red text-white hover:shadow-elevation-1">
-                <Plus className="w-4 h-4" /> {t('create')}
+             <button type="submit" disabled={isCreatingClaimItem} className="app-button bg-google-red text-white hover:shadow-elevation-1">
+                <Plus className="w-4 h-4" /> {isCreatingClaimItem ? t('processing') : t('create')}
              </button>
           </form>
         </div>
@@ -108,6 +140,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
               const isMine = item.claimants.some(c => c.uid === user.uid);
               const isFull = item.claimants.length >= item.maxClaims;
               const slotsLeft = item.maxClaims - item.claimants.length;
+              const isClaimTogglePending = pendingClaimItemIds.includes(item.id);
               
               return (
                   <div key={item.id} className={`app-card group relative p-4 ${isMine ? 'border-google-red/50 bg-google-red/5' : 'hover:border-google-red/30'}`}>
@@ -154,19 +187,23 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                                   isMine ? (
                                       <button 
                                           onClick={() => handleToggleClaim(item)}
+                                          disabled={isClaimTogglePending}
+                                          aria-busy={isClaimTogglePending}
                                           className="app-button bg-m3-surface-container-high text-m3-on-surface hover:bg-google-red hover:text-white group/btn"
                                       >
                                           <MinusCircle className="w-4 h-4 text-google-red group-hover/btn:text-white" />
-                                          {t('unclaim')}
+                                          {isClaimTogglePending ? t('processing') : t('unclaim')}
                                       </button>
                                   ) : (
                                       !isFull ? (
                                         <button 
                                             onClick={() => handleToggleClaim(item)}
+                                            disabled={isClaimTogglePending}
+                                            aria-busy={isClaimTogglePending}
                                             className="app-button bg-google-red text-white hover:shadow-elevation-1"
                                         >
                                             <UserCheck className="w-4 h-4" />
-                                            {t('claim')}
+                                            {isClaimTogglePending ? t('processing') : t('claim')}
                                         </button>
                                       ) : (
                                         <button disabled className="app-button bg-m3-surface-container text-m3-on-surface-variant/50">
