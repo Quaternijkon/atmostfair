@@ -8,7 +8,7 @@ import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestDa
 import { MESSAGE_TEXT_MAX_LENGTH } from '../lib/messageDomain';
 import { nowMs } from '../lib/time';
 
-export default function FriendSystem({ user, onClose, t }) {
+export default function FriendSystem({ user, onClose, t, onReadFriendChatNotifications }) {
     const { showToast, confirm } = useUI();
     const [view, setView] = useState('list'); // list, add, chat
     const [relationships, setRelationships] = useState([]);
@@ -415,7 +415,7 @@ export default function FriendSystem({ user, onClose, t }) {
                                             <div className={`flex items-center gap-2 rounded-2xl pr-2 transition-all ${activeChatFriend?.id === f.id ? 'bg-m3-secondary-container text-m3-on-secondary-container' : 'text-m3-on-surface hover:bg-m3-surface'}`}>
                                                 <button
                                                     type="button"
-                                                    onClick={() => { setActiveChatFriend(f); setView('chat'); }}
+                                                    onClick={() => { setActiveChatFriend(f); setView('chat'); void onReadFriendChatNotifications?.(f.id); }}
                                                     className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-2xl p-3 text-left"
                                                 >
                                                     <Avatar name={f.otherName} className="shrink-0" />

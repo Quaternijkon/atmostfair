@@ -43,6 +43,7 @@ import {
 } from './lib/projectDomain';
 import {
   createClearReadNotificationOperations,
+  createMarkFriendChatNotificationsReadOperations,
   createMarkNotificationReadOperation,
   createMarkNotificationsReadOperations,
 } from './lib/notificationDomain';
@@ -550,6 +551,18 @@ function AppContent() {
           await updateDoc(doc(db, operation.collection, operation.id), operation.data);
         });
       },
+      handleReadFriendChatNotifications: async (chatId) => {
+        if (!chatId) return;
+        await runNotificationAction(`friend-chat:${chatId}`, t('notifications'), async () => {
+          const operations = createMarkFriendChatNotificationsReadOperations(notifications, chatId);
+          if (operations.length === 0) return;
+          const batch = writeBatch(db);
+          operations.forEach((operation) => {
+            batch.update(doc(db, operation.collection, operation.id), operation.data);
+          });
+          await batch.commit();
+        });
+      },
       handleMarkAllNotificationsRead: async () => {
         await runNotificationAction('mark-all-read', t('markAllRead'), async () => {
           const operations = createMarkNotificationsReadOperations(notifications);
@@ -689,7 +702,7 @@ function AppContent() {
                 </button>
 
                 <AnimatePresence>
-                  {showFriends && <FriendSystem user={user} onClose={() => setShowFriends(false)} t={t} />}
+                  {showFriends && <FriendSystem user={user} onClose={() => setShowFriends(false)} t={t} onReadFriendChatNotifications={actions.handleReadFriendChatNotifications} />}
                 </AnimatePresence>
 
                 {/* Notifications & Mailbox */}

@@ -20,6 +20,24 @@ export function createMarkNotificationsReadOperations(notifications) {
     }));
 }
 
+export function createMarkFriendChatNotificationsReadOperations(notifications, chatId) {
+  const normalizedChatId = typeof chatId === 'string' ? chatId.trim() : '';
+  if (!normalizedChatId) return [];
+
+  return normalizedNotifications(notifications)
+    .filter((notification) => (
+      notification.type === 'friend_message'
+      && notification.chatId === normalizedChatId
+      && !notification.read
+    ))
+    .map((notification) => ({
+      type: 'update',
+      collection: 'notifications',
+      id: notification.id,
+      data: { read: true },
+    }));
+}
+
 export function createClearReadNotificationOperations(notifications) {
   return normalizedNotifications(notifications)
     .filter((notification) => notification.read)

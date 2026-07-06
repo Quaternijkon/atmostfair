@@ -6,6 +6,7 @@ import test from 'node:test';
 import { TRANSLATIONS } from '../src/constants/translations.js';
 import {
   createClearReadNotificationOperations,
+  createMarkFriendChatNotificationsReadOperations,
   createMarkNotificationReadOperation,
   createMarkNotificationsReadOperations,
 } from '../src/lib/notificationDomain.js';
@@ -52,6 +53,20 @@ test('clear read deletes only read notifications', () => {
     { type: 'delete', collection: 'notifications', id: 'n2' },
     { type: 'delete', collection: 'notifications', id: 'n3' },
   ]);
+});
+
+test('friend chat read operations update only unread matching message notifications', () => {
+  const operations = createMarkFriendChatNotificationsReadOperations([
+    { id: 'n1', type: 'friend_message', chatId: 'chat-1', read: false },
+    { id: 'n2', type: 'friend_message', chatId: 'chat-1', read: true },
+    { id: 'n3', type: 'friend_message', chatId: 'chat-2', read: false },
+    { id: 'n4', type: 'friend_req', chatId: 'chat-1', read: false },
+  ], 'chat-1');
+
+  assert.deepEqual(operations, [
+    { type: 'update', collection: 'notifications', id: 'n1', data: { read: true } },
+  ]);
+  assert.deepEqual(createMarkFriendChatNotificationsReadOperations([{ id: 'n5', type: 'friend_message', chatId: 'chat-1' }], ''), []);
 });
 
 test('notification center exposes bulk read and clear-read actions', async () => {
@@ -104,4 +119,25 @@ test('notification center actions prevent duplicate submits and expose pending s
   assert.match(app, /pendingNotificationActionKeys\.includes\(`read:\$\{n\.id\}`\)/, 'Notification rows should derive pending state from the notification id');
   assert.match(app, /disabled=\{isNotificationReadPending\}/, 'Notification rows should be disabled while marking read');
   assert.match(app, /aria-busy=\{isNotificationReadPending\}/, 'Notification rows should expose busy state');
+});
+
+test('friend chat opens mark matching message notifications read', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.match(app, /createMarkFriendChatNotificationsReadOperations/, 'App should import the friend chat notification read helper');
+  assert.match(app, /handleReadFriendChatNotifications:\s*async \(chatId\) =>/, 'App should expose a friend-chat notification read action');
+  assert.match(app, /runNotificationAction\(`friend-chat:\$\{chatId\}`/, 'Friend chat notification reads should use the shared pending guard');
+  assert.match(
+    app,
+    /const operations = createMarkFriendChatNotificationsReadOperations\(notifications, chatId\);/,
+    'Friend chat notification reads should resolve against the current notification snapshot',
+  );
+  assert.match(app, /<FriendSystem[\s\S]{0,260}onReadFriendChatNotifications=\{actions\.handleReadFriendChatNotifications\}/, 'App should pass the friend-chat read action into FriendSystem');
+  assert.match(friendSystem, /onReadFriendChatNotifications/, 'FriendSystem should accept the friend-chat read callback');
+  assert.match(
+    friendSystem,
+    /onClick=\{\(\) => \{[\s\S]{0,180}setActiveChatFriend\(f\);[\s\S]{0,180}void onReadFriendChatNotifications\?\.\(f\.id\)/,
+    'FriendSystem should mark the friend chat notifications read when the chat row is opened without blocking navigation',
+  );
 });
