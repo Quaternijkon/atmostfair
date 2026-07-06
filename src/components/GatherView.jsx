@@ -15,6 +15,10 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   const [submitterName, setSubmitterName] = useState(user?.displayName || '');
   const [isSubmittingGather, setIsSubmittingGather] = useState(false);
   const isSubmittingGatherRef = useRef(false);
+  const [isCreatingGatherField, setIsCreatingGatherField] = useState(false);
+  const isCreatingGatherFieldRef = useRef(false);
+  const [pendingGatherFieldIds, setPendingGatherFieldIds] = useState([]);
+  const pendingGatherFieldIdsRef = useRef(new Set());
 
   const mySubmission = submissions.find(s => s.uid === user?.uid);
   const hasSubmitted = !!mySubmission;
@@ -28,12 +32,41 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   const hasOptionValues = newFieldOptions.split(/[,\n，]/).some((option) => option.trim());
   const canCreateField = newField.trim() && (newFieldType !== 'option' || hasOptionValues);
 
-  const handleAddField = (e) => {
+  const handleAddField = async (e) => {
     e.preventDefault();
     if (!canCreateField) return;
-    actions.handleCreateGatherField(project.id, newField.trim(), newFieldType, newFieldOptions);
-    setNewField('');
-    setNewFieldOptions('');
+    if (isCreatingGatherFieldRef.current) return;
+
+    isCreatingGatherFieldRef.current = true;
+    setIsCreatingGatherField(true);
+    try {
+      await actions.handleCreateGatherField(project.id, newField.trim(), newFieldType, newFieldOptions);
+      setNewField('');
+      setNewFieldOptions('');
+    } catch (error) {
+      console.error(error);
+      showToast(t('gatherActionFailed'), 'error');
+    } finally {
+      isCreatingGatherFieldRef.current = false;
+      setIsCreatingGatherField(false);
+    }
+  };
+
+  const handleDeleteField = async (fieldId) => {
+    if (!fieldId) return;
+    if (pendingGatherFieldIdsRef.current.has(fieldId)) return;
+
+    pendingGatherFieldIdsRef.current.add(fieldId);
+    setPendingGatherFieldIds([...pendingGatherFieldIdsRef.current]);
+    try {
+      await actions.handleDeleteGatherField(fieldId);
+    } catch (error) {
+      console.error(error);
+      showToast(t('gatherActionFailed'), 'error');
+    } finally {
+      pendingGatherFieldIdsRef.current.delete(fieldId);
+      setPendingGatherFieldIds([...pendingGatherFieldIdsRef.current]);
+    }
   };
 
   const getFieldTypeLabel = (type) => fieldTypeOptions.find((option) => option.value === type)?.label || t('fieldTypeText');
@@ -157,7 +190,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
             <ClipboardList className="w-5 h-5 text-google-blue" />
             {t('addField')}
           </h3>
-          <form onSubmit={handleAddField} className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+          <form onSubmit={handleAddField} aria-busy={isCreatingGatherField} className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
              <input 
                 type="text" 
                 value={newField} 
@@ -165,19 +198,21 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                 placeholder={t('fieldLabel')}
                 className="app-input flex-1"
                 maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH}
+                disabled={isCreatingGatherField}
              />
              <select
                 value={newFieldType}
                 onChange={(e) => setNewFieldType(e.target.value)}
                 className="app-input"
                 aria-label={t('fieldType')}
+                disabled={isCreatingGatherField}
              >
                 {fieldTypeOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
              </select>
-             <button type="submit" disabled={!canCreateField} className="app-button-primary">
-                <Plus className="w-4 h-4" /> {t('create')}
+             <button type="submit" disabled={isCreatingGatherField || !canCreateField} className="app-button-primary">
+                <Plus className="w-4 h-4" /> {isCreatingGatherField ? t('processing') : t('create')}
              </button>
              {newFieldType === 'option' && (
                <input
@@ -187,25 +222,31 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                  placeholder={t('fieldOptionsPlaceholder')}
                  aria-label={t('fieldOptions')}
                  className="app-input md:col-span-2"
+                 disabled={isCreatingGatherField}
                />
              )}
           </form>
            {/* List of Fields */}
           <div className="flex flex-wrap gap-2">
-              {fields.map(field => (
+              {fields.map(field => {
+                const isFieldDeletePending = pendingGatherFieldIds.includes(field.id);
+                return (
                   <div key={field.id} className="app-chip group">
                       <span className="font-medium text-m3-on-surface">{field.label}</span>
                       <span className="rounded-full bg-m3-surface-container-high px-2 py-0.5 text-[11px] text-m3-on-surface-variant">{getFieldTypeLabel(field.type)}</span>
                       {/* Allow delete */}
                       <button 
-                        onClick={() => actions.handleDeleteGatherField(field.id)}
+                        onClick={() => handleDeleteField(field.id)}
+                        disabled={isFieldDeletePending}
+                        aria-busy={isFieldDeletePending}
                         className="touch-target -my-2 -mr-2 inline-flex items-center justify-center rounded-full text-m3-on-surface-variant hover:text-google-red"
-                        title={t('deleteField')}
+                        title={isFieldDeletePending ? t('processing') : t('deleteField')}
                       >
                           <X className="w-3 h-3" />
                       </button>
                   </div>
-              ))}
+                );
+              })}
               {fields.length === 0 && <span className="text-sm text-m3-on-surface-variant opacity-70 italic">{t('noFields')}</span>}
           </div>
         </div>

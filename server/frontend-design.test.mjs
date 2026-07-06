@@ -400,6 +400,35 @@ test('gather submission form prevents duplicate submits and exposes pending stat
   assert.match(gather, /isSubmittingGather \? t\('processing'\) : t\('submit'\)/, 'Gather submit button should show localized progress copy');
 });
 
+test('gather field management prevents duplicate actions and exposes pending state', async () => {
+  const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.gatherActionFailed, 'missing English gather action failure translation');
+  assert.ok(TRANSLATIONS.zh.gatherActionFailed, 'missing Chinese gather action failure translation');
+
+  assert.match(gather, /isCreatingGatherFieldRef\s*=\s*useRef\(false\)/, 'Gather field creation should use a synchronous submit lock');
+  assert.match(gather, /if \(isCreatingGatherFieldRef\.current\) return;/, 'Gather field creation should ignore duplicate submits before state rerenders');
+  assert.match(gather, /setIsCreatingGatherField\(true\)[\s\S]{0,780}finally[\s\S]{0,220}setIsCreatingGatherField\(false\)/, 'Gather field creation should expose pending state for the whole write');
+  assert.match(gather, /await actions\.handleCreateGatherField\(project\.id, newField\.trim\(\), newFieldType, newFieldOptions\)/, 'Gather field creation should await the write while pending');
+  assert.match(gather, /showToast\(t\('gatherActionFailed'\), 'error'\)/, 'Gather field failures should use localized app feedback');
+  assert.match(gather, /<form onSubmit=\{handleAddField\} aria-busy=\{isCreatingGatherField\}/, 'Gather field creation form should expose pending state to assistive technology');
+  assert.match(gather, /disabled=\{isCreatingGatherField\}/, 'Gather field creation controls should be disabled while creating');
+  assert.match(gather, /disabled=\{isCreatingGatherField \|\| !canCreateField\}/, 'Gather field creation button should be disabled while pending or invalid');
+  assert.match(gather, /isCreatingGatherField \? t\('processing'\) : t\('create'\)/, 'Gather field creation button should show localized progress copy');
+
+  assert.match(gather, /pendingGatherFieldIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Gather field deletion should track pending field ids in a ref');
+  assert.match(gather, /if \(pendingGatherFieldIdsRef\.current\.has\(fieldId\)\) return;/, 'Gather field deletion should ignore duplicate clicks for the same field');
+  assert.match(gather, /pendingGatherFieldIdsRef\.current\.add\(fieldId\)[\s\S]{0,220}setPendingGatherFieldIds\(\[\.\.\.pendingGatherFieldIdsRef\.current\]\)/, 'Gather field deletion should expose pending ids immediately');
+  assert.match(gather, /await actions\.handleDeleteGatherField\(fieldId\)/, 'Gather field deletion should await the write while pending');
+  assert.match(gather, /finally[\s\S]{0,260}pendingGatherFieldIdsRef\.current\.delete\(fieldId\)[\s\S]{0,160}setPendingGatherFieldIds\(\[\.\.\.pendingGatherFieldIdsRef\.current\]\)/, 'Gather field deletion should clear pending state after writes settle');
+  assert.match(gather, /pendingGatherFieldIds\.includes\(field\.id\)/, 'Gather field chips should derive pending state from the field id');
+  assert.match(gather, /disabled=\{isFieldDeletePending\}/, 'Gather field delete buttons should be disabled while deleting');
+  assert.match(gather, /aria-busy=\{isFieldDeletePending\}/, 'Gather field delete buttons should expose busy state');
+  assert.match(gather, /title=\{isFieldDeletePending \? t\('processing'\) : t\('deleteField'\)\}/, 'Gather field delete buttons should expose localized pending copy');
+});
+
 test('voting workspace exposes localized admin vote-mode controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
