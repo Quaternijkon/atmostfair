@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Trophy, Trash2 } from './Icons';
 import { InfoCard } from './InfoCard';
 import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { useUI } from './UIContext';
 
 export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onDelete, onVote, votingConfig, onUpdateVotingConfig, isProjectOwner, projectId, t }) {
+  const { showToast } = useUI();
   const [newItem, setNewItem] = useState('');
   const [myName, setMyName] = useState(user.displayName || '');
+  const [pendingVoteItemIds, setPendingVoteItemIds] = useState([]);
+  const pendingVoteItemIdsRef = useRef(new Set());
   const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
   const hasAdminRights = isProjectOwner || isAdmin;
   const voteMode = votingConfig?.mode === 'single' ? 'single' : 'multiple';
@@ -17,6 +21,24 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const updateVoteMode = (mode) => {
     if (!hasAdminRights || isStopped || mode === voteMode) return;
     onUpdateVotingConfig(projectId, { ...(votingConfig || {}), mode });
+  };
+
+  const handleVote = async (item) => {
+    const itemId = item?.id;
+    if (!itemId || isStopped) return;
+    if (pendingVoteItemIdsRef.current.has(itemId)) return;
+
+    pendingVoteItemIdsRef.current.add(itemId);
+    setPendingVoteItemIds([...pendingVoteItemIdsRef.current]);
+    try {
+      await onVote(item);
+    } catch (error) {
+      console.error(error);
+      showToast(t('voteActionFailed'), 'error');
+    } finally {
+      pendingVoteItemIdsRef.current.delete(itemId);
+      setPendingVoteItemIds([...pendingVoteItemIdsRef.current]);
+    }
   };
 
   return (
@@ -57,6 +79,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
       <div className="space-y-3">
         {sortedItems.map((item, index) => {
           const isVoted = item.votes?.includes(user.uid);
+          const isVotePending = pendingVoteItemIds.includes(item.id);
           const canDelete = !isStopped && (isAdmin || item.creatorId === user.uid || isProjectOwner);
           return (
             <div key={item.id} className={`app-card relative flex items-center justify-between overflow-hidden p-4 ${isVoted ? 'border-google-blue/30 bg-m3-primary-container/30' : ''}`}>
@@ -65,7 +88,16 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
                 <div><h3 className="font-medium text-lg text-m3-on-surface">{item.title}</h3><div className="text-sm text-m3-on-surface-variant">{item.votes?.length || 0} {t('votes')} • {t('addedBy')} {item.creatorName}</div></div>
               </div>
               <div className="flex items-center gap-2 z-10">
-                <button onClick={() => !isStopped && onVote(item)} disabled={isStopped} className={`app-icon-button ${isVoted ? 'border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white' : ''}`}><Trophy className="w-5 h-5" /></button>
+                <button
+                  onClick={() => handleVote(item)}
+                  disabled={isStopped || isVotePending}
+                  aria-busy={isVotePending}
+                  aria-label={isVotePending ? t('processing') : t('voteActionLabel')}
+                  title={isVotePending ? t('processing') : t('voteActionLabel')}
+                  className={`app-icon-button disabled:cursor-not-allowed disabled:opacity-60 ${isVoted ? 'border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white' : ''}`}
+                >
+                  <Trophy className="w-5 h-5" />
+                </button>
                 {canDelete && <button onClick={() => onDelete(item.id)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-5 h-5" /></button>}
               </div>
             </div>

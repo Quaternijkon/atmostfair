@@ -421,6 +421,28 @@ test('voting workspace exposes localized admin vote-mode controls', async () => 
   assert.doesNotMatch(files.voting, />Multiple<|>Single<|>Mode</, 'Voting mode visible copy should be localized');
 });
 
+test('voting item vote actions prevent duplicate toggles and expose pending state', async () => {
+  const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.voteActionFailed, 'missing English vote action failure translation');
+  assert.ok(TRANSLATIONS.zh.voteActionFailed, 'missing Chinese vote action failure translation');
+  assert.ok(TRANSLATIONS.en.voteActionLabel, 'missing English vote action label translation');
+  assert.ok(TRANSLATIONS.zh.voteActionLabel, 'missing Chinese vote action label translation');
+
+  assert.match(voting, /pendingVoteItemIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Voting toggles should track pending item ids in a ref');
+  assert.match(voting, /if \(pendingVoteItemIdsRef\.current\.has\(itemId\)\) return;/, 'Voting toggles should ignore duplicate clicks for the same item');
+  assert.match(voting, /pendingVoteItemIdsRef\.current\.add\(itemId\)[\s\S]{0,220}setPendingVoteItemIds\(\[\.\.\.pendingVoteItemIdsRef\.current\]\)/, 'Voting toggles should expose pending ids immediately');
+  assert.match(voting, /await onVote\(item\)/, 'Voting toggles should await the write while pending');
+  assert.match(voting, /showToast\(t\('voteActionFailed'\), 'error'\)/, 'Voting toggle failures should use localized app feedback');
+  assert.match(voting, /finally[\s\S]{0,260}pendingVoteItemIdsRef\.current\.delete\(itemId\)[\s\S]{0,160}setPendingVoteItemIds\(\[\.\.\.pendingVoteItemIdsRef\.current\]\)/, 'Voting toggles should clear pending state after the write settles');
+  assert.match(voting, /pendingVoteItemIds\.includes\(item\.id\)/, 'Voting rows should derive pending state from the item id');
+  assert.match(voting, /disabled=\{isStopped \|\| isVotePending\}/, 'Voting toggle buttons should be disabled while pending');
+  assert.match(voting, /aria-busy=\{isVotePending\}/, 'Voting toggle buttons should expose busy state');
+  assert.match(voting, /aria-label=\{isVotePending \? t\('processing'\) : t\('voteActionLabel'\)\}/, 'Voting toggle buttons should expose localized pending labels');
+});
+
 test('shared utility surfaces localize visible copy and retain ergonomic controls', async () => {
   const files = {
     detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
