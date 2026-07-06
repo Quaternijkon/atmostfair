@@ -17,6 +17,7 @@ export const PROJECT_CASCADE_COLLECTIONS = [
 
 export const PROJECT_TITLE_MAX_LENGTH = 120;
 export const PROJECT_CREATOR_NAME_MAX_LENGTH = 60;
+export const PROJECT_PASSWORD_MAX_LENGTH = 128;
 export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 
@@ -957,13 +958,15 @@ export function createProjectBriefPatch(project, user, isAdmin, brief, updatedAt
 export function createProjectCreateData(title, type, user, creatorName, password, createdAt) {
   if (!user?.uid || !PROJECT_TYPES.has(type)) return null;
   const cleanTitle = String(title || '').trim();
+  const cleanPassword = String(password || '').trim();
   if (!cleanTitle || cleanTitle.length > PROJECT_TITLE_MAX_LENGTH) return null;
+  if (cleanPassword.length > PROJECT_PASSWORD_MAX_LENGTH) return null;
   return {
     title: cleanTitle,
     type,
     creatorId: user.uid,
     creatorName: cleanName(creatorName, user),
-    password: String(password || '').trim(),
+    password: cleanPassword,
     status: 'active',
     createdAt,
     winners: [],

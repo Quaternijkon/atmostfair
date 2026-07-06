@@ -275,10 +275,19 @@ test('dashboard create form blocks whitespace and overlong project titles before
   const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
 
   assert.match(dashboard, /PROJECT_TITLE_MAX_LENGTH/, 'Dashboard should share the project title limit with the domain helper');
-  assert.match(dashboard, /const canCreateProject = Boolean\(selectedModule && newTitle\.trim\(\) && newTitle\.length <= PROJECT_TITLE_MAX_LENGTH\)/, 'Dashboard should derive a stable create-enabled state');
+  assert.match(dashboard, /const canCreateProject = Boolean\([\s\S]{0,180}newTitle\.length <= PROJECT_TITLE_MAX_LENGTH[\s\S]{0,180}newPassword\.trim\(\)\.length <= PROJECT_PASSWORD_MAX_LENGTH[\s\S]{0,120}\)/, 'Dashboard should derive a stable create-enabled state');
   assert.match(dashboard, /if \(!canCreateProject \|\| isCreatingProject\) return;/, 'Dashboard should keep the create form open when input is invalid or already submitting');
   assert.match(dashboard, /maxLength=\{PROJECT_TITLE_MAX_LENGTH\}/, 'Dashboard title input should enforce the same max length in the UI');
   assert.match(dashboard, /disabled=\{!canCreateProject \|\| isCreatingProject\}/, 'Dashboard create button should be disabled until the project shell is valid and idle');
+});
+
+test('dashboard create form caps optional project passwords with the shared project limit', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.match(dashboard, /PROJECT_PASSWORD_MAX_LENGTH/, 'Dashboard should share the project password limit with the project domain');
+  assert.match(dashboard, /const normalizeProjectPasswordInput = \(value\) => String\(value \|\| ''\)\.slice\(0, PROJECT_PASSWORD_MAX_LENGTH\)/, 'Dashboard should cap pasted project passwords before submit');
+  assert.match(dashboard, /maxLength=\{PROJECT_PASSWORD_MAX_LENGTH\}/, 'Project password input should cap text before submit');
+  assert.match(dashboard, /setNewPassword\(normalizeProjectPasswordInput\(e\.target\.value\)\)/, 'Project password edits should use the shared input cap');
 });
 
 test('dashboard create flow prevents duplicate submissions and preserves drafts on failure', async () => {

@@ -18,6 +18,7 @@ import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messag
 import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
 import {
   PROJECT_CREATOR_NAME_MAX_LENGTH,
+  PROJECT_PASSWORD_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
   createGameRoomCreateData,
@@ -1625,7 +1626,7 @@ async function getProjectAccessLifecycleChange({ store, context, type, id, data,
   if (type === 'delete') return { projectId: id, revoke: true };
   if (type !== 'set' && type !== 'update') return null;
 
-  const beforePassword = normalizeProjectPassword(existing.password);
+  const beforePassword = normalizeProjectPassword(existing.password, { rejectOverlong: false });
   const afterPassword = getProjectPasswordAfterWrite({ type, existing, data, options });
   if (beforePassword === afterPassword) return null;
   return { projectId: id, revoke: true };
@@ -1635,18 +1636,22 @@ function getProjectPasswordAfterWrite({ type, existing, data, options }) {
   if (type === 'update') {
     return Object.hasOwn(data || {}, 'password')
       ? normalizeProjectPassword(data.password)
-      : normalizeProjectPassword(existing?.password);
+      : normalizeProjectPassword(existing?.password, { rejectOverlong: false });
   }
 
   if (type === 'set' && options?.merge && !Object.hasOwn(data || {}, 'password')) {
-    return normalizeProjectPassword(existing?.password);
+    return normalizeProjectPassword(existing?.password, { rejectOverlong: false });
   }
 
   return normalizeProjectPassword(data?.password);
 }
 
-function normalizeProjectPassword(password) {
-  return String(password || '').trim();
+function normalizeProjectPassword(password, { rejectOverlong = true } = {}) {
+  const cleanPassword = String(password || '').trim();
+  if (rejectOverlong && cleanPassword.length > PROJECT_PASSWORD_MAX_LENGTH) {
+    throwDataError(400, 'data/invalid-project-password', 'Project password is too long.');
+  }
+  return cleanPassword;
 }
 
 async function applyProjectAccessLifecycleChanges({ store, changes }) {
@@ -2072,7 +2077,7 @@ async function normalizeProjectCreateData({ store, data, user }) {
     }),
     creatorId: user.uid,
     creatorName: cleanUserProvidedName(projectData.creatorName, user),
-    password: String(password || '').trim(),
+    password: normalizeProjectPassword(password),
   };
 }
 
@@ -2105,6 +2110,10 @@ function normalizeProjectStateData({ data, existing, type }) {
 
   if (Object.hasOwn(normalized, 'archived') && normalized.archived === false) {
     normalized.archivedAt = null;
+  }
+
+  if (Object.hasOwn(normalized, 'password')) {
+    normalized.password = normalizeProjectPassword(normalized.password);
   }
 
   normalizeProjectConfigData(normalized);

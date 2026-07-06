@@ -14,7 +14,7 @@ import {
   normalizeRecentProjectIds,
 } from '../lib/dashboardDomain';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
-import { PROJECT_CREATOR_NAME_MAX_LENGTH, PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
+import { PROJECT_CREATOR_NAME_MAX_LENGTH, PROJECT_PASSWORD_MAX_LENGTH, PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
   return (
@@ -33,6 +33,7 @@ const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
 const DASHBOARD_TAB_IDS = ['collect', 'connect', 'select', 'project'];
 const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
 const normalizeCreatorNameInput = (value) => String(value || '').slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
+const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
 export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
@@ -137,7 +138,12 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const createTitleError = selectedModule && (isTitleTouched || newTitle.length > 0) && !newTitle.trim()
     ? t('projectTitleRequired')
     : '';
-  const canCreateProject = Boolean(selectedModule && newTitle.trim() && newTitle.length <= PROJECT_TITLE_MAX_LENGTH);
+  const canCreateProject = Boolean(
+    selectedModule
+    && newTitle.trim()
+    && newTitle.length <= PROJECT_TITLE_MAX_LENGTH
+    && newPassword.trim().length <= PROJECT_PASSWORD_MAX_LENGTH
+  );
   const handleClearFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
@@ -487,7 +493,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                   <div className="flex-1 w-full">
                     <label className="app-label">{t('accessPass')}</label>
-                    <input type="text" placeholder={t('leaveEmpty')} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="app-input" disabled={isCreatingProject} />
+                    <input type="text" placeholder={t('leaveEmpty')} value={newPassword} onChange={e => setNewPassword(normalizeProjectPasswordInput(e.target.value))} className="app-input" maxLength={PROJECT_PASSWORD_MAX_LENGTH} disabled={isCreatingProject} />
                   </div>
                   <button type="submit" disabled={!canCreateProject || isCreatingProject} className={`app-button w-full px-8 text-white hover:shadow-elevation-2 disabled:cursor-not-allowed disabled:opacity-45 md:w-auto ${currentCategory.bg}`}>
                     {isCreatingProject ? t('processing') : t('createBtn', { label: selectedModule.label })}

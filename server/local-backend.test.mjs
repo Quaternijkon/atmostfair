@@ -12,6 +12,7 @@ import { AUTH_EMAIL_MAX_LENGTH, AUTH_PASSWORD_MAX_LENGTH } from '../src/lib/auth
 import {
   PROJECT_CASCADE_COLLECTIONS,
   PROJECT_CREATOR_NAME_MAX_LENGTH,
+  PROJECT_PASSWORD_MAX_LENGTH,
   createProjectCascadeDeleteOperations,
 } from '../src/lib/projectDomain.js';
 import { USER_DISPLAY_NAME_MAX_LENGTH } from '../src/lib/userDomain.js';
@@ -483,12 +484,24 @@ test('HTTP data API rejects invalid project state metadata and config payloads w
       assert.equal(invalidCreate.body.error.code, 'data/invalid-project-status');
       assert.deepEqual(await store.list('projects'), []);
 
+      const overlongPasswordCreate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Locked', password: 'P'.repeat(PROJECT_PASSWORD_MAX_LENGTH + 1), createdAt: 2 },
+        },
+      });
+      assert.equal(overlongPasswordCreate.status, 400);
+      assert.equal(overlongPasswordCreate.body.error.code, 'data/invalid-project-password');
+      assert.equal((await store.list('projects')).some((entry) => entry.title === 'Locked'), false);
+
       const project = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: owner.token,
         body: {
           collection: 'projects',
-          data: { title: 'Valid', status: 'active', createdAt: 2 },
+          data: { title: 'Valid', status: 'active', password: 'short-secret', createdAt: 3 },
         },
       });
 
@@ -517,6 +530,31 @@ test('HTTP data API rejects invalid project state metadata and config payloads w
       assert.equal(invalidArchiveUpdate.status, 400);
       assert.equal(invalidArchiveUpdate.body.error.code, 'data/invalid-project-archive');
       assert.equal((await store.get('projects', project.doc.id)).archived, false);
+
+      const overlongPasswordUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { password: 'P'.repeat(PROJECT_PASSWORD_MAX_LENGTH + 1) },
+        },
+      });
+      assert.equal(overlongPasswordUpdate.status, 400);
+      assert.equal(overlongPasswordUpdate.body.error.code, 'data/invalid-project-password');
+      assert.equal((await store.get('projects', project.doc.id)).password, 'short-secret');
+
+      const spacedPasswordUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { password: '  updated-secret  ' },
+        },
+      });
+      assert.equal(spacedPasswordUpdate.doc.hasPassword, true);
+      assert.equal((await store.get('projects', project.doc.id)).password, 'updated-secret');
 
       const invalidConfigCreate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
