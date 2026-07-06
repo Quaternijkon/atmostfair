@@ -86,6 +86,25 @@ test('core pages use the shared app interaction primitives', async () => {
   }
 });
 
+test('global account actions prevent duplicate submits and expose pending state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.logout, 'missing English logout translation');
+  assert.ok(TRANSLATIONS.zh.logout, 'missing Chinese logout translation');
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+
+  assert.match(app, /isSigningOutRef\s*=\s*useRef\(false\)/, 'Sign-out should use a synchronous action lock');
+  assert.match(app, /if \(isSigningOutRef\.current\) return;/, 'Sign-out should ignore duplicate clicks before state rerenders');
+  assert.match(app, /isSigningOutRef\.current\s*=\s*true[\s\S]{0,220}setIsSigningOut\(true\)/, 'Sign-out should expose pending state immediately');
+  assert.match(app, /await signOut\(auth\)/, 'Sign-out should await the auth write while pending');
+  assert.match(app, /finally[\s\S]{0,220}isSigningOutRef\.current\s*=\s*false[\s\S]{0,160}setIsSigningOut\(false\)/, 'Sign-out should clear pending state when the operation settles');
+  assert.match(app, /onClick=\{handleSignOut\}/, 'Logout button should use the guarded sign-out handler');
+  assert.match(app, /disabled=\{isSigningOut\}/, 'Logout button should be disabled while signing out');
+  assert.match(app, /aria-busy=\{isSigningOut\}/, 'Logout button should expose busy state');
+  assert.match(app, /title=\{isSigningOut \? t\('processing'\) : t\('logout'\)\}/, 'Logout button should expose localized pending copy');
+});
+
 test('project surfaces stay compact and keyboard ergonomic', async () => {
   const files = {
     dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),

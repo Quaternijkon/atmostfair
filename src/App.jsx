@@ -101,6 +101,8 @@ function AppContent() {
   const ADMIN_EMAILS = ['quaternijkon@mail.ustc.edu.cn'];
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const isSigningOutRef = useRef(false);
   const [showAdmin, setShowAdmin] = useState(false);
 
   const isAdmin = user && (ADMIN_EMAILS.includes(user.email) || ADMIN_EMAILS.length === 0);
@@ -137,6 +139,19 @@ function AppContent() {
     if (isProjectWritable(projectId)) return true;
     showToast(t('projectReadOnly'), 'info');
     return false;
+  };
+
+  const handleSignOut = async () => {
+    if (isSigningOutRef.current) return;
+
+    isSigningOutRef.current = true;
+    setIsSigningOut(true);
+    try {
+      await signOut(auth);
+    } finally {
+      isSigningOutRef.current = false;
+      setIsSigningOut(false);
+    }
   };
 
   const loadProjectCascadeDocs = async (projectId) => {
@@ -738,7 +753,15 @@ function AppContent() {
                   </button>
                 )}
                 <div className="hidden max-w-[180px] truncate text-sm text-m3-on-surface-variant md:block">{t('hello')}, {user.displayName || user.email || t('guestName')}</div>
-                <button onClick={() => signOut(auth)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={t('logout')}><LogOut className="w-5 h-5" /></button>
+                <button
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  aria-busy={isSigningOut}
+                  className="app-icon-button hover:bg-google-red/10 hover:text-google-red"
+                  title={isSigningOut ? t('processing') : t('logout')}
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
                 </div>
               </div>
             </nav>
