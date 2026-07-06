@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { CalendarClock, CheckSquare, X, ChartLine, Lock } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
@@ -36,6 +36,8 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   // User Submission State
   const mySubmission = submissions.find(s => s.uid === user?.uid);
   const [myAvailability, setMyAvailability] = useState(mySubmission?.availability || []); // Array depends on mode
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+  const isSubmittingScheduleRef = useRef(false);
 
   // Helper: Date Range Generator
   const dates = useMemo(() => {
@@ -58,8 +60,20 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
     actions.handleUpdateScheduleConfig(project.id, scheduleConfig);
   };
 
-  const handleSubmit = () => {
-      actions.handleSubmitSchedule(project.id, myAvailability);
+  const handleSubmit = async () => {
+      if (isSubmittingScheduleRef.current) return;
+
+      isSubmittingScheduleRef.current = true;
+      setIsSubmittingSchedule(true);
+      try {
+          await actions.handleSubmitSchedule(project.id, myAvailability);
+      } catch (error) {
+          console.error(error);
+          showToast(t('scheduleSubmitFailed'), 'error');
+      } finally {
+          isSubmittingScheduleRef.current = false;
+          setIsSubmittingSchedule(false);
+      }
   };
 
   const toggleDate = (date) => {
@@ -262,7 +276,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                    
                    return (
                        <button key={date} 
-                          disabled={viewHeatmap}
+                          disabled={viewHeatmap || isSubmittingSchedule}
                           onClick={() => toggleDate(date)}
                           className={`
                              state-layer aspect-square rounded-2xl flex flex-col items-center justify-center text-sm transition-all relative touch-target
@@ -304,7 +318,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                                     return (
                                         <td key={key} className="p-1">
                                             <button 
-                                                disabled={viewHeatmap}
+                                                disabled={viewHeatmap || isSubmittingSchedule}
                                                 onClick={() => toggleHalfDay(d, slot)}
                                                 className={`state-layer flex h-12 w-full items-center justify-center rounded-xl transition-all
                                                     ${viewHeatmap ? '' : isSelected ? 'bg-google-green text-white' : 'bg-m3-surface hover:bg-m3-surface-container-high'}`}
@@ -363,18 +377,19 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                                   value={range.date} 
                                   onChange={e => updateTimeRange(range.id, 'date', e.target.value)}
                                   className="app-input w-auto min-w-[9rem] border-transparent bg-transparent text-sm font-medium"
+                                  disabled={isSubmittingSchedule}
                                >
                                    {dates.map(d => <option key={d} value={d}>{d}</option>)}
                                </select>
-                               <input type="time" value={range.start} onChange={e => updateTimeRange(range.id, 'start', e.target.value)} className="app-input w-auto px-3 py-2 text-sm" />
+                               <input type="time" value={range.start} onChange={e => updateTimeRange(range.id, 'start', e.target.value)} disabled={isSubmittingSchedule} className="app-input w-auto px-3 py-2 text-sm" />
                                <span className="text-m3-on-surface-variant">-</span>
-                               <input type="time" value={range.end} onChange={e => updateTimeRange(range.id, 'end', e.target.value)} className="app-input w-auto px-3 py-2 text-sm" />
-                               <button onClick={() => removeTimeRange(range.id)} className="app-icon-button ml-auto hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>
+                               <input type="time" value={range.end} onChange={e => updateTimeRange(range.id, 'end', e.target.value)} disabled={isSubmittingSchedule} className="app-input w-auto px-3 py-2 text-sm" />
+                               <button onClick={() => removeTimeRange(range.id)} disabled={isSubmittingSchedule} className="app-icon-button ml-auto hover:bg-google-red/10 hover:text-google-red"><X className="w-4 h-4" /></button>
                            </div> 
                         ))}
                         <div className="flex gap-2 justify-center mt-4">
                             {dates.map(d => (
-                                    <button key={d} onClick={() => addTimeRange(d)} className="app-button-quiet border border-m3-outline-variant px-3 text-xs">
+                                    <button key={d} onClick={() => addTimeRange(d)} disabled={isSubmittingSchedule} className="app-button-quiet border border-m3-outline-variant px-3 text-xs">
                                         + {formatDate(d, { weekday:'short' })}
                                     </button>
                             ))}
@@ -392,8 +407,8 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                          <Lock className="w-4 h-4" /> {t('deadlinePassed')}
                      </div>
                 ) : (
-                    <button onClick={handleSubmit} className="app-button bg-google-green px-6 text-gray-900 hover:shadow-elevation-2">
-                        {mySubmission ? t('update') : t('submit')}
+                    <button onClick={handleSubmit} disabled={isSubmittingSchedule} aria-busy={isSubmittingSchedule} className="app-button bg-google-green px-6 text-gray-900 hover:shadow-elevation-2">
+                        {isSubmittingSchedule ? t('processing') : (mySubmission ? t('update') : t('submit'))}
                     </button>
                 )}
             </div>

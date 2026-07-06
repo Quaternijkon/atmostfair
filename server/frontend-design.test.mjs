@@ -654,6 +654,25 @@ test('booking owner slot toggles prevent duplicate writes without blocking batch
   assert.match(booking, /isSlotTogglePending[\s\S]{0,180}t\('processing'\)/, 'Pending slot controls should show localized progress copy');
 });
 
+test('schedule availability submissions prevent duplicate submits and expose pending state', async () => {
+  const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.scheduleSubmitFailed, 'missing English schedule submit failure translation');
+  assert.ok(TRANSLATIONS.zh.scheduleSubmitFailed, 'missing Chinese schedule submit failure translation');
+
+  assert.match(schedule, /isSubmittingScheduleRef\s*=\s*useRef\(false\)/, 'Schedule submit should use a synchronous action lock');
+  assert.match(schedule, /if \(isSubmittingScheduleRef\.current\) return;/, 'Schedule submit should ignore duplicate clicks before state rerenders');
+  assert.match(schedule, /setIsSubmittingSchedule\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsSubmittingSchedule\(false\)/, 'Schedule submit should expose pending state for the whole write');
+  assert.match(schedule, /await actions\.handleSubmitSchedule\(project\.id, myAvailability\)/, 'Schedule submit should await the write while pending');
+  assert.match(schedule, /showToast\(t\('scheduleSubmitFailed'\), 'error'\)/, 'Schedule submit failures should use localized app feedback');
+  assert.match(schedule, /disabled=\{viewHeatmap \|\| isSubmittingSchedule\}/, 'Schedule date controls should be disabled while submitting');
+  assert.match(schedule, /disabled=\{isSubmittingSchedule\}/, 'Schedule time controls and submit button should be disabled while submitting');
+  assert.match(schedule, /aria-busy=\{isSubmittingSchedule\}/, 'Schedule submit button should expose busy state to assistive technology');
+  assert.match(schedule, /isSubmittingSchedule \? t\('processing'\) : \(mySubmission \? t\('update'\) : t\('submit'\)\)/, 'Schedule submit button should show localized progress copy');
+});
+
 test('claim workspace actions prevent duplicate submits and expose pending state', async () => {
   const claim = await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8');
 
