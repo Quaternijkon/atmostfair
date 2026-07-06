@@ -6,6 +6,8 @@ import { useUI } from './UIContext';
 export default function QueueView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const [joinName, setJoinName] = useState(user.displayName || '');
   const [joinValue, setJoinValue] = useState(() => Math.floor(Math.random() * 101));
+  const [isJoiningQueue, setIsJoiningQueue] = useState(false);
+  const isJoiningQueueRef = useRef(false);
   const [isGeneratingQueue, setIsGeneratingQueue] = useState(false);
   const isGeneratingQueueRef = useRef(false);
   const { confirm, showToast } = useUI();
@@ -19,6 +21,22 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
   const myParticipant = participants.find((p) => p.uid === user?.uid);
   const count = participants.length;
   const queueAuditSteps = project.queueResult?.steps || [];
+
+  const handleJoinQueue = async () => {
+    if (isJoiningQueueRef.current) return;
+
+    isJoiningQueueRef.current = true;
+    setIsJoiningQueue(true);
+    try {
+      await actions.handleJoinQueue(project.id, joinName, joinValue);
+    } catch (error) {
+      console.error(error);
+      showToast(t('participantJoinFailed'), 'error');
+    } finally {
+      isJoiningQueueRef.current = false;
+      setIsJoiningQueue(false);
+    }
+  };
 
   const generateQueue = async () => {
     if (isGeneratingQueueRef.current) return;
@@ -126,18 +144,18 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
              <div className="grid md:grid-cols-2 gap-6">
                  <div>
                     <label className="app-label">{t('yourNamePlaceholder')}</label>
-                    <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} className="app-input" placeholder={t('yourNamePlaceholder')} />
+                    <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} disabled={isJoiningQueue} className="app-input" placeholder={t('yourNamePlaceholder')} />
                  </div>
                  <div>
                      <div className="flex justify-between mb-1">
                         <label className="text-sm font-medium text-m3-on-surface-variant">{t('queueNumber')}</label>
                         <span className="font-mono text-google-yellow">{joinValue}</span>
                      </div>
-                     <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} className="w-full accent-google-yellow" />
+                     <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} disabled={isJoiningQueue} className="w-full accent-google-yellow" />
                  </div>
              </div>
-             <button onClick={() => actions.handleJoinQueue(project.id, joinName, joinValue)} className="app-button mt-6 w-full bg-google-yellow text-gray-900 hover:shadow-elevation-1">
-                {t('submitEntry')}
+             <button onClick={handleJoinQueue} disabled={isJoiningQueue} aria-busy={isJoiningQueue} className="app-button mt-6 w-full bg-google-yellow text-gray-900 hover:shadow-elevation-1">
+                {isJoiningQueue ? t('processing') : t('submitEntry')}
              </button>
          </div>
       )}

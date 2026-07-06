@@ -554,6 +554,36 @@ test('queue and roulette result actions prevent duplicate submits and expose pen
   assert.match(files.roulette, /isDrawingRoulette \? t\('processing'\) : t\('rStartDraw'\)/, 'Roulette draw buttons should show localized progress copy');
 });
 
+test('queue and roulette join actions prevent duplicate submits and expose pending state', async () => {
+  const files = {
+    queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),
+    roulette: await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8'),
+  };
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.participantJoinFailed, 'missing English participant join failure translation');
+  assert.ok(TRANSLATIONS.zh.participantJoinFailed, 'missing Chinese participant join failure translation');
+
+  assert.match(files.queue, /isJoiningQueueRef\s*=\s*useRef\(false\)/, 'Queue joins should use a synchronous action lock');
+  assert.match(files.queue, /if \(isJoiningQueueRef\.current\) return;/, 'Queue joins should ignore duplicate clicks before state rerenders');
+  assert.match(files.queue, /setIsJoiningQueue\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsJoiningQueue\(false\)/, 'Queue joins should expose pending state for the whole write');
+  assert.match(files.queue, /await actions\.handleJoinQueue\(project\.id, joinName, joinValue\)/, 'Queue join should await the write while pending');
+  assert.match(files.queue, /showToast\(t\('participantJoinFailed'\), 'error'\)/, 'Queue join failures should use localized app feedback');
+  assert.match(files.queue, /disabled=\{isJoiningQueue\}/, 'Queue join controls should be disabled while joining');
+  assert.match(files.queue, /aria-busy=\{isJoiningQueue\}/, 'Queue join button should expose pending state to assistive technology');
+  assert.match(files.queue, /isJoiningQueue \? t\('processing'\) : t\('submitEntry'\)/, 'Queue join button should show localized progress copy');
+
+  assert.match(files.roulette, /isJoiningRouletteRef\s*=\s*useRef\(false\)/, 'Roulette joins should use a synchronous action lock');
+  assert.match(files.roulette, /if \(isJoiningRouletteRef\.current\) return;/, 'Roulette joins should ignore duplicate clicks before state rerenders');
+  assert.match(files.roulette, /setIsJoiningRoulette\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsJoiningRoulette\(false\)/, 'Roulette joins should expose pending state for the whole write');
+  assert.match(files.roulette, /await actions\.handleJoinRoulette\(project\.id, joinName, joinValue\)/, 'Roulette join should await the write while pending');
+  assert.match(files.roulette, /showToast\(t\('participantJoinFailed'\), 'error'\)/, 'Roulette join failures should use localized app feedback');
+  assert.match(files.roulette, /disabled=\{isJoiningRoulette\}/, 'Roulette join controls should be disabled while joining');
+  assert.match(files.roulette, /aria-busy=\{isJoiningRoulette\}/, 'Roulette join button should expose pending state to assistive technology');
+  assert.match(files.roulette, /isJoiningRoulette \? t\('processing'\) : t\('submitEntry'\)/, 'Roulette join button should show localized progress copy');
+});
+
 test('booking workspace exposes localized waitlist states for full slots', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

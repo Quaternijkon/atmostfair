@@ -43,6 +43,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   // -- Local User State --
   const [joinName, setJoinName] = useState(user.displayName || '');
   const [joinValue, setJoinValue] = useState(50);
+  const [isJoiningRoulette, setIsJoiningRoulette] = useState(false);
+  const isJoiningRouletteRef = useRef(false);
   const [isDrawingRoulette, setIsDrawingRoulette] = useState(false);
   const isDrawingRouletteRef = useRef(false);
   
@@ -63,6 +65,21 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   const hasJoined = useMemo(() => user && participants.some(p => p.uid === user.uid), [participants, user]);
   
   // -- Logic Helpers --
+  const handleJoinRoulette = async () => {
+      if (isJoiningRouletteRef.current) return;
+
+      isJoiningRouletteRef.current = true;
+      setIsJoiningRoulette(true);
+      try {
+          await actions.handleJoinRoulette(project.id, joinName, joinValue);
+      } catch (error) {
+          console.error(error);
+          showToast(t('participantJoinFailed'), 'error');
+      } finally {
+          isJoiningRouletteRef.current = false;
+          setIsJoiningRoulette(false);
+      }
+  };
   
   // Calculate simulation steps and final results
   const simulationData = useMemo(() => {
@@ -539,12 +556,12 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                 <div className="flex-1 w-full">
                   <h3 className="font-medium text-2xl text-m3-on-surface mb-2">{t('joinToPlay')}</h3>
                   <p className="text-m3-on-surface-variant text-sm mb-6">{t('rouletteCannotChange')} <span className="text-google-red font-bold">{t('cannotBeChanged')}</span>.</p>
-                  <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} placeholder={t('entryNamePlaceholder')} className="app-input" />
+                  <input type="text" value={joinName} onChange={e => setJoinName(e.target.value)} disabled={isJoiningRoulette} placeholder={t('entryNamePlaceholder')} className="app-input" />
                 </div>
                 <div className="app-card-quiet w-full p-6 md:w-1/2">
                   <div className="flex justify-between items-center mb-6"><label className="font-medium text-m3-on-surface-variant">{t('valueLabel')}</label><span className="text-4xl font-normal text-google-yellow">{joinValue}</span></div>
-                  <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} className="w-full h-2 bg-m3-outline-variant rounded-lg appearance-none cursor-pointer accent-google-yellow" />
-                  <button onClick={() => actions.handleJoinRoulette(project.id, joinName, joinValue)} className="app-button mt-8 w-full bg-google-yellow text-lg text-gray-900 hover:shadow-elevation-1">{t('submitEntry')}</button>
+                  <input type="range" min="0" max="100" value={joinValue} onChange={e => setJoinValue(parseInt(e.target.value))} disabled={isJoiningRoulette} className="w-full h-2 bg-m3-outline-variant rounded-lg appearance-none cursor-pointer accent-google-yellow" />
+                  <button onClick={handleJoinRoulette} disabled={isJoiningRoulette} aria-busy={isJoiningRoulette} className="app-button mt-8 w-full bg-google-yellow text-lg text-gray-900 hover:shadow-elevation-1">{isJoiningRoulette ? t('processing') : t('submitEntry')}</button>
                 </div>
               </div>
              )}
