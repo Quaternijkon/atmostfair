@@ -1478,6 +1478,25 @@ test('announcement read tracking happens from explicit open actions instead of r
   );
 });
 
+test('announcement system exposes a recoverable load error state', async () => {
+  const announcements = await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.announcementsLoadFailed, 'missing English announcement load failure translation');
+  assert.ok(TRANSLATIONS.zh.announcementsLoadFailed, 'missing Chinese announcement load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(announcements, /announcementsLoadError/, 'Announcement launcher should track subscription failures');
+  assert.match(announcements, /announcementsReloadKey/, 'Announcement retry should recreate the subscription');
+  assert.match(announcements, /setAnnouncementsLoadError\(false\)/, 'Successful announcement snapshots should clear the load error');
+  assert.match(announcements, /onSnapshot\(\s*q,[\s\S]{0,800}\(error\)\s*=>\s*\{[\s\S]{0,240}setAnnouncementsLoadError\(true\)/, 'Announcement subscription failures should set a recoverable error state');
+  assert.match(announcements, /announcementsLoadFailed/, 'Announcement load failure copy should be rendered');
+  assert.match(announcements, /role="alert"/, 'Announcement load failures should be announced to assistive technology');
+  assert.match(announcements, /t\('chatRetry'\)/, 'Announcement retry button should use localized copy');
+  assert.match(announcements, /RotateCcw/, 'Announcement retry action should use the shared retry icon');
+  assert.match(announcements, /announcements\.length === 0 && !announcementsLoadError/, 'Announcement launcher should remain visible when the subscription fails');
+});
+
 test('announcement lifecycle management is visible and time-window aware', async () => {
   const files = {
     announcements: await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8'),
