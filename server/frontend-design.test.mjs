@@ -509,6 +509,26 @@ test('voting item creation prevents duplicate submits and exposes pending state'
   assert.match(voting, /isAddingVoteItem \? t\('processing'\) : t\('add'\)/, 'Voting item create button should show localized progress copy');
 });
 
+test('voting item deletion prevents duplicate submits and exposes pending state', async () => {
+  const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.voteActionFailed, 'missing English vote action failure translation');
+  assert.ok(TRANSLATIONS.zh.voteActionFailed, 'missing Chinese vote action failure translation');
+
+  assert.match(voting, /pendingDeleteVoteItemIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Voting deletes should track pending item ids in a ref');
+  assert.match(voting, /if \(pendingDeleteVoteItemIdsRef\.current\.has\(itemId\)\) return;/, 'Voting deletes should ignore duplicate clicks for the same item');
+  assert.match(voting, /pendingDeleteVoteItemIdsRef\.current\.add\(itemId\)[\s\S]{0,220}setPendingDeleteVoteItemIds\(\[\.\.\.pendingDeleteVoteItemIdsRef\.current\]\)/, 'Voting deletes should expose pending ids immediately');
+  assert.match(voting, /await onDelete\(itemId\)/, 'Voting deletes should await the write while pending');
+  assert.match(voting, /showToast\(t\('voteActionFailed'\), 'error'\)/, 'Voting delete failures should use localized app feedback');
+  assert.match(voting, /finally[\s\S]{0,260}pendingDeleteVoteItemIdsRef\.current\.delete\(itemId\)[\s\S]{0,160}setPendingDeleteVoteItemIds\(\[\.\.\.pendingDeleteVoteItemIdsRef\.current\]\)/, 'Voting deletes should clear pending state after writes settle');
+  assert.match(voting, /pendingDeleteVoteItemIds\.includes\(item\.id\)/, 'Voting rows should derive delete pending state from the item id');
+  assert.match(voting, /disabled=\{isDeletePending\}/, 'Voting delete buttons should be disabled while deleting');
+  assert.match(voting, /aria-busy=\{isDeletePending\}/, 'Voting delete buttons should expose busy state');
+  assert.match(voting, /title=\{isDeletePending \? t\('processing'\) : t\('delete'\)\}/, 'Voting delete buttons should expose localized pending copy');
+});
+
 test('shared utility surfaces localize visible copy and retain ergonomic controls', async () => {
   const files = {
     detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),

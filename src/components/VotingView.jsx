@@ -12,6 +12,8 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const isAddingVoteItemRef = useRef(false);
   const [pendingVoteItemIds, setPendingVoteItemIds] = useState([]);
   const pendingVoteItemIdsRef = useRef(new Set());
+  const [pendingDeleteVoteItemIds, setPendingDeleteVoteItemIds] = useState([]);
+  const pendingDeleteVoteItemIdsRef = useRef(new Set());
   const [isUpdatingVoteMode, setIsUpdatingVoteMode] = useState(false);
   const isUpdatingVoteModeRef = useRef(false);
   const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
@@ -76,6 +78,23 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
     }
   };
 
+  const handleDeleteItem = async (itemId) => {
+    if (!itemId || isStopped) return;
+    if (pendingDeleteVoteItemIdsRef.current.has(itemId)) return;
+
+    pendingDeleteVoteItemIdsRef.current.add(itemId);
+    setPendingDeleteVoteItemIds([...pendingDeleteVoteItemIdsRef.current]);
+    try {
+      await onDelete(itemId);
+    } catch (error) {
+      console.error(error);
+      showToast(t('voteActionFailed'), 'error');
+    } finally {
+      pendingDeleteVoteItemIdsRef.current.delete(itemId);
+      setPendingDeleteVoteItemIds([...pendingDeleteVoteItemIdsRef.current]);
+    }
+  };
+
   return (
     <div>
       {hasAdminRights && (
@@ -116,6 +135,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
         {sortedItems.map((item, index) => {
           const isVoted = item.votes?.includes(user.uid);
           const isVotePending = pendingVoteItemIds.includes(item.id);
+          const isDeletePending = pendingDeleteVoteItemIds.includes(item.id);
           const canDelete = !isStopped && (isAdmin || item.creatorId === user.uid || isProjectOwner);
           return (
             <div key={item.id} className={`app-card relative flex items-center justify-between overflow-hidden p-4 ${isVoted ? 'border-google-blue/30 bg-m3-primary-container/30' : ''}`}>
@@ -134,7 +154,17 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
                 >
                   <Trophy className="w-5 h-5" />
                 </button>
-                {canDelete && <button onClick={() => onDelete(item.id)} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-5 h-5" /></button>}
+                {canDelete && (
+                  <button
+                    onClick={() => handleDeleteItem(item.id)}
+                    disabled={isDeletePending}
+                    aria-busy={isDeletePending}
+                    title={isDeletePending ? t('processing') : t('delete')}
+                    className="app-icon-button hover:bg-google-red/10 hover:text-google-red disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
               </div>
             </div>
           );
