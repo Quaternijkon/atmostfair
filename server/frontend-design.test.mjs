@@ -804,6 +804,28 @@ test('booking workspace exposes localized waitlist states for full slots', async
   assert.doesNotMatch(files.booking, />Join waitlist<|>Leave waitlist<|>Waitlisted<|waitlist:/i, 'Booking waitlist visible copy should be localized');
 });
 
+test('booking waitlist toggles prevent duplicate submits and expose pending state', async () => {
+  const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.bookingFailed, 'missing English booking failure translation');
+  assert.ok(TRANSLATIONS.zh.bookingFailed, 'missing Chinese booking failure translation');
+
+  assert.match(booking, /\[pendingWaitlistSlotIds,\s*setPendingWaitlistSlotIds\]\s*=\s*useState\(\[\]\)/, 'Booking waitlist toggles should track pending slot ids');
+  assert.match(booking, /pendingWaitlistSlotIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Booking waitlist toggles should use a synchronous slot lock');
+  assert.match(booking, /if \(pendingWaitlistSlotIdsRef\.current\.has\(slot\.id\)\) return;/, 'Booking waitlist toggles should ignore duplicate clicks for the same slot');
+  assert.match(booking, /pendingWaitlistSlotIdsRef\.current\.add\(slot\.id\)[\s\S]{0,220}setPendingWaitlistSlotIds\(\[\.\.\.pendingWaitlistSlotIdsRef\.current\]\)/, 'Booking waitlist toggles should expose pending ids immediately');
+  assert.match(booking, /await actions\.handleToggleBookingWaitlist\(slot\.id\)/, 'Booking waitlist toggles should await the write while pending');
+  assert.match(booking, /finally[\s\S]{0,260}pendingWaitlistSlotIdsRef\.current\.delete\(slot\.id\)[\s\S]{0,160}setPendingWaitlistSlotIds\(\[\.\.\.pendingWaitlistSlotIdsRef\.current\]\)/, 'Booking waitlist toggles should clear pending state after the write settles');
+  assert.match(booking, /showToast\(t\('bookingFailed'\), 'error'\)/, 'Booking waitlist failures should use localized app feedback');
+  assert.match(booking, /pendingWaitlistSlotIds\.includes\(existing\.id\)/, 'Booking slot cells should derive waitlist pending state from the slot id');
+  assert.match(booking, /isWaitlistTogglePending/, 'Booking slot cells should expose a waitlist pending flag');
+  assert.match(booking, /disabled: isSlotTogglePending \|\| isWaitlistTogglePending/, 'Pending waitlist controls should be disabled');
+  assert.match(booking, /'aria-busy': isSlotTogglePending \|\| isWaitlistTogglePending/, 'Pending waitlist controls should expose busy state');
+  assert.match(booking, /isWaitlistTogglePending[\s\S]{0,220}t\('processing'\)/, 'Pending waitlist controls should show localized progress copy');
+});
+
 test('booking modal submissions prevent duplicate submits and expose pending state', async () => {
   const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
 

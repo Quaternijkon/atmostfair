@@ -32,6 +32,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   const isKickingBookingRef = useRef(false);
   const [pendingSlotToggleKeys, setPendingSlotToggleKeys] = useState([]);
   const pendingSlotToggleKeysRef = useRef(new Set());
+  const [pendingWaitlistSlotIds, setPendingWaitlistSlotIds] = useState([]);
+  const pendingWaitlistSlotIdsRef = useRef(new Set());
   const appLocale = getAppLocale(t);
   const formatDate = (date, options) => new Date(date).toLocaleDateString(appLocale, options);
 
@@ -136,6 +138,9 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   const handleToggleBookingWaitlist = async (slot) => {
       if (!canInteract) return;
       if (!slot) return;
+      if (pendingWaitlistSlotIdsRef.current.has(slot.id)) return;
+      pendingWaitlistSlotIdsRef.current.add(slot.id);
+      setPendingWaitlistSlotIds([...pendingWaitlistSlotIdsRef.current]);
       try {
           const waitlistPatch = await actions.handleToggleBookingWaitlist(slot.id);
           if (!waitlistPatch) throw new Error('waitlist failed');
@@ -143,6 +148,9 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
       } catch (e) {
           console.error(e);
           showToast(t('bookingFailed'), 'error');
+      } finally {
+          pendingWaitlistSlotIdsRef.current.delete(slot.id);
+          setPendingWaitlistSlotIds([...pendingWaitlistSlotIdsRef.current]);
       }
   };
 
@@ -239,13 +247,14 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                         const existing = slots.find(s => s.start === slotStart); // For date mode, simple match
                         const slotKey = getSlotToggleKey(slotStart, slotEnd);
                         const isSlotTogglePending = pendingSlotToggleKeys.includes(slotKey);
+                        const isWaitlistTogglePending = existing ? pendingWaitlistSlotIds.includes(existing.id) : false;
                         const isBooked = existing?.bookedBy;
                         const isMine = existing?.bookedBy === user?.uid;
                         const waitlist = getWaitlist(existing);
                         const waitlistSize = waitlist.length;
                         const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
-                        const isInteractive = canInteract && !isSlotTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
-                        const SlotShell = isInteractive || isSlotTogglePending ? 'button' : 'div';
+                        const isInteractive = canInteract && !isSlotTogglePending && !isWaitlistTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
+                        const SlotShell = isInteractive || isSlotTogglePending || isWaitlistTogglePending ? 'button' : 'div';
 
                     // Owner logic: Click to create/delete availability
                     // User logic: Click to Book if available, View if booked
@@ -260,12 +269,12 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                     let bgClass = 'bg-m3-surface-container hover:bg-m3-surface-container-high'; // Default unavailable (User pov)
                     if (isOwner) bgClass = existing ? (isBooked ? 'bg-m3-primary-container ring-2 ring-google-blue' : 'bg-google-green text-white') : 'bg-m3-surface-container opacity-50';
                     else bgClass = existing ? (isBooked ? (isMine ? 'bg-google-green text-white' : isWaitlisted ? 'border-2 border-google-yellow bg-google-yellow/10 text-[#8a5a00] hover:bg-google-yellow/20' : 'border border-google-yellow/40 bg-m3-surface-container-high text-m3-on-surface-variant hover:bg-google-yellow/10') : 'bg-white border-2 border-google-green text-google-green hover:bg-google-green hover:text-white') : 'bg-m3-surface-container opacity-30 cursor-not-allowed';
-                    if (isSlotTogglePending) bgClass += ' opacity-70 cursor-wait';
+                    if (isSlotTogglePending || isWaitlistTogglePending) bgClass += ' opacity-70 cursor-wait';
 
                         return (
                             <SlotShell key={date}
-                               {...(SlotShell === 'button' ? { type: 'button', onClick: isInteractive ? handleClick : undefined, disabled: isSlotTogglePending, 'aria-busy': isSlotTogglePending } : {})}
-                               className={`state-layer aspect-[4/3] rounded-2xl p-3 flex flex-col justify-between transition-all relative overflow-hidden ${isSlotTogglePending ? 'cursor-wait' : isInteractive ? 'cursor-pointer' : 'cursor-default'} ${bgClass}`}
+                               {...(SlotShell === 'button' ? { type: 'button', onClick: isInteractive ? handleClick : undefined, disabled: isSlotTogglePending || isWaitlistTogglePending, 'aria-busy': isSlotTogglePending || isWaitlistTogglePending } : {})}
+                               className={`state-layer aspect-[4/3] rounded-2xl p-3 flex flex-col justify-between transition-all relative overflow-hidden ${isSlotTogglePending || isWaitlistTogglePending ? 'cursor-wait' : isInteractive ? 'cursor-pointer' : 'cursor-default'} ${bgClass}`}
                             >
                                 <span className="text-sm font-medium">{formatDate(date, {month:'short', day:'numeric'})}</span>
                             
@@ -276,7 +285,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                     {isOwner && <button onClick={(e) => { e.stopPropagation(); handleKick(existing); }} className="app-icon-button mt-1 border-transparent bg-white/20 text-white hover:bg-google-red hover:text-white"><UserMinus className="w-4 h-4" /></button>}
                                 </div>
                                 )}
-                                {isSlotTogglePending && <span className="text-xs self-end font-bold">{t('processing')}</span>}
+                                {(isSlotTogglePending || isWaitlistTogglePending) && <span className="text-xs self-end font-bold">{t('processing')}</span>}
                                 {!isSlotTogglePending && !existing && isOwner && <Plus className="w-4 h-4 self-end opacity-50" />}
                                 {existing && !isBooked && !isOwner && <span className="text-xs self-end font-bold">{t('book')}</span>}
                                 {existing && isBooked && !isOwner && !isMine && (
@@ -339,13 +348,14 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                         const existing = slots.find(s => s.start === slotStart);
                                         const slotKey = getSlotToggleKey(slotStart, slotStart);
                                         const isSlotTogglePending = pendingSlotToggleKeys.includes(slotKey);
+                                        const isWaitlistTogglePending = existing ? pendingWaitlistSlotIds.includes(existing.id) : false;
                                         const isBooked = existing?.bookedBy;
                                         const isMine = existing?.bookedBy === user?.uid;
                                         const waitlist = getWaitlist(existing);
                                         const waitlistSize = waitlist.length;
                                         const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
-                                        const isInteractive = canInteract && !isSlotTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
-                                        const CellShell = isInteractive || isSlotTogglePending ? 'button' : 'div';
+                                        const isInteractive = canInteract && !isSlotTogglePending && !isWaitlistTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
+                                        const CellShell = isInteractive || isSlotTogglePending || isWaitlistTogglePending ? 'button' : 'div';
 
                                         const handleClick = () => {
                                             if (isOwner) toggleSlot(slotStart, slotStart, period);
@@ -358,7 +368,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                         let content;
                                         let cellClass = "p-2 rounded-lg transition-all flex flex-col items-center justify-center text-xs h-[80px] w-full border ";
                                     
-                                    if (isSlotTogglePending) {
+                                    if (isSlotTogglePending || isWaitlistTogglePending) {
                                         cellClass += "bg-m3-surface-container-high border-google-blue/30 text-m3-on-surface-variant opacity-70 cursor-wait";
                                         content = <span className="font-bold">{t('processing')}</span>;
                                     } else if (isOwner) {
@@ -413,8 +423,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                         return (
                                             <td key={date} className="p-1 align-top">
                                                 <CellShell
-                                                  {...(CellShell === 'button' ? { type: 'button', onClick: isInteractive ? handleClick : undefined, disabled: isSlotTogglePending, 'aria-busy': isSlotTogglePending } : {})}
-                                                  className={`${cellClass} ${isSlotTogglePending ? 'cursor-wait' : isInteractive ? 'cursor-pointer' : 'cursor-default'}`}
+                                                  {...(CellShell === 'button' ? { type: 'button', onClick: isInteractive ? handleClick : undefined, disabled: isSlotTogglePending || isWaitlistTogglePending, 'aria-busy': isSlotTogglePending || isWaitlistTogglePending } : {})}
+                                                  className={`${cellClass} ${isSlotTogglePending || isWaitlistTogglePending ? 'cursor-wait' : isInteractive ? 'cursor-pointer' : 'cursor-default'}`}
                                                 >
                                                     {content}
                                                 </CellShell>
