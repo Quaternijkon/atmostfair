@@ -32,6 +32,8 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
   // Game State derived from room
   const [timeLeft, setTimeLeft] = useState(0);
   const [selectedMoveState, setSelectedMoveState] = useState(() => ({ round: room.currentRound, move: null }));
+  const [isJoiningRpsGame, setIsJoiningRpsGame] = useState(false);
+  const isJoiningRpsGameRef = useRef(false);
   const [showdownAnim, setShowdownAnim] = useState(null); // Local state for animation trigger
   const selectedMove = selectedMoveState.round === room.currentRound ? selectedMoveState.move : null;
   
@@ -149,9 +151,20 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
   
   const joinGame = async () => {
       if (!canInteract) return;
+      if (isJoiningRpsGameRef.current) return;
       const updateData = createGameRoomJoinPatch(room, user, user.displayName || t('userLabel'), nowMs());
       if (!updateData) return;
-      await updateDoc(doc(db, 'game_rooms', room.id), updateData);
+      isJoiningRpsGameRef.current = true;
+      setIsJoiningRpsGame(true);
+      try {
+          await updateDoc(doc(db, 'game_rooms', room.id), updateData);
+      } catch (error) {
+          console.error(error);
+          showToast(t('gameActionFailed'), 'error');
+      } finally {
+          isJoiningRpsGameRef.current = false;
+          setIsJoiningRpsGame(false);
+      }
   };
 
   if(!room) return null;
@@ -306,8 +319,8 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                         </div>
                     </>
                 ) : (
-                    <button onClick={joinGame} disabled={!canInteract} className="app-button-primary px-8">
-                        {t('joinGame')}
+                    <button onClick={joinGame} disabled={!canInteract || isJoiningRpsGame} aria-busy={isJoiningRpsGame} className="app-button-primary px-8">
+                        {isJoiningRpsGame ? t('processing') : t('joinGame')}
                     </button>
                 )}
             </div>
@@ -445,6 +458,8 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
   const { rows, cols, mines } = room.config;
   const canInteract = !isStopped;
   const [status, setStatus] = useState(() => room.config.mineLocations ? 'ready' : 'loading'); // loading, ready, playing, dead, won
+  const [isJoiningMinesweeper, setIsJoiningMinesweeper] = useState(false);
+  const isJoiningMinesweeperRef = useRef(false);
   const [flags, setFlags] = useState(new Set());
   const [revealed, setRevealed] = useState(new Set());
   const [explodedMine, setExplodedMine] = useState(null); // {r, c}
@@ -592,9 +607,20 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
 
   const joinGame = async () => {
        if (!canInteract) return;
+       if (isJoiningMinesweeperRef.current) return;
        const updateData = createGameRoomJoinPatch(room, user, user.displayName || t('userLabel'), nowMs());
        if (!updateData) return;
-       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
+       isJoiningMinesweeperRef.current = true;
+       setIsJoiningMinesweeper(true);
+       try {
+           await updateDoc(doc(db, 'game_rooms', room.id), updateData);
+       } catch (error) {
+           console.error(error);
+           showToast(t('gameActionFailed'), 'error');
+       } finally {
+           isJoiningMinesweeperRef.current = false;
+           setIsJoiningMinesweeper(false);
+       }
   };
 
   if (!room) return null;
@@ -653,8 +679,8 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
              ) : (
                  <div className="flex-1 flex items-center justify-center flex-col gap-4">
                      <Grid3x3 className="w-24 h-24 text-m3-on-surface-variant/20"/>
-                    <button onClick={joinGame} disabled={!canInteract} className="app-button-primary px-6">
-                         {t('joinMinesweeper')}
+                    <button onClick={joinGame} disabled={!canInteract || isJoiningMinesweeper} aria-busy={isJoiningMinesweeper} className="app-button-primary px-6">
+                         {isJoiningMinesweeper ? t('processing') : t('joinMinesweeper')}
                      </button>
                  </div>
              )}
@@ -721,6 +747,8 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
   const [mineDifficulty, setMineDifficulty] = useState('easy'); // easy, medium, hard
   const [vsComputer, setVsComputer] = useState(false);
+  const [isCreatingGameRoom, setIsCreatingGameRoom] = useState(false);
+  const isCreatingGameRoomRef = useRef(false);
 
   const replaceRoomInviteUrl = useCallback((roomId) => {
       if (typeof window === 'undefined') return;
@@ -809,6 +837,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
 
   const handleCreateRoom = async (e) => {
       e.preventDefault();
+      if (isCreatingGameRoomRef.current) return;
       if (!canInteract || !roomName.trim()) return;
 
       const createdAt = nowMs();
@@ -832,10 +861,20 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
           }
           : baseRoom;
 
-      const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
-      setShowCreate(false);
-      setRoomName('');
-      openRoom({ id: ref.id, status: newRoom.status });
+      isCreatingGameRoomRef.current = true;
+      setIsCreatingGameRoom(true);
+      try {
+          const ref = await addDoc(collection(db, 'game_rooms'), newRoom);
+          setShowCreate(false);
+          setRoomName('');
+          openRoom({ id: ref.id, status: newRoom.status });
+      } catch (error) {
+          console.error(error);
+          showToast(t('gameActionFailed'), 'error');
+      } finally {
+          isCreatingGameRoomRef.current = false;
+          setIsCreatingGameRoom(false);
+      }
   };
   
   const handleJoin = async (room) => {
@@ -958,7 +997,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
        {showCreate && canInteract && (
            <div className="app-card mb-8 animate-slide-down p-5 sm:p-6">
                <h3 className="mb-6 text-xl font-medium">{t('startNewGame')}</h3>
-               <form onSubmit={handleCreateRoom} className="space-y-6">
+               <form onSubmit={handleCreateRoom} className="space-y-6" aria-busy={isCreatingGameRoom}>
                    <div className="flex flex-col md:flex-row gap-6">
                        {/* Game Selection */}
                        <div className="flex-1">
@@ -969,7 +1008,8 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                       type="button"
                                       key={g.id} 
                                       onClick={() => setSelectedGame(g.id)}
-                                      className={`app-card flex min-h-[84px] cursor-pointer items-center gap-3 p-4 text-left ${selectedGame === g.id ? 'border-google-blue bg-google-blue/5' : 'hover:bg-m3-surface'}`}
+                                      disabled={isCreatingGameRoom}
+                                      className={`app-card flex min-h-[84px] cursor-pointer items-center gap-3 p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 ${selectedGame === g.id ? 'border-google-blue bg-google-blue/5' : 'hover:bg-m3-surface'}`}
                                    >
                                        <div className={`p-2 rounded-full ${g.color} text-white`}>
                                            <g.icon className="w-5 h-5"/>
@@ -983,7 +1023,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                        <div className="flex-1 space-y-4">
                            <div>
                                <label className="app-label uppercase tracking-wide">{t('roomName')}</label>
-                               <input type="text" placeholder={t('roomNamePlaceholder')} value={roomName} onChange={e => setRoomName(e.target.value)} className="app-input" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} required />
+                               <input type="text" placeholder={t('roomNamePlaceholder')} value={roomName} onChange={e => setRoomName(e.target.value)} className="app-input" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} disabled={isCreatingGameRoom} required />
                            </div>
                            
                            {/* Game Specific Config */}
@@ -992,7 +1032,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                        <div className="flex gap-4">
                                            <div className="flex-1">
                                            <label className="app-label">{t('bestOfRounds')}</label>
-                                           <select value={bestOf} onChange={e => setBestOf(e.target.value)} className="app-input">
+                                           <select value={bestOf} onChange={e => setBestOf(e.target.value)} className="app-input" disabled={isCreatingGameRoom}>
                                                <option value="1">1 ({t('suddenDeath')})</option>
                                                <option value="3">3</option>
                                                <option value="5">5</option>
@@ -1000,7 +1040,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                        </div>
                                        <div className="flex-1">
                                             <label className="app-label">{t('turnTimeout')}</label>
-                                            <select value={timeoutSeconds} onChange={e => setTimeoutSeconds(e.target.value)} className="app-input">
+                                            <select value={timeoutSeconds} onChange={e => setTimeoutSeconds(e.target.value)} className="app-input" disabled={isCreatingGameRoom}>
                                                <option value="15">15s</option>
                                                <option value="30">30s</option>
                                                <option value="60">60s</option>
@@ -1008,7 +1048,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                        </div>
                                    </div>
 
-                                   <button type="button" className="app-card mt-4 flex w-full cursor-pointer items-center gap-2 p-3 text-left" onClick={() => setVsComputer(!vsComputer)}>
+                                   <button type="button" className="app-card mt-4 flex w-full cursor-pointer items-center gap-2 p-3 text-left disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setVsComputer(!vsComputer)} disabled={isCreatingGameRoom}>
                                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${vsComputer ? 'bg-google-blue border-google-blue' : 'border-m3-outline'}`}>
                                            {vsComputer && <Check className="w-3.5 h-3.5 text-white"/>}
                                        </div>
@@ -1026,6 +1066,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                               type="button" 
                                               key={d} 
                                               onClick={() => setMineDifficulty(d)}
+                                              disabled={isCreatingGameRoom}
                                               className={`app-button flex-1 border text-sm capitalize ${mineDifficulty === d ? 'bg-m3-primary text-white border-transparent' : 'border-m3-outline hover:bg-m3-surface-container-high'}`}
                                            >
                                                {difficultyLabels[d]}
@@ -1042,8 +1083,8 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                        </div>
                    </div>
                    <div className="flex justify-end">
-                       <button type="submit" className="app-button-primary px-8">
-                           {t('createRoom')}
+                       <button type="submit" disabled={isCreatingGameRoom} className="app-button-primary px-8">
+                           {isCreatingGameRoom ? t('processing') : t('createRoom')}
                        </button>
                    </div>
                </form>

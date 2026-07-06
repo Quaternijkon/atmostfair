@@ -277,6 +277,37 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.doesNotMatch(files.gameHub, />Finished|>Active|>Winner|>Rounds|>Last round|No finished rooms/, 'Game hub result copy should be localized');
 });
 
+test('game hub room actions prevent duplicate submits and expose pending state', async () => {
+  const gameHub = await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.gameActionFailed, 'missing English game action failure translation');
+  assert.ok(TRANSLATIONS.zh.gameActionFailed, 'missing Chinese game action failure translation');
+
+  assert.match(gameHub, /isCreatingGameRoomRef\s*=\s*useRef\(false\)/, 'Game room creation should use a synchronous action lock');
+  assert.match(gameHub, /if \(isCreatingGameRoomRef\.current\) return;/, 'Game room creation should ignore duplicate submits before state rerenders');
+  assert.match(gameHub, /setIsCreatingGameRoom\(true\)[\s\S]{0,1100}finally[\s\S]{0,240}setIsCreatingGameRoom\(false\)/, 'Game room creation should expose pending state for the whole write');
+  assert.match(gameHub, /showToast\(t\('gameActionFailed'\), 'error'\)/, 'Game room actions should use localized failure feedback');
+  assert.match(gameHub, /aria-busy=\{isCreatingGameRoom\}/, 'Game room creation form should expose pending state to assistive technology');
+  assert.match(gameHub, /disabled=\{isCreatingGameRoom\}/, 'Game room creation controls should be disabled while creating');
+  assert.match(gameHub, /isCreatingGameRoom \? t\('processing'\) : t\('createRoom'\)/, 'Game room create button should show localized progress copy');
+
+  assert.match(gameHub, /isJoiningRpsGameRef\s*=\s*useRef\(false\)/, 'RPS joins should use a synchronous action lock');
+  assert.match(gameHub, /if \(isJoiningRpsGameRef\.current\) return;/, 'RPS joins should ignore duplicate clicks before state rerenders');
+  assert.match(gameHub, /setIsJoiningRpsGame\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsJoiningRpsGame\(false\)/, 'RPS joins should expose pending state for the whole write');
+  assert.match(gameHub, /disabled=\{!canInteract \|\| isJoiningRpsGame\}/, 'RPS join button should be disabled while joining');
+  assert.match(gameHub, /aria-busy=\{isJoiningRpsGame\}/, 'RPS join button should expose pending state to assistive technology');
+  assert.match(gameHub, /isJoiningRpsGame \? t\('processing'\) : t\('joinGame'\)/, 'RPS join button should show localized progress copy');
+
+  assert.match(gameHub, /isJoiningMinesweeperRef\s*=\s*useRef\(false\)/, 'Minesweeper joins should use a synchronous action lock');
+  assert.match(gameHub, /if \(isJoiningMinesweeperRef\.current\) return;/, 'Minesweeper joins should ignore duplicate clicks before state rerenders');
+  assert.match(gameHub, /setIsJoiningMinesweeper\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsJoiningMinesweeper\(false\)/, 'Minesweeper joins should expose pending state for the whole write');
+  assert.match(gameHub, /disabled=\{!canInteract \|\| isJoiningMinesweeper\}/, 'Minesweeper join button should be disabled while joining');
+  assert.match(gameHub, /aria-busy=\{isJoiningMinesweeper\}/, 'Minesweeper join button should expose pending state to assistive technology');
+  assert.match(gameHub, /isJoiningMinesweeper \? t\('processing'\) : t\('joinMinesweeper'\)/, 'Minesweeper join button should show localized progress copy');
+});
+
 test('collaboration workspaces avoid fallback copy and clickable divs', async () => {
   const files = {
     friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
