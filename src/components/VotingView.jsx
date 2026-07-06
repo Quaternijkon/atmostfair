@@ -8,6 +8,8 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const { showToast } = useUI();
   const [newItem, setNewItem] = useState('');
   const [myName, setMyName] = useState(user.displayName || '');
+  const [isAddingVoteItem, setIsAddingVoteItem] = useState(false);
+  const isAddingVoteItemRef = useRef(false);
   const [pendingVoteItemIds, setPendingVoteItemIds] = useState([]);
   const pendingVoteItemIdsRef = useRef(new Set());
   const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
@@ -21,6 +23,25 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const updateVoteMode = (mode) => {
     if (!hasAdminRights || isStopped || mode === voteMode) return;
     onUpdateVotingConfig(projectId, { ...(votingConfig || {}), mode });
+  };
+
+  const handleAddItem = async (event) => {
+    event.preventDefault();
+    if (!newItem.trim()) return;
+    if (isAddingVoteItemRef.current) return;
+
+    isAddingVoteItemRef.current = true;
+    setIsAddingVoteItem(true);
+    try {
+      await onAdd(newItem, myName);
+      setNewItem('');
+    } catch (error) {
+      console.error(error);
+      showToast(t('voteActionFailed'), 'error');
+    } finally {
+      isAddingVoteItemRef.current = false;
+      setIsAddingVoteItem(false);
+    }
   };
 
   const handleVote = async (item) => {
@@ -70,11 +91,11 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
         </div>
       )}
       {!isStopped && (
-        <div className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
-          <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={t('addItemPlaceholder')} className="app-input flex-[2]" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} />
-          <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNamePlaceholder')} className="app-input flex-1" />
-          <button onClick={() => { if (newItem.trim()) { onAdd(newItem, myName); setNewItem(''); } }} className="app-button-primary px-8">{t('add')}</button>
-        </div>
+        <form onSubmit={handleAddItem} aria-busy={isAddingVoteItem} className="app-card mb-6 flex flex-col gap-4 p-4 sm:flex-row">
+          <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)} placeholder={t('addItemPlaceholder')} className="app-input flex-[2]" maxLength={PROJECT_CHILD_TEXT_MAX_LENGTH} disabled={isAddingVoteItem} />
+          <input type="text" value={myName} onChange={e => setMyName(e.target.value)} placeholder={t('yourNamePlaceholder')} className="app-input flex-1" disabled={isAddingVoteItem} />
+          <button type="submit" disabled={isAddingVoteItem || !newItem.trim()} className="app-button-primary px-8">{isAddingVoteItem ? t('processing') : t('add')}</button>
+        </form>
       )}
       <div className="space-y-3">
         {sortedItems.map((item, index) => {

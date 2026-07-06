@@ -443,6 +443,25 @@ test('voting item vote actions prevent duplicate toggles and expose pending stat
   assert.match(voting, /aria-label=\{isVotePending \? t\('processing'\) : t\('voteActionLabel'\)\}/, 'Voting toggle buttons should expose localized pending labels');
 });
 
+test('voting item creation prevents duplicate submits and exposes pending state', async () => {
+  const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.voteActionFailed, 'missing English vote action failure translation');
+  assert.ok(TRANSLATIONS.zh.voteActionFailed, 'missing Chinese vote action failure translation');
+
+  assert.match(voting, /isAddingVoteItemRef\s*=\s*useRef\(false\)/, 'Voting item creation should use a synchronous submit lock');
+  assert.match(voting, /if \(isAddingVoteItemRef\.current\) return;/, 'Voting item creation should ignore duplicate submits before state rerenders');
+  assert.match(voting, /setIsAddingVoteItem\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsAddingVoteItem\(false\)/, 'Voting item creation should expose pending state for the whole write');
+  assert.match(voting, /await onAdd\(newItem, myName\)/, 'Voting item creation should await the write while pending');
+  assert.match(voting, /showToast\(t\('voteActionFailed'\), 'error'\)/, 'Voting item creation failures should use localized app feedback');
+  assert.match(voting, /<form onSubmit=\{handleAddItem\} aria-busy=\{isAddingVoteItem\}/, 'Voting item creation should use an accessible pending form');
+  assert.match(voting, /disabled=\{isAddingVoteItem\}/, 'Voting item creation inputs should be disabled while creating');
+  assert.match(voting, /disabled=\{isAddingVoteItem \|\| !newItem\.trim\(\)\}/, 'Voting item create button should be disabled while pending or blank');
+  assert.match(voting, /isAddingVoteItem \? t\('processing'\) : t\('add'\)/, 'Voting item create button should show localized progress copy');
+});
+
 test('shared utility surfaces localize visible copy and retain ergonomic controls', async () => {
   const files = {
     detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
