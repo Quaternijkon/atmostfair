@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, updateDoc, startAt, endAt, orderBy, db } from '../lib/localData';
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
@@ -18,6 +18,8 @@ export default function FriendSystem({ user, onClose, t }) {
     const [activeChatFriend, setActiveChatFriend] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
+    const [isSendingFriendMessage, setIsSendingFriendMessage] = useState(false);
+    const isSendingFriendMessageRef = useRef(false);
     const [searchResults, setSearchResults] = useState([]);
     const currentUserName = () => user.displayName || user.email?.split('@')[0] || t('userLabel');
 
@@ -170,23 +172,35 @@ export default function FriendSystem({ user, onClose, t }) {
 
     const sendMessage = async (e) => {
         e.preventDefault();
+        if (isSendingFriendMessageRef.current) return;
+
         const messageData = createFriendMessageData(relationships, activeChatFriend, user, chatInput, nowMs());
         if (!messageData) {
             showToast(t('friendActionUnavailable'), 'info');
             return;
         }
-        setChatInput('');
-        
-        await addDoc(collection(db, 'friend_messages'), messageData);
-        await addDoc(collection(db, 'notifications'), {
-            recipientId: activeChatFriend.otherId,
-            type: 'friend_message',
-            title: t('friendMessageTitle', { name: currentUserName() }),
-            message: messageData.text,
-            chatId: messageData.chatId,
-            read: false,
-            createdAt: nowMs()
-        });
+
+        isSendingFriendMessageRef.current = true;
+        setIsSendingFriendMessage(true);
+        try {
+            await addDoc(collection(db, 'friend_messages'), messageData);
+            await addDoc(collection(db, 'notifications'), {
+                recipientId: activeChatFriend.otherId,
+                type: 'friend_message',
+                title: t('friendMessageTitle', { name: currentUserName() }),
+                message: messageData.text,
+                chatId: messageData.chatId,
+                read: false,
+                createdAt: nowMs()
+            });
+            setChatInput('');
+        } catch (error) {
+            console.error(error);
+            showToast(t('messageSendFailed'), 'error');
+        } finally {
+            isSendingFriendMessageRef.current = false;
+            setIsSendingFriendMessage(false);
+        }
     };
 
     // --- Render ---
@@ -351,16 +365,17 @@ export default function FriendSystem({ user, onClose, t }) {
                             </div>
 
                             {/* Input Area */}
-                            <form onSubmit={sendMessage} className="p-3 md:p-4 border-t border-m3-outline-variant/10 flex gap-2 bg-m3-surface shrink-0">
+                            <form onSubmit={sendMessage} className="p-3 md:p-4 border-t border-m3-outline-variant/10 flex gap-2 bg-m3-surface shrink-0" aria-busy={isSendingFriendMessage}>
                                 <input 
                                     value={chatInput} 
                                     onChange={e=>setChatInput(e.target.value)} 
                                     className="app-input flex-1 rounded-full"
                                     placeholder={t('typeMessage')}
                                     maxLength={MESSAGE_TEXT_MAX_LENGTH}
+                                    disabled={isSendingFriendMessage}
                                 />
-                                <button disabled={!chatInput.trim()} className="app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1">
-                                    <Send className="w-5 h-5"/>
+                                <button disabled={isSendingFriendMessage || !chatInput.trim()} className={`app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1 ${isSendingFriendMessage ? 'w-auto px-3 text-xs' : ''}`}>
+                                    {isSendingFriendMessage ? t('processing') : <Send className="w-5 h-5"/>}
                                 </button>
                             </form>
                         </>

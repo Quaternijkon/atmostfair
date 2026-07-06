@@ -628,7 +628,7 @@ test('paused and finished game and chat workspaces keep direct writes read-only'
   assert.match(files.gameHub, /handleMove[\s\S]{0,180}if \(!canInteract/, 'RPS moves should reject stopped or finished projects before writing');
   assert.match(files.chat, /export default function ChatRoom\(\{ projectId, user, currentUser, isStopped = false, t \}\)/, 'Project chat should accept a read-only state');
   assert.match(files.chat, /if \(isStopped \|\| !inputText\.trim\(\)\) return;/, 'Chat send should reject stopped or finished projects before writing');
-  assert.match(files.chat, /disabled=\{isStopped \|\| !inputText\.trim\(\)\}/, 'Chat send control should be disabled for stopped or finished projects');
+  assert.match(files.chat, /disabled=\{isStopped \|\| isSendingMessage \|\| !inputText\.trim\(\)\}/, 'Chat send control should be disabled for stopped, finished, or pending projects');
 });
 
 test('chat inputs expose a shared message length limit', async () => {
@@ -643,6 +643,35 @@ test('chat inputs expose a shared message length limit', async () => {
   assert.match(files.friends, /MESSAGE_TEXT_MAX_LENGTH/, 'Friend chat should import the shared message length limit');
   assert.match(files.friends, /maxLength=\{MESSAGE_TEXT_MAX_LENGTH\}/, 'Friend chat input should cap message length before submit');
   assert.match(files.backend, /MESSAGE_TEXT_MAX_LENGTH/, 'Backend message guards should enforce the same shared limit');
+});
+
+test('chat send forms prevent duplicate submits and expose pending state', async () => {
+  const files = {
+    chat: await readFile(path.join(root, 'src/components/ChatRoom.jsx'), 'utf8'),
+    friends: await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8'),
+  };
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.messageSendFailed, 'missing English message failure translation');
+  assert.ok(TRANSLATIONS.zh.messageSendFailed, 'missing Chinese message failure translation');
+
+  assert.match(files.chat, /isSendingMessageRef\s*=\s*useRef\(false\)/, 'Project chat should use a synchronous send lock');
+  assert.match(files.chat, /isSendingMessageRef\.current/, 'Project chat should check the synchronous send lock before writing');
+  assert.match(files.chat, /setIsSendingMessage\(true\)[\s\S]{0,900}finally[\s\S]{0,240}setIsSendingMessage\(false\)/, 'Project chat should expose pending state for the whole send');
+  assert.match(files.chat, /aria-busy=\{isSendingMessage\}/, 'Project chat form should expose pending state to assistive technology');
+  assert.match(files.chat, /disabled=\{isStopped \|\| isSendingMessage\}/, 'Project chat input should be disabled while sending');
+  assert.match(files.chat, /disabled=\{isStopped \|\| isSendingMessage \|\| !inputText\.trim\(\)\}/, 'Project chat send button should be disabled while sending');
+  assert.match(files.chat, /isSendingMessage \? t\('processing'\) :/, 'Project chat send button should expose localized progress copy');
+
+  assert.match(files.friends, /isSendingFriendMessageRef\s*=\s*useRef\(false\)/, 'Friend chat should use a synchronous send lock');
+  assert.match(files.friends, /isSendingFriendMessageRef\.current/, 'Friend chat should check the synchronous send lock before writing');
+  assert.match(files.friends, /setIsSendingFriendMessage\(true\)[\s\S]{0,1100}finally[\s\S]{0,260}setIsSendingFriendMessage\(false\)/, 'Friend chat should expose pending state for the whole send');
+  assert.match(files.friends, /aria-busy=\{isSendingFriendMessage\}/, 'Friend chat form should expose pending state to assistive technology');
+  assert.match(files.friends, /disabled=\{isSendingFriendMessage\}/, 'Friend chat input should be disabled while sending');
+  assert.match(files.friends, /disabled=\{isSendingFriendMessage \|\| !chatInput\.trim\(\)\}/, 'Friend chat send button should be disabled while sending');
+  assert.match(files.friends, /isSendingFriendMessage \? t\('processing'\) :/, 'Friend chat send button should expose localized progress copy');
+  assert.match(files.friends, /showToast\(t\('messageSendFailed'\), 'error'\)/, 'Friend chat send failures should use localized app feedback');
 });
 
 test('project child text inputs expose a shared display length limit', async () => {

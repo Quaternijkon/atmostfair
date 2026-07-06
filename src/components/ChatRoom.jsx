@@ -11,7 +11,9 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
     const activeUser = user || currentUser;
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
+    const [isSendingMessage, setIsSendingMessage] = useState(false);
     const dummyRef = useRef(null);
+    const isSendingMessageRef = useRef(false);
     const { showToast } = useUI();
     
     // Listen to messages
@@ -38,11 +40,15 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
     const handleSend = async (e) => {
         e.preventDefault();
         if (isStopped || !inputText.trim()) return;
+        if (isSendingMessageRef.current) return;
 
+        const messageText = inputText.trim();
+        isSendingMessageRef.current = true;
+        setIsSendingMessage(true);
         try {
             await addDoc(collection(db, 'project_chats'), {
                 projectId,
-                text: inputText.trim(),
+                text: messageText,
                 uid: activeUser.uid,
                 name: activeUser.displayName || t('anonymousUser'),
                 createdAt: nowMs()
@@ -52,6 +58,9 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
         } catch (error) {
             console.error("Error sending message:", error);
             showToast(t('messageSendFailed'), 'error');
+        } finally {
+            isSendingMessageRef.current = false;
+            setIsSendingMessage(false);
         }
     };
 
@@ -108,22 +117,22 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
             </div>
 
             {/* Input Area */}
-            <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-m3-outline-variant/30 bg-m3-surface-container p-3">
+            <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-m3-outline-variant/30 bg-m3-surface-container p-3" aria-busy={isSendingMessage}>
                 <input
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder={t('typeMessage')}
-                    disabled={isStopped}
+                    disabled={isStopped || isSendingMessage}
                     maxLength={MESSAGE_TEXT_MAX_LENGTH}
                     className="app-input flex-1 rounded-full"
                 />
                 <button 
                     type="submit" 
-                    disabled={isStopped || !inputText.trim()}
-                    className="app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1"
+                    disabled={isStopped || isSendingMessage || !inputText.trim()}
+                    className={`app-icon-button border-transparent bg-google-blue text-white hover:bg-google-blue hover:text-white hover:shadow-elevation-1 ${isSendingMessage ? 'w-auto px-3 text-xs' : ''}`}
                 >
-                    <Send className="w-5 h-5" />
+                    {isSendingMessage ? t('processing') : <Send className="w-5 h-5" />}
                 </button>
             </form>
         </div>
