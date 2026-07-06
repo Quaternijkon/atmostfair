@@ -829,6 +829,27 @@ test('claim workspace actions prevent duplicate submits and expose pending state
   assert.match(claim, /isClaimTogglePending \? t\('processing'\) : t\('claim'\)/, 'Claim button should show localized progress copy');
 });
 
+test('claim item deletion prevents duplicate submits and exposes pending state', async () => {
+  const claim = await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.claimActionFailed, 'missing English claim action failure translation');
+  assert.ok(TRANSLATIONS.zh.claimActionFailed, 'missing Chinese claim action failure translation');
+
+  assert.match(claim, /pendingDeleteClaimItemIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Claim deletes should track pending item ids in a ref');
+  assert.match(claim, /if \(pendingDeleteClaimItemIdsRef\.current\.has\(itemId\)\) return;/, 'Claim deletes should ignore duplicate confirmations for the same item');
+  assert.match(claim, /pendingDeleteClaimItemIdsRef\.current\.add\(itemId\)[\s\S]{0,220}setPendingDeleteClaimItemIds\(\[\.\.\.pendingDeleteClaimItemIdsRef\.current\]\)/, 'Claim deletes should expose pending ids immediately');
+  assert.match(claim, /await actions\.handleDeleteClaimItem\(itemId\)/, 'Claim deletes should await the write while pending');
+  assert.match(claim, /showToast\(t\('claimActionFailed'\), 'error'\)/, 'Claim delete failures should use localized app feedback');
+  assert.match(claim, /finally[\s\S]{0,260}pendingDeleteClaimItemIdsRef\.current\.delete\(itemId\)[\s\S]{0,160}setPendingDeleteClaimItemIds\(\[\.\.\.pendingDeleteClaimItemIdsRef\.current\]\)/, 'Claim deletes should clear pending state after writes settle');
+  assert.match(claim, /pendingDeleteClaimItemIds\.includes\(item\.id\)/, 'Claim rows should derive delete pending state from the item id');
+  assert.match(claim, /onConfirm:\s*\(\) => handleDeleteClaimItem\(item\.id\)/, 'Claim delete confirmations should route through the pending delete handler');
+  assert.match(claim, /disabled=\{isDeletePending\}/, 'Claim delete buttons should be disabled while deleting');
+  assert.match(claim, /aria-busy=\{isDeletePending\}/, 'Claim delete buttons should expose busy state');
+  assert.match(claim, /title=\{isDeletePending \? t\('processing'\) : t\('delete'\)\}/, 'Claim delete buttons should expose localized pending copy');
+});
+
 test('paused and finished collaboration workspaces hide item deletion controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),

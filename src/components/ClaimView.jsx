@@ -13,6 +13,8 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
   const isCreatingClaimItemRef = useRef(false);
   const [pendingClaimItemIds, setPendingClaimItemIds] = useState([]);
   const pendingClaimItemIdsRef = useRef(new Set());
+  const [pendingDeleteClaimItemIds, setPendingDeleteClaimItemIds] = useState([]);
+  const pendingDeleteClaimItemIdsRef = useRef(new Set());
 
   const handleAddItem = async (e) => {
     e.preventDefault();
@@ -49,6 +51,23 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
       } finally {
           pendingClaimItemIdsRef.current.delete(itemId);
           setPendingClaimItemIds([...pendingClaimItemIdsRef.current]);
+      }
+  };
+
+  const handleDeleteClaimItem = async (itemId) => {
+      if (!itemId) return;
+      if (pendingDeleteClaimItemIdsRef.current.has(itemId)) return;
+
+      pendingDeleteClaimItemIdsRef.current.add(itemId);
+      setPendingDeleteClaimItemIds([...pendingDeleteClaimItemIdsRef.current]);
+      try {
+          await actions.handleDeleteClaimItem(itemId);
+      } catch (error) {
+          console.error(error);
+          showToast(t('claimActionFailed'), 'error');
+      } finally {
+          pendingDeleteClaimItemIdsRef.current.delete(itemId);
+          setPendingDeleteClaimItemIds([...pendingDeleteClaimItemIdsRef.current]);
       }
   };
 
@@ -141,6 +160,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
               const isFull = item.claimants.length >= item.maxClaims;
               const slotsLeft = item.maxClaims - item.claimants.length;
               const isClaimTogglePending = pendingClaimItemIds.includes(item.id);
+              const isDeletePending = pendingDeleteClaimItemIds.includes(item.id);
               
               return (
                   <div key={item.id} className={`app-card group relative p-4 ${isMine ? 'border-google-red/50 bg-google-red/5' : 'hover:border-google-red/30'}`}>
@@ -177,7 +197,13 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                           <div className="flex items-center gap-3">
                               {/* Edit Actions for Admin */}
                               {(isOwner || isAdmin) && !isStopped && (
-                                  <button onClick={() => confirm({ type: 'destructive', title: t('delete'), message: t('confirmDelete'), onConfirm: () => actions.handleDeleteClaimItem(item.id) })} className="app-icon-button opacity-0 hover:bg-google-red/10 hover:text-google-red group-hover:opacity-100">
+                                  <button
+                                    onClick={() => confirm({ type: 'destructive', title: t('delete'), message: t('confirmDelete'), onConfirm: () => handleDeleteClaimItem(item.id) })}
+                                    disabled={isDeletePending}
+                                    aria-busy={isDeletePending}
+                                    title={isDeletePending ? t('processing') : t('delete')}
+                                    className="app-icon-button opacity-0 hover:bg-google-red/10 hover:text-google-red group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
                                       <Trash2 className="w-4 h-4" />
                                   </button>
                               )}
