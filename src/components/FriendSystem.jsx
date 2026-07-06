@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, updateDoc, startAt, endAt, orderBy, db } from '../lib/localData';
-import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
+import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft, RotateCcw } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
 import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId, getRemovableFriendshipId } from '../lib/friendDomain';
@@ -21,6 +21,8 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
     const [isSendingFriendMessage, setIsSendingFriendMessage] = useState(false);
+    const [friendChatLoadError, setFriendChatLoadError] = useState(false);
+    const [friendChatReloadKey, setFriendChatReloadKey] = useState(0);
     const isSendingFriendMessageRef = useRef(false);
     const isSearchingFriendsRef = useRef(false);
     const [pendingFriendActionIds, setPendingFriendActionIds] = useState(() => new Set());
@@ -91,7 +93,11 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
 
     // 2. Chat Listener
     useEffect(() => {
-        if (!activeChatFriend) return;
+        if (!activeChatFriend) {
+            setChatMessages([]);
+            setFriendChatLoadError(false);
+            return;
+        }
         
         // Chat stored in `friend_messages` collection
         const chatId = activeChatFriend.id; // Friendship ID as Chat ID
@@ -100,14 +106,18 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
             where('chatId', '==', chatId)
             // Order by handled in memory or composite index needed. For MVP, sort in mem.
         );
-        
+
         const unsub = onSnapshot(q, (snap) => {
             const msgs = snap.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => a.createdAt - b.createdAt);
+            setFriendChatLoadError(false);
             setChatMessages(msgs);
+        }, (error) => {
+            console.error("Error loading friend messages:", error);
+            setFriendChatLoadError(true);
         });
 
         return () => unsub();
-    }, [activeChatFriend]);
+    }, [activeChatFriend, friendChatReloadKey]);
 
     const handleSearch = async () => {
         const term = searchTerm.trim();
@@ -470,16 +480,37 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
 
                             {/* Messages */}
                             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-m3-surface scroll-smooth">
-                                {chatMessages.map(msg => {
-                                    const isMe = msg.senderId === user.uid;
-                                    return (
-                                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-slide-up`}>
-                                            <div className={`max-w-[80%] break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm md:max-w-[70%] ${isMe ? 'rounded-br-sm bg-google-blue text-white' : 'rounded-bl-sm bg-m3-surface-container-high text-m3-on-surface'}`}>
-                                                {msg.text}
+                                {friendChatLoadError ? (
+                                    <div role="alert" className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 text-center text-sm text-m3-on-surface-variant">
+                                        <p>{t('chatLoadFailed')}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFriendChatReloadKey((current) => current + 1)}
+                                            className="app-button-quiet text-google-blue"
+                                        >
+                                            <RotateCcw className="h-4 w-4" />
+                                            {t('chatRetry')}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {chatMessages.length === 0 && (
+                                            <div role="status" aria-live="polite" className="mt-10 text-center text-sm text-m3-on-surface-variant opacity-60">
+                                                {t('noMessagesYet')}
                                             </div>
-                                        </div>
-                                    )
-                                })}
+                                        )}
+                                        {chatMessages.map(msg => {
+                                            const isMe = msg.senderId === user.uid;
+                                            return (
+                                                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-slide-up`}>
+                                                    <div className={`max-w-[80%] break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm md:max-w-[70%] ${isMe ? 'rounded-br-sm bg-google-blue text-white' : 'rounded-bl-sm bg-m3-surface-container-high text-m3-on-surface'}`}>
+                                                        {msg.text}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </>
+                                )}
                                 <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })} />
                             </div>
 

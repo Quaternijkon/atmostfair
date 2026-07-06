@@ -88,7 +88,7 @@ export default function ChatRoom({ projectId, user, currentUser, isStopped = fal
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-m3-surface/50">
                 {chatLoadError ? (
-                    <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 text-center text-sm text-m3-on-surface-variant">
+                    <div role="alert" className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 text-center text-sm text-m3-on-surface-variant">
                         <p>{t('chatLoadFailed')}</p>
                         <button
                             type="button"

@@ -1256,9 +1256,23 @@ test('project chat exposes a recoverable load error state', async () => {
   assert.match(chat, /setChatLoadError\(false\)[\s\S]{0,360}setMessages\(msgs\)/, 'Successful chat reads should clear the load error before rendering messages');
   assert.match(chat, /onSnapshot\(q,[\s\S]{0,520}\(error\) => \{[\s\S]{0,260}setChatLoadError\(true\)/, 'Project chat should handle subscription errors');
   assert.match(chat, /\}, \[projectId, chatReloadKey\]\)/, 'Project chat retry should recreate the subscription');
-  assert.match(chat, /chatLoadError[\s\S]{0,520}t\('chatLoadFailed'\)/, 'Project chat should render localized load failure copy');
+  assert.match(chat, /chatLoadError[\s\S]{0,220}role="alert"[\s\S]{0,360}t\('chatLoadFailed'\)/, 'Project chat should render announced localized load failure copy');
   assert.match(chat, /onClick=\{\(\) => setChatReloadKey\(\(current\) => current \+ 1\)\}/, 'Project chat retry should refresh the subscription');
   assert.match(chat, /t\('chatRetry'\)/, 'Project chat retry button should use localized copy');
+});
+
+test('friend chat exposes a recoverable load error state', async () => {
+  const friends = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.match(friends, /RotateCcw/, 'Friend chat retry should use the shared retry icon');
+  assert.match(friends, /const \[friendChatLoadError, setFriendChatLoadError\] = useState\(false\)/, 'Friend chat should track load errors separately from an empty thread');
+  assert.match(friends, /const \[friendChatReloadKey, setFriendChatReloadKey\] = useState\(0\)/, 'Friend chat should expose a retry trigger for failed subscriptions');
+  assert.match(friends, /setFriendChatLoadError\(false\)[\s\S]{0,360}setChatMessages\(msgs\)/, 'Successful friend chat reads should clear the load error');
+  assert.match(friends, /onSnapshot\(q,[\s\S]{0,520}\(error\) => \{[\s\S]{0,260}setFriendChatLoadError\(true\)/, 'Friend chat should handle subscription errors');
+  assert.match(friends, /\}, \[activeChatFriend, friendChatReloadKey\]\)/, 'Friend chat retry should recreate the subscription');
+  assert.match(friends, /friendChatLoadError[\s\S]{0,220}role="alert"[\s\S]{0,360}t\('chatLoadFailed'\)/, 'Friend chat should render announced localized load failure copy');
+  assert.match(friends, /onClick=\{\(\) => setFriendChatReloadKey\(\(current\) => current \+ 1\)\}/, 'Friend chat retry should refresh the subscription');
+  assert.match(friends, /t\('chatRetry'\)/, 'Friend chat retry button should use localized copy');
 });
 
 test('project child text inputs expose a shared display length limit', async () => {
