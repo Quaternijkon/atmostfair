@@ -12,6 +12,8 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const isAddingVoteItemRef = useRef(false);
   const [pendingVoteItemIds, setPendingVoteItemIds] = useState([]);
   const pendingVoteItemIdsRef = useRef(new Set());
+  const [isUpdatingVoteMode, setIsUpdatingVoteMode] = useState(false);
+  const isUpdatingVoteModeRef = useRef(false);
   const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
   const hasAdminRights = isProjectOwner || isAdmin;
   const voteMode = votingConfig?.mode === 'single' ? 'single' : 'multiple';
@@ -20,9 +22,21 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
     { value: 'single', label: t('voteModeSingle') },
   ];
 
-  const updateVoteMode = (mode) => {
+  const updateVoteMode = async (mode) => {
     if (!hasAdminRights || isStopped || mode === voteMode) return;
-    onUpdateVotingConfig(projectId, { ...(votingConfig || {}), mode });
+    if (isUpdatingVoteModeRef.current) return;
+
+    isUpdatingVoteModeRef.current = true;
+    setIsUpdatingVoteMode(true);
+    try {
+      await onUpdateVotingConfig(projectId, { ...(votingConfig || {}), mode });
+    } catch (error) {
+      console.error(error);
+      showToast(t('voteActionFailed'), 'error');
+    } finally {
+      isUpdatingVoteModeRef.current = false;
+      setIsUpdatingVoteMode(false);
+    }
   };
 
   const handleAddItem = async (event) => {
@@ -75,7 +89,8 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
                   key={mode.value}
                   type="button"
                   aria-pressed={selected}
-                  disabled={isStopped}
+                  aria-busy={isUpdatingVoteMode && !selected}
+                  disabled={isStopped || isUpdatingVoteMode}
                   onClick={() => updateVoteMode(mode.value)}
                   className={`min-h-11 flex-1 rounded-full px-4 text-sm font-medium transition sm:flex-none ${
                     selected
@@ -83,7 +98,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
                       : 'text-m3-on-surface-variant hover:bg-m3-surface-container-high hover:text-m3-on-surface'
                   } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  {mode.label}
+                  {isUpdatingVoteMode && !selected ? t('processing') : mode.label}
                 </button>
               );
             })}

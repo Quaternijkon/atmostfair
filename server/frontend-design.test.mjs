@@ -450,6 +450,24 @@ test('voting workspace exposes localized admin vote-mode controls', async () => 
   assert.doesNotMatch(files.voting, />Multiple<|>Single<|>Mode</, 'Voting mode visible copy should be localized');
 });
 
+test('voting mode updates prevent duplicate submits and expose pending state', async () => {
+  const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.voteActionFailed, 'missing English vote action failure translation');
+  assert.ok(TRANSLATIONS.zh.voteActionFailed, 'missing Chinese vote action failure translation');
+
+  assert.match(voting, /isUpdatingVoteModeRef\s*=\s*useRef\(false\)/, 'Vote mode updates should use a synchronous submit lock');
+  assert.match(voting, /if \(isUpdatingVoteModeRef\.current\) return;/, 'Vote mode updates should ignore duplicate clicks before state rerenders');
+  assert.match(voting, /setIsUpdatingVoteMode\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsUpdatingVoteMode\(false\)/, 'Vote mode updates should expose pending state for the whole write');
+  assert.match(voting, /await onUpdateVotingConfig\(projectId, \{ \.\.\.\(votingConfig \|\| \{\}\), mode \}\)/, 'Vote mode updates should await the write while pending');
+  assert.match(voting, /showToast\(t\('voteActionFailed'\), 'error'\)/, 'Vote mode update failures should use localized app feedback');
+  assert.match(voting, /disabled=\{isStopped \|\| isUpdatingVoteMode\}/, 'Vote mode controls should be disabled while updating');
+  assert.match(voting, /aria-busy=\{isUpdatingVoteMode && !selected\}/, 'Vote mode buttons should expose pending state');
+  assert.match(voting, /isUpdatingVoteMode && !selected \? t\('processing'\) : mode\.label/, 'Vote mode buttons should show localized progress copy');
+});
+
 test('voting item vote actions prevent duplicate toggles and expose pending state', async () => {
   const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
 
