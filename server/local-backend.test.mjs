@@ -3950,6 +3950,22 @@ test('HTTP data API hides private project contents until password unlock', async
       assert.equal(wrongUnlock.status, 403);
       assert.equal(wrongUnlock.body.error.code, 'project-access/invalid-password');
 
+      const overlongUnlock = await fetchJsonResponse(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { projectId: privateProject.id, password: 'P'.repeat(PROJECT_PASSWORD_MAX_LENGTH + 1) },
+      });
+      assert.equal(overlongUnlock.status, 400);
+      assert.equal(overlongUnlock.body.error.code, 'project-access/invalid-password');
+
+      const viewerAfterOverlongUnlock = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: privateProject.id },
+      });
+      assert.equal(viewerAfterOverlongUnlock.doc.accessGranted, false);
+      assert.equal(Object.hasOwn(viewerAfterOverlongUnlock.doc, 'brief'), false);
+
       const unlock = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
         method: 'POST',
         token: viewer.token,

@@ -1528,7 +1528,7 @@ async function canReadDataDoc({ store, user, collection, doc, query, now }) {
 
 async function unlockProjectAccess({ store, user, body, now }) {
   const projectId = validateDataId(body?.projectId);
-  const submittedPassword = String(body?.password || '');
+  const submittedPassword = normalizeProjectUnlockPassword(body?.password);
   const project = await store.get('projects', projectId);
   if (!project) throwDataError(404, 'project-access/not-found', 'Project not found.');
 
@@ -1547,6 +1547,14 @@ async function unlockProjectAccess({ store, user, body, now }) {
     ok: true,
     project: await toReadableProjectDoc({ store, user, project }),
   };
+}
+
+function normalizeProjectUnlockPassword(password) {
+  const submittedPassword = String(password || '');
+  if (submittedPassword.length > PROJECT_PASSWORD_MAX_LENGTH) {
+    throwDataError(400, 'project-access/invalid-password', 'Project password is invalid.');
+  }
+  return submittedPassword;
 }
 
 async function toReadableProjectDoc({ store, user, project }) {
