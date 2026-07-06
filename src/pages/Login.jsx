@@ -6,6 +6,13 @@ import {
   updateProfile
 } from '../lib/localAuth';
 import { auth } from '../lib/localAuth';
+import {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_MAX_LENGTH,
+  isValidAuthEmail,
+  isValidAuthPassword,
+  normalizeAuthEmail
+} from '../lib/authDomain';
 import { normalizeUserDisplayName, USER_DISPLAY_NAME_MAX_LENGTH } from '../lib/userDomain';
 import AtmostfairLogo from '../components/Logo';
 
@@ -15,7 +22,7 @@ export default function Login({ lang, setLang, t }) {
   const [guestName, setGuestName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const isEmailInputValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+  const isEmailInputValid = isValidAuthEmail;
   const authErrorMessage = (action, authError) => t('actionFailed', {
     action,
     message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
@@ -29,12 +36,12 @@ export default function Login({ lang, setLang, t }) {
   // Standard Email/Pass with Auto-Registration
   const handleEmailAuth = async (e) => {
     e.preventDefault();
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
     if (!isEmailInputValid(cleanEmail)) {
       setError(t('invalidEmail'));
       return;
     }
-    if (password.length < 6) {
+    if (!isValidAuthPassword(password)) {
       setError(t('weakPassword'));
       return;
     }
@@ -141,6 +148,7 @@ export default function Login({ lang, setLang, t }) {
                 onChange={e => setEmail(e.target.value)}
                 className="app-input"
                 autoComplete="email"
+                maxLength={AUTH_EMAIL_MAX_LENGTH}
                 aria-describedby={error ? 'auth-error' : undefined}
               />
             </div>
@@ -154,6 +162,7 @@ export default function Login({ lang, setLang, t }) {
                 onChange={e => setPassword(e.target.value)}
                 className="app-input"
                 autoComplete="current-password"
+                maxLength={AUTH_PASSWORD_MAX_LENGTH}
                 aria-describedby={error ? 'auth-error' : undefined}
               />
             </div>

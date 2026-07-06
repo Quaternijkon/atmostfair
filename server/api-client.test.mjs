@@ -27,3 +27,28 @@ test('apiRequest hides raw status text for server outages', async (t) => {
     },
   );
 });
+
+test('apiRequest hides raw status text for non-json client failures', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('<html>not found</html>', {
+    status: 404,
+    headers: { 'content-type': 'text/html' },
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await assert.rejects(
+    () => apiRequest('/api/auth/email/login', {
+      body: { email: 'user@example.com', password: 'secret123' },
+      token: null,
+    }),
+    (error) => {
+      assert.equal(error.status, 404);
+      assert.equal(error.code, 'request-failed');
+      assert.equal(error.message, 'Request failed.');
+      assert.doesNotMatch(error.message, /Request failed with status 404/);
+      return true;
+    },
+  );
+});

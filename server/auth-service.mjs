@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 
+import { isValidAuthEmail, isValidAuthPassword, normalizeAuthEmail } from '../src/lib/authDomain.js';
 import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
 
 const scrypt = promisify(crypto.scrypt);
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const AUTH_ERROR_STATUS = {
   'auth/email-already-in-use': 409,
   'auth/expired-token': 401,
@@ -26,7 +26,7 @@ export function createAuthService({ store, sessionSecret, now = () => Date.now()
   async function registerEmail(email, password, displayName) {
     const normalizedEmail = normalizeEmail(email);
     if (!isValidEmail(normalizedEmail)) throw authError('auth/invalid-email', 'Invalid email address.');
-    if (!password || password.length < 6) throw authError('auth/weak-password', 'Password must be at least 6 characters.');
+    if (!isValidAuthPassword(password)) throw authError('auth/weak-password', 'Password must be 6-128 characters.');
 
     const existing = await findAccountByEmail(normalizedEmail);
     if (existing) throw authError('auth/email-already-in-use', 'Email is already registered.');
@@ -56,6 +56,7 @@ export function createAuthService({ store, sessionSecret, now = () => Date.now()
   async function loginEmail(email, password) {
     const normalizedEmail = normalizeEmail(email);
     if (!isValidEmail(normalizedEmail)) throw authError('auth/invalid-email', 'Invalid email address.');
+    if (!isValidAuthPassword(password)) throw authError('auth/weak-password', 'Password must be 6-128 characters.');
     const account = await findAccountByEmail(normalizedEmail);
     if (!account) throw authError('auth/user-not-found', 'User not found.');
 
@@ -196,11 +197,11 @@ function publicUser(user) {
 }
 
 function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
+  return normalizeAuthEmail(email);
 }
 
 function isValidEmail(email) {
-  return EMAIL_PATTERN.test(email);
+  return isValidAuthEmail(email);
 }
 
 function authError(code, message) {

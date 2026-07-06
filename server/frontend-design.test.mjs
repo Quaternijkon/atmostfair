@@ -847,6 +847,10 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
   assert.match(files.login, /id="auth-error"/, 'Login inputs should be able to reference the current auth error');
   assert.match(files.login, /aria-describedby=\{error \? 'auth-error' : undefined\}/, 'Login inputs should describe their current auth error');
   assert.match(files.login, /isEmailInputValid/, 'Login should validate email format before calling the backend');
+  assert.match(files.login, /AUTH_EMAIL_MAX_LENGTH/, 'Login email input should share the auth email length limit');
+  assert.match(files.login, /AUTH_PASSWORD_MAX_LENGTH/, 'Login password input should share the auth password length limit');
+  assert.match(files.login, /maxLength=\{AUTH_EMAIL_MAX_LENGTH\}/, 'Login email input should cap text before submit');
+  assert.match(files.login, /maxLength=\{AUTH_PASSWORD_MAX_LENGTH\}/, 'Login password input should cap text before submit');
   assert.match(files.login, /setError\(t\('invalidEmail'\)\)/, 'Invalid email should use localized frontend copy');
   assert.match(files.login, /auth\/invalid-email[\s\S]{0,160}t\('invalidEmail'\)/, 'Backend invalid-email errors should use localized copy');
   assert.match(files.login, /auth\/weak-password[\s\S]{0,160}t\('weakPassword'\)/, 'Backend weak-password errors should use localized copy');

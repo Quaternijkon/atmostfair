@@ -31,7 +31,7 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
     const serviceUnavailable = response.status >= 500;
     const error = new Error(
       payload.error?.message
-      || (serviceUnavailable ? 'Service is temporarily unavailable.' : `Request failed with status ${response.status}`)
+      || (serviceUnavailable ? 'Service is temporarily unavailable.' : 'Request failed.')
     );
     error.code = payload.error?.code || (serviceUnavailable ? 'request/service-unavailable' : 'request-failed');
     error.status = response.status;

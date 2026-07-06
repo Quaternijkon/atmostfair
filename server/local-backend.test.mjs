@@ -8,6 +8,7 @@ import { createAuthService } from './auth-service.mjs';
 import { arrayRemove, arrayUnion, createDataStore } from './data-store.mjs';
 import { createLocalBackendServer } from './local-backend.mjs';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
+import { AUTH_EMAIL_MAX_LENGTH, AUTH_PASSWORD_MAX_LENGTH } from '../src/lib/authDomain.js';
 import {
   PROJECT_CASCADE_COLLECTIONS,
   PROJECT_CREATOR_NAME_MAX_LENGTH,
@@ -48,9 +49,21 @@ test('local auth supports email password accounts and guest sessions only', asyn
       () => auth.loginEmail('alice@example.com', 'bad password'),
       /auth\/wrong-password/,
     );
+    await assert.rejects(
+      () => auth.registerEmail(`${'a'.repeat(AUTH_EMAIL_MAX_LENGTH)}@example.com`, 'secret123'),
+      /auth\/invalid-email/,
+    );
+    await assert.rejects(
+      () => auth.registerEmail('long-password@example.com', 'p'.repeat(AUTH_PASSWORD_MAX_LENGTH + 1)),
+      /auth\/weak-password/,
+    );
 
     const loggedIn = await auth.loginEmail('alice@example.com', 'correct horse battery staple');
     assert.equal(loggedIn.user.uid, created.user.uid);
+    await assert.rejects(
+      () => auth.loginEmail('alice@example.com', 'p'.repeat(AUTH_PASSWORD_MAX_LENGTH + 1)),
+      /auth\/weak-password/,
+    );
 
     const guest = await auth.createGuest('Visitor');
     assert.equal(guest.user.email, null);
@@ -70,6 +83,10 @@ test('local auth supports email password accounts and guest sessions only', asyn
 
     await assert.rejects(
       () => auth.updateProfile(created.user.uid, { email: 'not-an-email' }),
+      /auth\/invalid-email/,
+    );
+    await assert.rejects(
+      () => auth.updateProfile(created.user.uid, { email: `${'b'.repeat(AUTH_EMAIL_MAX_LENGTH)}@example.com` }),
       /auth\/invalid-email/,
     );
     await assert.rejects(
