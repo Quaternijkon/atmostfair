@@ -284,6 +284,9 @@ test('password-protected project unlocks expose pending and accessible error sta
     assert.match(source, /disabled=\{isUnlockingProject\}/, `${fileKey} unlock password input should be disabled while submitting`);
     assert.match(source, /aria-invalid=\{passwordError\}/, `${fileKey} unlock password input should expose invalid state`);
     assert.match(source, /aria-describedby=\{passwordError \? 'project-unlock-error' : undefined\}/, `${fileKey} unlock password input should reference the current error`);
+    assert.match(source, /PROJECT_PASSWORD_MAX_LENGTH/, `${fileKey} unlock password input should share the project password limit`);
+    assert.match(source, /maxLength=\{PROJECT_PASSWORD_MAX_LENGTH\}/, `${fileKey} unlock password input should cap text before submit`);
+    assert.match(source, /setInputPassword\(normalizeProjectPasswordInput\(e\.target\.value\)\)/, `${fileKey} unlock password edits should use the shared input cap`);
     assert.match(source, /id="project-unlock-error" role="alert" aria-live="assertive"/, `${fileKey} unlock error should be announced assertively`);
     assert.match(source, /isUnlockingProject \? t\('processing'\) : t\('unlock'\)/, `${fileKey} unlock submit button should show localized progress copy`);
   }

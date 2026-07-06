@@ -8,7 +8,7 @@ import { createProjectShareUrl, getProjectRoutePrefix } from '../lib/dashboardDo
 import { createProjectActivityExport, createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
-import { createProjectInsightSummary, PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
+import { createProjectInsightSummary, PROJECT_BRIEF_MAX_LENGTH, PROJECT_PASSWORD_MAX_LENGTH } from '../lib/projectDomain';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
@@ -32,6 +32,8 @@ function downloadCsvExport(exportData) {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
 function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, t }) {
   const visibleActivities = (activities || []).slice(0, 8);
@@ -263,10 +265,11 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
               <div className="relative mb-2">
                 <input
                   type="password" value={inputPassword}
-                  onChange={e => { setInputPassword(e.target.value); setPasswordError(false); }}
+                  onChange={e => { setInputPassword(normalizeProjectPasswordInput(e.target.value)); setPasswordError(false); }}
                   className="app-input"
                   placeholder={t('enterPassword')} autoFocus
                   disabled={isUnlockingProject}
+                  maxLength={PROJECT_PASSWORD_MAX_LENGTH}
                   aria-invalid={passwordError}
                   aria-describedby={passwordError ? 'project-unlock-error' : undefined}
                 />

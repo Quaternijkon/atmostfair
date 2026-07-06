@@ -259,10 +259,11 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
               <div className="relative mb-2">
                 <input
                   type="password" value={inputPassword}
-                  onChange={e => { setInputPassword(e.target.value); setPasswordError(false); }}
+                  onChange={e => { setInputPassword(normalizeProjectPasswordInput(e.target.value)); setPasswordError(false); }}
                   className="app-input"
                   placeholder={t('enterPassword')} autoFocus
                   disabled={isUnlockingProject}
+                  maxLength={PROJECT_PASSWORD_MAX_LENGTH}
                   aria-invalid={passwordError}
                   aria-describedby={passwordError ? 'project-unlock-error' : undefined}
                 />
