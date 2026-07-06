@@ -188,6 +188,52 @@ test('project detail actions await writes before navigation and expose pending s
   assert.match(detail, /isDeleteProjectPending \? t\('processing'\) :/, 'Project delete button should show localized pending copy');
 });
 
+test('project detail exposes localized project insights', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
+  };
+
+  for (const key of [
+    'projectInsights',
+    'projectInsightNextAction',
+    'insightItems',
+    'insightVotes',
+    'insightFields',
+    'insightResponses',
+    'insightParticipants',
+    'insightSlots',
+    'insightBooked',
+    'insightWaitlist',
+    'insightTasks',
+    'insightClaimed',
+    'insightActivity',
+    'insightFinishSetup',
+    'insightInviteParticipants',
+    'insightOpenSlots',
+    'insightRunResult',
+    'insightReviewProgress',
+    'insightReviewResults',
+    'insightRestoreToEdit',
+    'insightResumeToEdit',
+  ]) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(files.detail, /createProjectInsightSummary/, 'Project detail should derive insights through the domain helper');
+  assert.match(files.detail, /ProjectInsightsCard/, 'Project detail should render a reusable insights card');
+  assert.match(files.detail, /aria-label=\{t\('projectInsights'\)\}/, 'Insights card should expose a localized accessible label');
+  assert.match(files.detail, /projectInsightSummary\.metrics\.map/, 'Insights card should render metric rows from the domain summary');
+  assert.match(files.detail, /t\(projectInsightSummary\.nextActionKey\)/, 'Insights next action should be localized from the domain summary');
+  assert.match(files.detail, /gameRooms = \[\]/, 'Project detail should accept game room data for insights');
+  assert.match(files.detail, /const projectGameRooms = \(gameRooms \|\| \[\]\)\.filter\(\(room\) => room\.projectId === project\.id\);/, 'Project detail should scope game room data before building insights');
+  assert.match(files.detail, /gameRooms: projectGameRooms/, 'Project detail should pass scoped game room data into the insight summary');
+  assert.match(files.app, /const \[gameRooms,\s*setGameRooms\] = useState\(\[\]\)/, 'App should keep game room data available for project insights');
+  assert.match(files.app, /onSnapshot\(collection\(db, 'game_rooms'\)/, 'App should subscribe to game rooms for project insights');
+  assert.doesNotMatch(files.detail, />Project Insights<|>Next action<|>Review progress/, 'Project insights visible copy should be localized');
+});
+
 test('password-protected project unlocks use server access grants', async () => {
   const files = {
     dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),

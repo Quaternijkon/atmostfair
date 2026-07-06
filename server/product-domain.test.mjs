@@ -15,6 +15,7 @@ import {
   createProjectCascadeDeleteOperations,
   createProjectCreateData,
   createGatherFieldData,
+  createProjectInsightSummary,
   createQueueJoinData,
   createQueueResultData,
   createTeamJoinMember,
@@ -1513,4 +1514,65 @@ test('project detail exposes an owner-editable project brief', async () => {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
+});
+
+test('project insight summary scopes metrics and guides next actions', () => {
+  const voteProject = { id: 'vote-1', type: 'vote', status: 'active' };
+  const voteSummary = createProjectInsightSummary(voteProject, {
+    votingItems: [
+      { id: 'v1', projectId: 'vote-1', votes: ['u1', 'u2'] },
+      { id: 'v2', projectId: 'vote-1', votes: ['u3'] },
+      { id: 'v3', projectId: 'other', votes: ['leak'] },
+    ],
+    projectActivities: [
+      { id: 'a1', projectId: 'vote-1' },
+      { id: 'a2', projectId: 'other' },
+    ],
+  });
+
+  assert.equal(voteSummary.statusKey, 'activeStatus');
+  assert.equal(voteSummary.nextActionKey, 'insightReviewProgress');
+  assert.deepEqual(voteSummary.metrics, [
+    { key: 'items', labelKey: 'insightItems', value: 2 },
+    { key: 'votes', labelKey: 'insightVotes', value: 3 },
+    { key: 'activity', labelKey: 'insightActivity', value: 1 },
+  ]);
+
+  const scheduleSummary = createProjectInsightSummary(
+    { id: 'schedule-1', type: 'schedule', status: 'active' },
+    {
+      scheduleSubmissions: [
+        { id: 's1', projectId: 'schedule-1' },
+        { id: 's2', projectId: 'other' },
+      ],
+    },
+  );
+
+  assert.equal(scheduleSummary.nextActionKey, 'insightFinishSetup');
+  assert.deepEqual(scheduleSummary.metrics, [
+    { key: 'responses', labelKey: 'insightResponses', value: 1 },
+  ]);
+
+  const bookingSummary = createProjectInsightSummary(
+    { id: 'book-1', type: 'book', status: 'active', bookingConfig: { mode: 'date' } },
+    {
+      bookingSlots: [
+        { id: 'b1', projectId: 'book-1', bookedBy: 'u1', waitlist: [{ uid: 'u2' }, { uid: 'u3' }] },
+        { id: 'b2', projectId: 'book-1', bookedBy: null, waitlist: [] },
+        { id: 'b3', projectId: 'other', bookedBy: 'leak', waitlist: [{ uid: 'leak' }] },
+      ],
+    },
+  );
+
+  assert.equal(bookingSummary.nextActionKey, 'insightReviewProgress');
+  assert.deepEqual(bookingSummary.metrics, [
+    { key: 'slots', labelKey: 'insightSlots', value: 2 },
+    { key: 'booked', labelKey: 'insightBooked', value: 1 },
+    { key: 'waitlist', labelKey: 'insightWaitlist', value: 2 },
+  ]);
+
+  assert.equal(
+    createProjectInsightSummary({ id: 'archived-1', type: 'queue', archived: true }, {}).nextActionKey,
+    'insightRestoreToEdit',
+  );
 });

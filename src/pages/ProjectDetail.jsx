@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, Archive, ArrowLeft, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
+import { Activity, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
@@ -8,7 +8,7 @@ import { createProjectShareUrl, getProjectRoutePrefix } from '../lib/dashboardDo
 import { createProjectActivityExport, createProjectParticipantExport, supportsParticipantExport } from '../lib/exportDomain';
 import { formatDate } from '../lib/locale';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
-import { PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
+import { createProjectInsightSummary, PROJECT_BRIEF_MAX_LENGTH } from '../lib/projectDomain';
 import VotingView from '../components/VotingView';
 import TeamView from '../components/TeamView';
 import RouletteView from '../components/RouletteView';
@@ -158,7 +158,40 @@ function ProjectBriefCard({ project, canEditBrief, onSave, t }) {
   );
 }
 
-export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, projectActivities, actions, t }) {
+function ProjectInsightsCard({ projectInsightSummary, t }) {
+  const statusChipClass = {
+    archived: 'app-chip',
+    finished: 'app-chip app-chip-red',
+    paused: 'app-chip app-chip-yellow',
+    activeStatus: 'app-chip app-chip-green',
+  }[projectInsightSummary.statusKey] || 'app-chip';
+
+  return (
+    <aside className="app-card p-4" aria-label={t('projectInsights')}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-m3-on-surface">
+          <ChartLine className="h-4 w-4 text-google-blue" />
+          <span>{t('projectInsights')}</span>
+        </div>
+        <span className={`${statusChipClass} py-1 text-xs`}>{t(projectInsightSummary.statusKey)}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {projectInsightSummary.metrics.map((metric) => (
+          <div key={metric.key} className="rounded-lg border border-m3-outline-variant/30 bg-m3-surface-container/35 px-3 py-2">
+            <div className="text-[11px] font-medium uppercase text-m3-on-surface-variant">{t(metric.labelKey)}</div>
+            <div className="mt-1 text-xl font-medium text-m3-on-surface">{metric.value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-lg border border-google-blue/20 bg-google-blue/5 px-3 py-2">
+        <div className="text-[11px] font-medium uppercase text-google-blue">{t('projectInsightNextAction')}</div>
+        <div className="mt-1 text-sm font-medium text-m3-on-surface">{t(projectInsightSummary.nextActionKey)}</div>
+      </div>
+    </aside>
+  );
+}
+
+export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -384,9 +417,23 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const projectScheduleSubmissions = (scheduleSubmissions || []).filter(s => s.projectId === project.id);
   const projectBookingSlots = (bookingSlots || []).filter(s => s.projectId === project.id);
   const projectClaimItems = (claimItems || []).filter(c => c.projectId === project.id);
+  const projectGameRooms = (gameRooms || []).filter((room) => room.projectId === project.id);
   const projectActivityItems = (projectActivities || [])
     .filter((activity) => activity.projectId === project.id)
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const projectInsightSummary = createProjectInsightSummary(project, {
+    votingItems: projectItems,
+    rooms: projectRooms,
+    rouletteParticipants: projectRouletteData,
+    queueParticipants: projectQueueData,
+    gatherFields: projectGatherFields,
+    gatherSubmissions: projectGatherSubmissions,
+    scheduleSubmissions: projectScheduleSubmissions,
+    bookingSlots: projectBookingSlots,
+    claimItems: projectClaimItems,
+    gameRooms: projectGameRooms,
+    projectActivities: projectActivityItems,
+  });
 
   const handleExportParticipants = async () => {
     try {
@@ -537,6 +584,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
         </div>
         
         <div className="w-full space-y-4 xl:sticky xl:top-24 xl:w-96 self-start">
+          <ProjectInsightsCard projectInsightSummary={projectInsightSummary} t={t} />
           <ProjectBriefCard
             project={project}
             canEditBrief={canEditBrief}

@@ -32,6 +32,157 @@ const GAME_ROOM_INVITE_PARAM = 'room';
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
 
+export function createProjectInsightSummary(project, datasets = {}) {
+  const projectId = project?.id;
+  const statusKey = project?.archived
+    ? 'archived'
+    : project?.status === 'finished'
+      ? 'finished'
+      : project?.status === 'stopped'
+        ? 'paused'
+        : 'activeStatus';
+
+  const scoped = (items, field = 'projectId') => (
+    Array.isArray(items) && projectId ? items.filter((entry) => entry?.[field] === projectId) : []
+  );
+  const activityCount = scoped(datasets.projectActivities).length;
+  const withActivity = (metrics) => (
+    activityCount > 0 ? [...metrics, { key: 'activity', labelKey: 'insightActivity', value: activityCount }] : metrics
+  );
+
+  if (!projectId) {
+    return { statusKey, nextActionKey: 'insightInviteParticipants', metrics: [] };
+  }
+
+  let metrics = [];
+  let nextActionKey = 'insightInviteParticipants';
+
+  if (project.archived) {
+    nextActionKey = 'insightRestoreToEdit';
+  } else if (project.status === 'stopped') {
+    nextActionKey = 'insightResumeToEdit';
+  } else if (project.status === 'finished') {
+    nextActionKey = 'insightReviewResults';
+  } else {
+    switch (project.type) {
+      case 'vote': {
+        const votingItems = scoped(datasets.votingItems);
+        const votes = votingItems.reduce((sum, item) => sum + (Array.isArray(item.votes) ? item.votes.length : 0), 0);
+        metrics = [
+          { key: 'items', labelKey: 'insightItems', value: votingItems.length },
+          { key: 'votes', labelKey: 'insightVotes', value: votes },
+        ];
+        nextActionKey = votingItems.length === 0
+          ? 'insightFinishSetup'
+          : votes === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      case 'gather': {
+        const gatherFields = scoped(datasets.gatherFields);
+        const gatherSubmissions = scoped(datasets.gatherSubmissions);
+        metrics = [
+          { key: 'fields', labelKey: 'insightFields', value: gatherFields.length },
+          { key: 'responses', labelKey: 'insightResponses', value: gatherSubmissions.length },
+        ];
+        nextActionKey = gatherFields.length === 0
+          ? 'insightFinishSetup'
+          : gatherSubmissions.length === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      case 'schedule': {
+        const scheduleSubmissions = scoped(datasets.scheduleSubmissions);
+        metrics = [{ key: 'responses', labelKey: 'insightResponses', value: scheduleSubmissions.length }];
+        nextActionKey = !project.scheduleConfig
+          ? 'insightFinishSetup'
+          : scheduleSubmissions.length === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      case 'book': {
+        const bookingSlots = scoped(datasets.bookingSlots);
+        const booked = bookingSlots.filter((slot) => slot.bookedBy).length;
+        const waitlist = bookingSlots.reduce((sum, slot) => sum + (Array.isArray(slot.waitlist) ? slot.waitlist.length : 0), 0);
+        metrics = [
+          { key: 'slots', labelKey: 'insightSlots', value: bookingSlots.length },
+          { key: 'booked', labelKey: 'insightBooked', value: booked },
+          { key: 'waitlist', labelKey: 'insightWaitlist', value: waitlist },
+        ];
+        nextActionKey = !project.bookingConfig
+          ? 'insightFinishSetup'
+          : bookingSlots.length === 0
+            ? 'insightOpenSlots'
+            : booked === 0
+              ? 'insightInviteParticipants'
+              : 'insightReviewProgress';
+        break;
+      }
+      case 'team': {
+        const rooms = scoped(datasets.rooms);
+        const participants = rooms.reduce((sum, room) => sum + (Array.isArray(room.members) ? room.members.length : 0), 0);
+        metrics = [
+          { key: 'items', labelKey: 'insightItems', value: rooms.length },
+          { key: 'participants', labelKey: 'insightParticipants', value: participants },
+        ];
+        nextActionKey = rooms.length === 0
+          ? 'insightFinishSetup'
+          : participants === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      case 'claim': {
+        const claimItems = scoped(datasets.claimItems);
+        const claimed = claimItems.reduce((sum, item) => sum + (Array.isArray(item.claimants) ? item.claimants.length : 0), 0);
+        metrics = [
+          { key: 'tasks', labelKey: 'insightTasks', value: claimItems.length },
+          { key: 'claimed', labelKey: 'insightClaimed', value: claimed },
+        ];
+        nextActionKey = claimItems.length === 0
+          ? 'insightFinishSetup'
+          : claimed === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      case 'roulette': {
+        const rouletteParticipants = scoped(datasets.rouletteParticipants);
+        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: rouletteParticipants.length }];
+        nextActionKey = rouletteParticipants.length === 0 ? 'insightInviteParticipants' : 'insightRunResult';
+        break;
+      }
+      case 'queue': {
+        const queueParticipants = scoped(datasets.queueParticipants);
+        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: queueParticipants.length }];
+        nextActionKey = queueParticipants.length === 0 ? 'insightInviteParticipants' : 'insightRunResult';
+        break;
+      }
+      case 'game_hub': {
+        const gameRooms = scoped(datasets.gameRooms);
+        const participants = gameRooms.reduce((sum, room) => sum + (Array.isArray(room.players) ? room.players.length : 0), 0);
+        metrics = [
+          { key: 'items', labelKey: 'insightItems', value: gameRooms.length },
+          { key: 'participants', labelKey: 'insightParticipants', value: participants },
+        ];
+        nextActionKey = gameRooms.length === 0
+          ? 'insightFinishSetup'
+          : participants === 0
+            ? 'insightInviteParticipants'
+            : 'insightReviewProgress';
+        break;
+      }
+      default:
+        nextActionKey = 'insightReviewProgress';
+    }
+  }
+
+  return { statusKey, nextActionKey, metrics: withActivity(metrics) };
+}
+
 export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
   const members = Array.isArray(room.members) ? room.members : [];
