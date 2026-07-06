@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Shield, Database, Trash2, Flag, Plus, AlertTriangle } from './Icons';
 import { collection, addDoc, deleteDoc, doc, getDocs, updateDoc, db } from '../lib/localData';
 import {
@@ -58,6 +58,8 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
   const [announcements, setAnnouncements] = useState([]);
   const [announcementNow, setAnnouncementNow] = useState(null);
   const [announcementForm, setAnnouncementForm] = useState(EMPTY_ANNOUNCEMENT_FORM);
+  const [isCreatingAnnouncement, setIsCreatingAnnouncement] = useState(false);
+  const isCreatingAnnouncementRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -125,12 +127,16 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
 
   const handleCreateAnnouncement = async (event) => {
     event.preventDefault();
+    if (isCreatingAnnouncementRef.current) return;
+
     const data = createAnnouncementFormData(announcementForm);
     if (!data) {
       showToast(t('announcementInvalid'), 'error');
       return;
     }
 
+    isCreatingAnnouncementRef.current = true;
+    setIsCreatingAnnouncement(true);
     try {
       await addDoc(collection(db, 'announcements'), data);
       setAnnouncementForm(EMPTY_ANNOUNCEMENT_FORM);
@@ -138,6 +144,9 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
       showToast(t('announcementCreated'), 'success');
     } catch (error) {
       showToast(t('errorWithMessage', { title: t('createAnnouncement'), message: error.message }), 'error');
+    } finally {
+      isCreatingAnnouncementRef.current = false;
+      setIsCreatingAnnouncement(false);
     }
   };
 
@@ -259,7 +268,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
         </div>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-          <form onSubmit={handleCreateAnnouncement} className="grid gap-3">
+          <form onSubmit={handleCreateAnnouncement} className="grid gap-3" aria-busy={isCreatingAnnouncement}>
             <div>
               <label htmlFor="announcement-title" className="app-label">{t('announcementTitle')}</label>
               <input
@@ -269,6 +278,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                 onChange={(event) => updateAnnouncementForm({ title: event.target.value })}
                 className="app-input"
                 maxLength={ANNOUNCEMENT_TITLE_MAX_LENGTH}
+                disabled={isCreatingAnnouncement}
               />
             </div>
             <div>
@@ -279,6 +289,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                 onChange={(event) => updateAnnouncementForm({ content: event.target.value })}
                 className="app-input min-h-[104px] resize-y"
                 maxLength={ANNOUNCEMENT_CONTENT_MAX_LENGTH}
+                disabled={isCreatingAnnouncement}
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -289,6 +300,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                   value={announcementForm.type}
                   onChange={(event) => updateAnnouncementForm({ type: event.target.value })}
                   className="app-input"
+                  disabled={isCreatingAnnouncement}
                 >
                   {ANNOUNCEMENT_TYPES.map((type) => (
                     <option key={type} value={type}>{t(type === 'warning' ? 'announcementTypeWarning' : 'announcementTypeInfo')}</option>
@@ -301,6 +313,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                   checked={announcementForm.active}
                   onChange={(event) => updateAnnouncementForm({ active: event.target.checked })}
                   className="h-4 w-4 accent-google-blue"
+                  disabled={isCreatingAnnouncement}
                 />
                 {t('activeAnnouncement')}
               </label>
@@ -314,6 +327,7 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                   value={announcementForm.startsAt}
                   onChange={(event) => updateAnnouncementForm({ startsAt: event.target.value })}
                   className="app-input"
+                  disabled={isCreatingAnnouncement}
                 />
               </div>
               <div>
@@ -324,12 +338,13 @@ export default function AdminDashboard({ projects, items, rooms, roulettePartici
                   value={announcementForm.endsAt}
                   onChange={(event) => updateAnnouncementForm({ endsAt: event.target.value })}
                   className="app-input"
+                  disabled={isCreatingAnnouncement}
                 />
               </div>
             </div>
-            <button type="submit" className="app-button-primary justify-center">
+            <button type="submit" disabled={isCreatingAnnouncement} className="app-button-primary justify-center">
               <Plus className="h-4 w-4" />
-              {t('createAnnouncement')}
+              {isCreatingAnnouncement ? t('processing') : t('createAnnouncement')}
             </button>
           </form>
 

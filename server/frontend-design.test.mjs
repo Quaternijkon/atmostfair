@@ -818,6 +818,12 @@ test('announcement lifecycle management is visible and time-window aware', async
   assert.match(files.admin, /updateDoc\(doc\(db,\s*'announcements'/, 'Admin dashboard should update announcement publish state');
   assert.match(files.admin, /deleteDoc\(doc\(db,\s*'announcements'/, 'Admin dashboard should delete announcements');
   assert.match(files.admin, /type="datetime-local"/, 'Admin dashboard should support announcement start/end windows');
+  assert.match(files.admin, /isCreatingAnnouncementRef\s*=\s*useRef\(false\)/, 'Admin announcement creation should use a synchronous submit lock');
+  assert.match(files.admin, /if \(isCreatingAnnouncementRef\.current\) return;/, 'Admin announcement creation should ignore repeated submits before state rerenders');
+  assert.match(files.admin, /setIsCreatingAnnouncement\(true\)[\s\S]{0,800}finally[\s\S]{0,220}setIsCreatingAnnouncement\(false\)/, 'Admin announcement creation should expose a loading state for the whole request');
+  assert.match(files.admin, /aria-busy=\{isCreatingAnnouncement\}/, 'Admin announcement form should expose pending state to assistive technology');
+  assert.match(files.admin, /disabled=\{isCreatingAnnouncement\}/, 'Admin announcement form controls should be disabled while submitting');
+  assert.match(files.admin, /isCreatingAnnouncement \? t\('processing'\) : t\('createAnnouncement'\)/, 'Admin announcement submit button should show localized progress copy');
 });
 
 test('auth and user fallbacks avoid visible English fragments', async () => {
