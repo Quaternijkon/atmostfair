@@ -38,6 +38,8 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   const [myAvailability, setMyAvailability] = useState(mySubmission?.availability || []); // Array depends on mode
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
   const isSubmittingScheduleRef = useRef(false);
+  const [isSavingScheduleConfig, setIsSavingScheduleConfig] = useState(false);
+  const isSavingScheduleConfigRef = useRef(false);
 
   // Helper: Date Range Generator
   const dates = useMemo(() => {
@@ -50,14 +52,26 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
 
   // --- Handlers ---
 
-  const handleSaveConfig = () => {
+  const handleSaveConfig = async () => {
+    if (isSavingScheduleConfigRef.current) return;
+
     const scheduleConfig = createScheduleConfigData(config);
     if (!scheduleConfig) {
       showToast(t('rangeError'), 'error');
       return;
     }
 
-    actions.handleUpdateScheduleConfig(project.id, scheduleConfig);
+    isSavingScheduleConfigRef.current = true;
+    setIsSavingScheduleConfig(true);
+    try {
+      await actions.handleUpdateScheduleConfig(project.id, scheduleConfig);
+    } catch (error) {
+      console.error(error);
+      showToast(t('scheduleConfigSaveFailed'), 'error');
+    } finally {
+      isSavingScheduleConfigRef.current = false;
+      setIsSavingScheduleConfig(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -168,7 +182,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
               <div className="space-y-4 max-w-md">
                   <div>
                       <label className="app-label">{t('scheduleMode')}</label>
-                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} className="app-input">
+                      <select value={config.mode} onChange={e => setConfig({...config, mode: e.target.value})} disabled={isSavingScheduleConfig} className="app-input">
                           <option value="date">{t('modeDate')}</option>
                           <option value="half">{t('modeHalf')}</option>
                           <option value="time">{t('modeTime')}</option>
@@ -177,18 +191,20 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                   <div className="grid grid-cols-2 gap-4">
                       <div>
                           <label className="app-label">{t('startDate')}</label>
-                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} className="app-input" />
+                          <input type="date" value={config.start} onChange={e => setConfig({...config, start: e.target.value})} disabled={isSavingScheduleConfig} className="app-input" />
                       </div>
                       <div>
                           <label className="app-label">{t('endDate')}</label>
-                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} className="app-input" />
+                          <input type="date" value={config.end} onChange={e => setConfig({...config, end: e.target.value})} disabled={isSavingScheduleConfig} className="app-input" />
                       </div>
                   </div>
                   <div>
                       <label className="app-label">{t('deadline')}</label>
-                      <input type="datetime-local" value={config.deadline} onChange={e => setConfig({...config, deadline: e.target.value})} className="app-input" />
+                      <input type="datetime-local" value={config.deadline} onChange={e => setConfig({...config, deadline: e.target.value})} disabled={isSavingScheduleConfig} className="app-input" />
                   </div>
-                  <button onClick={handleSaveConfig} className="app-button-primary w-full">{t('saveConfig')}</button>
+                  <button onClick={handleSaveConfig} disabled={isSavingScheduleConfig} aria-busy={isSavingScheduleConfig} className="app-button-primary w-full">
+                      {isSavingScheduleConfig ? t('processing') : t('saveConfig')}
+                  </button>
               </div>
           </div>
       );

@@ -662,6 +662,25 @@ test('schedule workspace exposes localized owner recommendation summary', async 
   assert.doesNotMatch(schedule, />Recommendations<|>Best time<|>No recommendations/, 'Schedule recommendation copy should be localized');
 });
 
+test('schedule config saves prevent duplicate submits and expose pending state', async () => {
+  const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.scheduleConfigSaveFailed, 'missing English schedule config failure translation');
+  assert.ok(TRANSLATIONS.zh.scheduleConfigSaveFailed, 'missing Chinese schedule config failure translation');
+
+  assert.match(schedule, /isSavingScheduleConfigRef\s*=\s*useRef\(false\)/, 'Schedule config saves should use a synchronous action lock');
+  assert.match(schedule, /if \(isSavingScheduleConfigRef\.current\) return;/, 'Schedule config saves should ignore duplicate clicks before rerender');
+  assert.match(schedule, /isSavingScheduleConfigRef\.current = true[\s\S]{0,160}setIsSavingScheduleConfig\(true\)/, 'Schedule config saves should expose pending state before writing');
+  assert.match(schedule, /await actions\.handleUpdateScheduleConfig\(project\.id, scheduleConfig\)/, 'Schedule config saves should await the write while pending');
+  assert.match(schedule, /finally \{[\s\S]{0,160}isSavingScheduleConfigRef\.current = false[\s\S]{0,120}setIsSavingScheduleConfig\(false\)/, 'Schedule config saves should clear pending state when they settle');
+  assert.match(schedule, /showToast\(t\('scheduleConfigSaveFailed'\), 'error'\)/, 'Schedule config save failures should use localized app feedback');
+  assert.match(schedule, /disabled=\{isSavingScheduleConfig\}/, 'Schedule config form controls should be disabled while saving');
+  assert.match(schedule, /aria-busy=\{isSavingScheduleConfig\}/, 'Schedule config save button should expose busy state');
+  assert.match(schedule, /isSavingScheduleConfig \? t\('processing'\) : t\('saveConfig'\)/, 'Schedule config save button should show localized progress copy');
+});
+
 test('queue workspace exposes localized replayable audit steps', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
