@@ -230,3 +230,23 @@ test('friend request actions prevent duplicate submits and expose pending state'
   assert.match(friendSystem, /isRejectingRequest \? t\('processing'\) : t\('ignore'\)/, 'Reject buttons should show localized progress copy');
   assert.match(friendSystem, /isRequestingFriend \? t\('processing'\) :/, 'Friend request buttons should show localized progress copy');
 });
+
+test('friend search prevents duplicate submits and exposes pending state', async () => {
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.friendSearchFailed, 'missing English friend search failure translation');
+  assert.ok(TRANSLATIONS.zh.friendSearchFailed, 'missing Chinese friend search failure translation');
+
+  assert.match(friendSystem, /\[isSearchingFriends,\s*setIsSearchingFriends\]\s*=\s*useState\(false\)/, 'Friend search should track pending requests');
+  assert.match(friendSystem, /isSearchingFriendsRef\s*=\s*useRef\(false\)/, 'Friend search should use a synchronous search lock');
+  assert.match(friendSystem, /if \(isSearchingFriendsRef\.current\) return;/, 'Friend search should ignore duplicate searches before rerender');
+  assert.match(friendSystem, /isSearchingFriendsRef\.current = true[\s\S]{0,160}setIsSearchingFriends\(true\)/, 'Friend search should expose pending state before querying');
+  assert.match(friendSystem, /finally \{[\s\S]{0,160}isSearchingFriendsRef\.current = false[\s\S]{0,120}setIsSearchingFriends\(false\)/, 'Friend search should clear pending state when it settles');
+  assert.match(friendSystem, /showToast\(t\('friendSearchFailed'\), 'error'\)/, 'Friend search failures should use localized app feedback');
+  assert.match(friendSystem, /disabled=\{isSearchingFriends\}/, 'Friend search input should be disabled while querying');
+  assert.match(friendSystem, /disabled=\{!searchTerm\.trim\(\) \|\| isSearchingFriends\}/, 'Friend search button should be disabled for blank or pending searches');
+  assert.match(friendSystem, /aria-busy=\{isSearchingFriends\}/, 'Friend search button should expose busy state');
+  assert.match(friendSystem, /isSearchingFriends \? t\('processing'\) : t\('go'\)/, 'Friend search button should show localized progress copy');
+});

@@ -15,11 +15,13 @@ export default function FriendSystem({ user, onClose, t }) {
     const [friends, setFriends] = useState([]);
     const [requests, setRequests] = useState([]); 
     const [searchTerm, setSearchTerm] = useState('');
+    const [isSearchingFriends, setIsSearchingFriends] = useState(false);
     const [activeChatFriend, setActiveChatFriend] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
     const [isSendingFriendMessage, setIsSendingFriendMessage] = useState(false);
     const isSendingFriendMessageRef = useRef(false);
+    const isSearchingFriendsRef = useRef(false);
     const [pendingFriendActionIds, setPendingFriendActionIds] = useState(() => new Set());
     const pendingFriendActionIdsRef = useRef(new Set());
     const [searchResults, setSearchResults] = useState([]);
@@ -105,10 +107,14 @@ export default function FriendSystem({ user, onClose, t }) {
     }, [activeChatFriend]);
 
     const handleSearch = async () => {
-        if (!searchTerm.trim()) return;
-        setSearchResults([]);
-        
         const term = searchTerm.trim();
+        if (!term) return;
+        if (isSearchingFriendsRef.current) return;
+
+        isSearchingFriendsRef.current = true;
+        setIsSearchingFriends(true);
+        setSearchResults([]);
+
         const usersRef = collection(db, 'users');
         const results = new Map(); // Use Map to deduplicate by UID
 
@@ -147,7 +153,12 @@ export default function FriendSystem({ user, onClose, t }) {
             // Fallback if index missing for name search
             if (e.code === 'failed-precondition') {
                  showToast(t('friendSearchIndexPending'), 'error');
+            } else {
+                 showToast(t('friendSearchFailed'), 'error');
             }
+        } finally {
+            isSearchingFriendsRef.current = false;
+            setIsSearchingFriends(false);
         }
     };
 
@@ -311,9 +322,18 @@ export default function FriendSystem({ user, onClose, t }) {
                                             onKeyDown={e => e.key === 'Enter' && handleSearch()}
                                             className="app-input rounded-full pl-9"
                                             placeholder={t('searchPlaceholderUser')}
+                                            disabled={isSearchingFriends}
                                         />
                                     </div>
-                                    <button onClick={handleSearch} className="app-button-primary px-4">{t('go')}</button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSearch}
+                                        disabled={!searchTerm.trim() || isSearchingFriends}
+                                        aria-busy={isSearchingFriends}
+                                        className="app-button-primary px-4"
+                                    >
+                                        {isSearchingFriends ? t('processing') : t('go')}
+                                    </button>
                                 </div>
 
                                 {searchResults.length === 0 && searchTerm && (
