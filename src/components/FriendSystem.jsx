@@ -14,6 +14,8 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
     const [relationships, setRelationships] = useState([]);
     const [friends, setFriends] = useState([]);
     const [requests, setRequests] = useState([]); 
+    const [friendsLoadError, setFriendsLoadError] = useState(false);
+    const [friendsReloadKey, setFriendsReloadKey] = useState(0);
     const [searchTerm, setSearchTerm] = useState('');
     const [isSearchingFriends, setIsSearchingFriends] = useState(false);
     const [hasSearchedFriends, setHasSearchedFriends] = useState(false);
@@ -68,6 +70,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
         
         const unsub = onSnapshot(q, (snapshot) => {
             const all = snapshot.docs.map(d => ({id:d.id, ...d.data()}));
+            setFriendsLoadError(false);
             setRelationships(all);
             
             const confirmed = [];
@@ -86,10 +89,13 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
             
             setFriends(confirmed);
             setRequests(pendingRecv);
+        }, (error) => {
+            console.error("Error loading friends:", error);
+            setFriendsLoadError(true);
         });
         
         return () => unsub();
-    }, [t, user]);
+    }, [friendsReloadKey, t, user]);
 
     // 2. Chat Listener
     useEffect(() => {
@@ -329,7 +335,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                     {/* Content Area */}
                     <div className="flex-1 overflow-y-auto px-2">
                         {/* Requests Section */}
-                        {requests.length > 0 && view !== 'add' && (
+                        {!friendsLoadError && requests.length > 0 && view !== 'add' && (
                             <div className="px-2 py-2 mb-2">
                                 <div className="text-xs font-bold text-m3-on-surface-variant uppercase mb-2 px-2">{t('requests')}</div>
                                 {requests.map(req => {
@@ -417,7 +423,19 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                             </div>
                         ) : (
                             <div className="space-y-1 p-2">
-                                {friends.map(f => {
+                                {friendsLoadError ? (
+                                    <div role="alert" className="app-card-quiet mt-8 flex flex-col items-center gap-3 p-6 text-center text-sm text-m3-on-surface-variant">
+                                        <p>{t('friendsLoadFailed')}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFriendsReloadKey((current) => current + 1)}
+                                            className="app-button-quiet text-google-blue"
+                                        >
+                                            <RotateCcw className="h-4 w-4" />
+                                            {t('chatRetry')}
+                                        </button>
+                                    </div>
+                                ) : friends.map(f => {
                                     const isRemovingFriend = isFriendActionPending(`remove:${f.id}`);
 
                                     return (
@@ -449,7 +467,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                                         </React.Fragment>
                                     );
                                 })}
-                                {friends.length === 0 && requests.length === 0 && (
+                                {!friendsLoadError && friends.length === 0 && requests.length === 0 && (
                                     <div className="app-card-quiet mt-8 flex flex-col items-center gap-3 p-6 text-center text-sm text-m3-on-surface-variant">
                                         <UserPlus className="h-8 w-8 text-google-blue" />
                                         <span>{t('noFriends')}</span>

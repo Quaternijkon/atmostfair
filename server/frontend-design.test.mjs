@@ -1275,6 +1275,25 @@ test('friend chat exposes a recoverable load error state', async () => {
   assert.match(friends, /t\('chatRetry'\)/, 'Friend chat retry button should use localized copy');
 });
 
+test('friend list exposes a recoverable load error state', async () => {
+  const friends = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.friendsLoadFailed, 'missing English friend list load failure translation');
+  assert.ok(TRANSLATIONS.zh.friendsLoadFailed, 'missing Chinese friend list load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(friends, /const \[friendsLoadError, setFriendsLoadError\] = useState\(false\)/, 'Friend list should track load errors separately from an empty list');
+  assert.match(friends, /const \[friendsReloadKey, setFriendsReloadKey\] = useState\(0\)/, 'Friend list should expose a retry trigger for failed subscriptions');
+  assert.match(friends, /setFriendsLoadError\(false\)[\s\S]{0,1200}setFriends\(confirmed\)/, 'Successful friend list reads should clear the load error');
+  assert.match(friends, /onSnapshot\(q,[\s\S]{0,1600}\(error\) => \{[\s\S]{0,260}setFriendsLoadError\(true\)/, 'Friend list should handle subscription errors');
+  assert.match(friends, /\}, \[friendsReloadKey, t, user\]\)/, 'Friend list retry should recreate the subscription');
+  assert.match(friends, /friendsLoadError[\s\S]{0,240}role="alert"[\s\S]{0,360}t\('friendsLoadFailed'\)/, 'Friend list should render announced localized load failure copy');
+  assert.match(friends, /onClick=\{\(\) => setFriendsReloadKey\(\(current\) => current \+ 1\)\}/, 'Friend list retry should refresh the subscription');
+  assert.match(friends, /t\('chatRetry'\)/, 'Friend list retry button should use localized copy');
+  assert.match(friends, /!friendsLoadError && friends\.length === 0 && requests\.length === 0/, 'Friend list should not show the empty state when loading failed');
+});
+
 test('project child text inputs expose a shared display length limit', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
