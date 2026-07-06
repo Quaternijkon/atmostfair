@@ -821,6 +821,27 @@ test('booking modal submissions prevent duplicate submits and expose pending sta
   assert.match(booking, /showToast\(t\('bookingFailed'\), 'error'\)/, 'Booking modal failures should use localized app feedback');
 });
 
+test('booking owner kick confirmations await writes and expose pending state', async () => {
+  const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.bookingCancelFailed, 'missing English booking cancellation failure translation');
+  assert.ok(TRANSLATIONS.zh.bookingCancelFailed, 'missing Chinese booking cancellation failure translation');
+
+  assert.match(booking, /isKickingBookingRef\s*=\s*useRef\(false\)/, 'Booking kick should use a synchronous action lock');
+  assert.match(booking, /if \(isKickingBookingRef\.current\) return;/, 'Booking kick should ignore duplicate confirms before rerender');
+  assert.match(booking, /isKickingBookingRef\.current = true[\s\S]{0,160}setIsKickingBooking\(true\)/, 'Booking kick should expose pending state before writing');
+  assert.match(booking, /await actions\.handleKickUser\(kickModal\.id, kickModal\.bookedBy, project\.id, kickReason\.trim\(\) \|\| t\('adminCancelled'\)\)/, 'Booking kick should await the write while pending');
+  assert.match(booking, /await actions\.handleKickUser[\s\S]{0,220}setKickModal\(null\)/, 'Booking kick should close only after the write resolves');
+  assert.match(booking, /finally \{[\s\S]{0,160}isKickingBookingRef\.current = false[\s\S]{0,120}setIsKickingBooking\(false\)/, 'Booking kick should clear pending state when it settles');
+  assert.match(booking, /showToast\(t\('bookingCancelFailed'\), 'error'\)/, 'Booking kick failures should use localized app feedback');
+  assert.match(booking, /app-dialog animate-scale-in" aria-busy=\{isKickingBooking\}/, 'Booking kick modal should expose busy state');
+  assert.match(booking, /disabled=\{isKickingBooking\}/, 'Booking kick controls should be disabled while submitting');
+  assert.match(booking, /aria-busy=\{isKickingBooking\}/, 'Booking kick submit should expose busy state');
+  assert.match(booking, /isKickingBooking \? t\('processing'\) : t\('bookingCancelled'\)/, 'Booking kick submit should show localized progress copy');
+});
+
 test('booking owner slot toggles prevent duplicate writes without blocking batch toggles', async () => {
   const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
 

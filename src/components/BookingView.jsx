@@ -28,6 +28,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   const [bookingForm, setBookingForm] = useState({});
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const isSubmittingBookingRef = useRef(false);
+  const [isKickingBooking, setIsKickingBooking] = useState(false);
+  const isKickingBookingRef = useRef(false);
   const [pendingSlotToggleKeys, setPendingSlotToggleKeys] = useState([]);
   const pendingSlotToggleKeysRef = useRef(new Set());
   const appLocale = getAppLocale(t);
@@ -145,15 +147,27 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   };
 
   const handleKick = (slot) => {
+      if (isKickingBookingRef.current) return;
       setKickModal(slot);
       setKickReason(t('adminCancelled'));
   };
 
-  const handleKickSubmit = () => {
+  const handleKickSubmit = async () => {
       if (!canInteract) return;
+      if (isKickingBookingRef.current) return;
       if (!kickModal) return;
-      actions.handleKickUser(kickModal.id, kickModal.bookedBy, project.id, kickReason.trim() || t('adminCancelled'));
-      setKickModal(null);
+      isKickingBookingRef.current = true;
+      setIsKickingBooking(true);
+      try {
+          await actions.handleKickUser(kickModal.id, kickModal.bookedBy, project.id, kickReason.trim() || t('adminCancelled'));
+          setKickModal(null);
+      } catch (e) {
+          console.error(e);
+          showToast(t('bookingCancelFailed'), 'error');
+      } finally {
+          isKickingBookingRef.current = false;
+          setIsKickingBooking(false);
+      }
   };
 
 
@@ -452,7 +466,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
 	        {kickModal && (
 	            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
-	                <div className="app-dialog animate-scale-in">
+	                <div className="app-dialog animate-scale-in" aria-busy={isKickingBooking}>
 	                    <h3 className="mb-2 text-xl font-medium">{t('bookingCancelled')}</h3>
 	                    <p className="mb-4 text-sm text-m3-on-surface-variant">{t('kickConfirm', { name: kickModal.bookerName || t('anonymousUser') })}</p>
 	                    <label className="app-label">{t('kickReason')}</label>
@@ -460,11 +474,14 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 	                        type="text"
 	                        value={kickReason}
 	                        onChange={(event) => setKickReason(event.target.value)}
+	                        disabled={isKickingBooking}
 	                        className="app-input mb-6"
 	                    />
 	                    <div className="flex gap-3">
-	                        <button onClick={() => setKickModal(null)} className="app-button-quiet flex-1">{t('cancel')}</button>
-	                        <button onClick={handleKickSubmit} className="app-button bg-google-red text-white flex-1">{t('bookingCancelled')}</button>
+	                        <button onClick={() => setKickModal(null)} disabled={isKickingBooking} className="app-button-quiet flex-1">{t('cancel')}</button>
+	                        <button onClick={handleKickSubmit} disabled={isKickingBooking} aria-busy={isKickingBooking} className="app-button bg-google-red text-white flex-1">
+	                            {isKickingBooking ? t('processing') : t('bookingCancelled')}
+	                        </button>
 	                    </div>
 	                </div>
 	            </div>
