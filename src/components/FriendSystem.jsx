@@ -4,12 +4,12 @@ import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, 
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
-import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId } from '../lib/friendDomain';
+import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId, getRemovableFriendshipId } from '../lib/friendDomain';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../lib/messageDomain';
 import { nowMs } from '../lib/time';
 
 export default function FriendSystem({ user, onClose, t }) {
-    const { showToast } = useUI();
+    const { showToast, confirm } = useUI();
     const [view, setView] = useState('list'); // list, add, chat
     const [relationships, setRelationships] = useState([]);
     const [friends, setFriends] = useState([]);
@@ -209,6 +209,31 @@ export default function FriendSystem({ user, onClose, t }) {
         await deleteDoc(doc(db, 'friendships', rejectableId));
     });
 
+    const removeFriend = async (friend) => runFriendAction(`remove:${friend.id}`, async () => {
+        const removableId = getRemovableFriendshipId(friend, user);
+        if (!removableId) {
+            showToast(t('friendActionUnavailable'), 'info');
+            return;
+        }
+        await deleteDoc(doc(db, 'friendships', removableId));
+        if (activeChatFriend?.id === friend.id) {
+            setActiveChatFriend(null);
+        }
+        showToast(t('friendRemoved'), 'success');
+    });
+
+    const confirmRemoveFriend = (friend) => {
+        if (!friend?.id || isFriendActionPending(`remove:${friend.id}`)) return;
+        confirm({
+            title: t('removeFriend'),
+            message: t('removeFriendConfirm', { name: friend.otherName || t('unknownUser') }),
+            confirmText: t('removeFriend'),
+            cancelText: t('cancel'),
+            type: 'destructive',
+            onConfirm: () => removeFriend(friend),
+        });
+    };
+
     const sendMessage = async (e) => {
         e.preventDefault();
         if (isSendingFriendMessageRef.current) return;
@@ -363,20 +388,38 @@ export default function FriendSystem({ user, onClose, t }) {
                             </div>
                         ) : (
                             <div className="space-y-1 p-2">
-                                {friends.map(f => (
-                                    <button
-                                        type="button"
-                                        key={f.id} 
-                                        onClick={() => { setActiveChatFriend(f); setView('chat'); }}
-                                        className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl p-3 text-left transition-all ${activeChatFriend?.id === f.id ? 'bg-m3-secondary-container text-m3-on-secondary-container' : 'text-m3-on-surface hover:bg-m3-surface'}`}
-                                    >
-                                        <Avatar name={f.otherName} className="shrink-0" />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium truncate">{f.otherName}</div>
-                                            <div className="text-xs opacity-70 truncate">{t('tapToChat')}</div>
-                                        </div>
-                                    </button>
-                                ))}
+                                {friends.map(f => {
+                                    const isRemovingFriend = isFriendActionPending(`remove:${f.id}`);
+
+                                    return (
+                                        <React.Fragment key={f.id}>
+                                            <div className={`flex items-center gap-2 rounded-2xl pr-2 transition-all ${activeChatFriend?.id === f.id ? 'bg-m3-secondary-container text-m3-on-secondary-container' : 'text-m3-on-surface hover:bg-m3-surface'}`}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveChatFriend(f); setView('chat'); }}
+                                                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-2xl p-3 text-left"
+                                                >
+                                                    <Avatar name={f.otherName} className="shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-medium truncate">{f.otherName}</div>
+                                                        <div className="text-xs opacity-70 truncate">{t('tapToChat')}</div>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => confirmRemoveFriend(f)}
+                                                    disabled={isRemovingFriend}
+                                                    aria-busy={isRemovingFriend}
+                                                    aria-label={t('removeFriend')}
+                                                    title={t('removeFriend')}
+                                                    className={`app-icon-button shrink-0 text-m3-on-surface-variant hover:bg-google-red/10 hover:text-google-red ${isRemovingFriend ? 'w-auto px-3 text-xs' : ''}`}
+                                                >
+                                                    {isRemovingFriend ? t('processing') : <Trash2 className="w-4 h-4" />}
+                                                </button>
+                                            </div>
+                                        </React.Fragment>
+                                    );
+                                })}
                                 {friends.length === 0 && requests.length === 0 && (
                                     <div className="app-card-quiet mt-8 flex flex-col items-center gap-3 p-6 text-center text-sm text-m3-on-surface-variant">
                                         <UserPlus className="h-8 w-8 text-google-blue" />

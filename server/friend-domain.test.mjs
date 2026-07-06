@@ -73,6 +73,7 @@ test('friend relationship guards reject stale or unauthorized actions', async ()
   const friendDomain = await loadFriendDomain();
   assert.equal(typeof friendDomain.createFriendAcceptPatch, 'function');
   assert.equal(typeof friendDomain.getRejectableFriendRequestId, 'function');
+  assert.equal(typeof friendDomain.getRemovableFriendshipId, 'function');
   assert.equal(typeof friendDomain.createFriendMessageData, 'function');
 
   const currentUser = { uid: 'u1', displayName: 'Ada' };
@@ -90,6 +91,10 @@ test('friend relationship guards reject stale or unauthorized actions', async ()
   assert.equal(friendDomain.getRejectableFriendRequestId(outgoingRequest, currentUser), null, 'initiators cannot use the recipient ignore action');
   assert.equal(friendDomain.getRejectableFriendRequestId(confirmedFriend, currentUser), null, 'confirmed friendships cannot be deleted through request rejection');
   assert.equal(friendDomain.getRejectableFriendRequestId(unrelatedRequest, currentUser), null, 'non-members cannot reject requests');
+
+  assert.equal(friendDomain.getRemovableFriendshipId(confirmedFriend, currentUser), 'rel-confirmed');
+  assert.equal(friendDomain.getRemovableFriendshipId(incomingRequest, currentUser), null, 'pending requests are handled by request rejection');
+  assert.equal(friendDomain.getRemovableFriendshipId(unrelatedRequest, currentUser), null, 'non-members cannot remove unrelated friendships');
 
   const relationships = [incomingRequest, outgoingRequest, confirmedFriend, unrelatedRequest];
   assert.deepEqual(
@@ -151,7 +156,7 @@ test('friend system routes requests through the domain guard', async () => {
 test('friend system routes relationship writes through authorization guards', async () => {
   const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
 
-  for (const helper of ['createFriendAcceptPatch', 'getRejectableFriendRequestId', 'createFriendMessageData']) {
+  for (const helper of ['createFriendAcceptPatch', 'getRejectableFriendRequestId', 'getRemovableFriendshipId', 'createFriendMessageData']) {
     assert.match(friendSystem, new RegExp(helper), `FriendSystem should import and use ${helper}`);
   }
   assert.match(
@@ -173,6 +178,16 @@ test('friend system routes relationship writes through authorization guards', as
     friendSystem,
     /await deleteDoc\(doc\(db, 'friendships', rejectableId\)\);/,
     'rejectRequest should only delete the guarded request id',
+  );
+  assert.match(
+    friendSystem,
+    /const removableId = getRemovableFriendshipId\(friend, user\);/,
+    'removeFriend should derive the delete target through the friendship removal guard',
+  );
+  assert.match(
+    friendSystem,
+    /await deleteDoc\(doc\(db, 'friendships', removableId\)\);/,
+    'removeFriend should only delete the guarded friendship id',
   );
   assert.match(
     friendSystem,
@@ -200,10 +215,32 @@ test('friend system routes relationship writes through authorization guards', as
     'friend message notifications should use localized sender-aware titles',
   );
 
-  for (const key of ['friendActionUnavailable', 'friendMessageTitle']) {
+  for (const key of ['friendActionUnavailable', 'friendMessageTitle', 'friendRemoved']) {
     assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
+});
+
+test('friend removal actions are confirmed, pending, and localized', async () => {
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  for (const key of ['removeFriend', 'removeFriendConfirm', 'friendRemoved']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+    assert.match(friendSystem, new RegExp(`t\\('${key}'`), `Friend system should localize ${key}`);
+  }
+
+  assert.match(friendSystem, /const \{ showToast, confirm \} = useUI\(\);/, 'Friend removal should use the app confirm dialog instead of native dialogs');
+  assert.match(friendSystem, /runFriendAction\(`remove:\$\{friend\.id\}`/, 'Friend removal should run through the shared pending action guard');
+  assert.match(friendSystem, /confirm\(\{[\s\S]{0,500}title:\s*t\('removeFriend'\)/, 'Friend removal should ask for confirmation');
+  assert.match(friendSystem, /confirm\(\{[\s\S]{0,500}message:\s*t\('removeFriendConfirm'/, 'Friend removal confirmation should use localized copy');
+  assert.match(friendSystem, /showToast\(t\('friendRemoved'\), 'success'\)/, 'Friend removal should show localized success feedback');
+  assert.match(friendSystem, /setActiveChatFriend\(null\)/, 'Friend removal should leave stale chats safely');
+  assert.match(friendSystem, /const isRemovingFriend = isFriendActionPending\(`remove:\$\{f\.id\}`\);/, 'Friend rows should expose removal pending state');
+  assert.match(friendSystem, /aria-busy=\{isRemovingFriend\}/, 'Friend removal buttons should expose busy state');
+  assert.match(friendSystem, /disabled=\{isRemovingFriend\}/, 'Friend removal buttons should be disabled while pending');
+  assert.match(friendSystem, /isRemovingFriend \? t\('processing'\) : <Trash2/, 'Friend removal buttons should show localized progress copy');
+  assert.doesNotMatch(friendSystem, /window\.confirm|confirm\(['"`]/, 'Friend removal should not use native confirm dialogs');
 });
 
 test('friend request actions prevent duplicate submits and expose pending state', async () => {

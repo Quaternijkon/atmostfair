@@ -32,6 +32,12 @@ export function getRejectableFriendRequestId(relationship, user) {
   return relationship.id;
 }
 
+export function getRemovableFriendshipId(relationship, user) {
+  if (!relationship?.id || relationship.status !== 'confirmed') return null;
+  if (!getMembers(relationship).includes(user?.uid)) return null;
+  return relationship.id;
+}
+
 export function createFriendMessageData(existingRelationships, activeChatFriend, user, text, createdAt) {
   const senderId = user?.uid;
   const chatId = activeChatFriend?.id;
