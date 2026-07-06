@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle, Share2 } from './Icons';
+import { Clock, Scissors, Hand, Disc, Trophy, User, Check, Play, Plus, X, Gamepad2, Bomb, Flag, Grid3x3, AlertTriangle, Share2, RotateCcw } from './Icons';
 import { useUI } from './UIContext';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDoc, db } from '../lib/localData';
 import { nowMs } from '../lib/time';
@@ -736,6 +736,8 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const canInteract = !isStopped;
   const [activeTab, setActiveTab] = useState('lobby'); // lobby | finished
   const [roomsSnapshot, setRoomsSnapshot] = useState({ projectId: null, items: [] });
+  const [gameRoomsLoadError, setGameRoomsLoadError] = useState(false);
+  const [gameRoomsReloadKey, setGameRoomsReloadKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState(null); // If joined/spectating a room
   const handledInviteRef = useRef(null);
@@ -765,6 +767,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
     
     const unsub = onSnapshot(q, (snapshot) => {
         const nextRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setGameRoomsLoadError(false);
         setRoomsSnapshot({ projectId: project.id, items: nextRooms });
 
         const inviteRoomId = typeof window === 'undefined' ? null : getGameRoomInviteId(window.location.search);
@@ -782,9 +785,12 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
 
         replaceRoomInviteUrl(null);
         showToast(t('roomInviteUnavailable'), 'info');
+    }, (error) => {
+        console.error("Error loading game rooms:", error);
+        setGameRoomsLoadError(true);
     });
     return () => unsub();
-  }, [project.id, replaceRoomInviteUrl, showToast, t]);
+  }, [gameRoomsReloadKey, project.id, replaceRoomInviteUrl, showToast, t]);
 
   const rooms = useMemo(
       () => (roomsSnapshot.projectId === project.id ? roomsSnapshot.items : []),
@@ -881,6 +887,25 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
        openRoom(room);
   };
   
+      if (gameRoomsLoadError) {
+          return (
+            <div className="flex h-full min-h-[360px] animate-fade-in items-center justify-center px-4">
+                <div role="alert" className="app-card flex max-w-md flex-col items-center gap-4 px-6 py-8 text-center">
+                    <Gamepad2 className="h-10 w-10 text-m3-on-surface-variant/70" />
+                    <p className="text-sm font-medium text-m3-on-surface-variant">{t('gameRoomsLoadFailed')}</p>
+                    <button
+                      type="button"
+                      onClick={() => setGameRoomsReloadKey((current) => current + 1)}
+                      className="app-button-quiet text-google-blue"
+                    >
+                        <RotateCcw className="h-4 w-4" />
+                        {t('chatRetry')}
+                    </button>
+                </div>
+            </div>
+          );
+      }
+
       if (currentActiveRoom) {
           if (currentActiveRoom.game === 'mine') {
               return <MinesweeperGame key={currentActiveRoom.id} user={user} room={currentActiveRoom} isStopped={isStopped} onLeave={closeRoom} t={t} />;

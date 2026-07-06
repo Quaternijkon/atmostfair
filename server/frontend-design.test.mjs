@@ -408,6 +408,25 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.doesNotMatch(files.gameHub, />Finished|>Active|>Winner|>Rounds|>Last round|No finished rooms/, 'Game hub result copy should be localized');
 });
 
+test('game hub exposes a recoverable room load error state', async () => {
+  const gameHub = await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.gameRoomsLoadFailed, 'missing English game room load failure translation');
+  assert.ok(TRANSLATIONS.zh.gameRoomsLoadFailed, 'missing Chinese game room load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(gameHub, /RotateCcw/, 'Game room retry should use the shared retry icon');
+  assert.match(gameHub, /\[gameRoomsLoadError,\s*setGameRoomsLoadError\]\s*=\s*useState\(false\)/, 'Game hub should track room load errors separately from an empty room list');
+  assert.match(gameHub, /\[gameRoomsReloadKey,\s*setGameRoomsReloadKey\]\s*=\s*useState\(0\)/, 'Game hub should expose a retry trigger for failed room subscriptions');
+  assert.match(gameHub, /setGameRoomsLoadError\(false\)[\s\S]{0,360}setRoomsSnapshot\(/, 'Successful room reads should clear the load error before rendering rooms');
+  assert.match(gameHub, /onSnapshot\(q,[\s\S]{0,1600}\(error\) => \{[\s\S]{0,300}setGameRoomsLoadError\(true\)/, 'Game hub should handle room subscription errors');
+  assert.match(gameHub, /\}, \[gameRoomsReloadKey, project\.id, replaceRoomInviteUrl, showToast, t\]\)/, 'Game room retry should recreate the subscription');
+  assert.match(gameHub, /if \(gameRoomsLoadError\)[\s\S]{0,900}role="alert"[\s\S]{0,420}t\('gameRoomsLoadFailed'\)/, 'Game hub should render announced localized room load failure copy');
+  assert.match(gameHub, /onClick=\{\(\) => setGameRoomsReloadKey\(\(current\) => current \+ 1\)\}/, 'Game room retry should refresh the subscription');
+  assert.match(gameHub, /t\('chatRetry'\)/, 'Game room retry button should use localized copy');
+});
+
 test('game hub room actions prevent duplicate submits and expose pending state', async () => {
   const gameHub = await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8');
 
