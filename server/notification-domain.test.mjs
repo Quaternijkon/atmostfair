@@ -77,3 +77,31 @@ test('notification center exposes bulk read and clear-read actions', async () =>
     assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
   }
 });
+
+test('notification center actions prevent duplicate submits and expose pending state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.errorWithMessage, 'missing English error template');
+  assert.ok(TRANSLATIONS.zh.errorWithMessage, 'missing Chinese error template');
+
+  assert.match(app, /pendingNotificationActionKeysRef\s*=\s*useRef\(new Set\(\)\)/, 'Notification actions should track pending keys in a ref');
+  assert.match(app, /if \(pendingNotificationActionKeysRef\.current\.has\(actionKey\)\) return;/, 'Notification actions should ignore duplicate submits for the same action');
+  assert.match(app, /pendingNotificationActionKeysRef\.current\.add\(actionKey\)[\s\S]{0,220}setPendingNotificationActionKeys\(\[\.\.\.pendingNotificationActionKeysRef\.current\]\)/, 'Notification actions should expose pending keys immediately');
+  assert.match(app, /await action\(\)/, 'Notification actions should await writes while pending');
+  assert.match(app, /finally[\s\S]{0,260}pendingNotificationActionKeysRef\.current\.delete\(actionKey\)[\s\S]{0,160}setPendingNotificationActionKeys\(\[\.\.\.pendingNotificationActionKeysRef\.current\]\)/, 'Notification actions should clear pending state after writes settle');
+  assert.match(app, /showToast\(t\('errorWithMessage', \{ title: actionLabel, message: error\?\.message \|\| t\('failed'\) \}\), 'error'\)/, 'Notification failures should use localized app feedback');
+  assert.match(app, /await runNotificationAction\(`read:\$\{nId\}`/, 'Single notification reads should route through the pending action guard');
+  assert.match(app, /await runNotificationAction\('mark-all-read'/, 'Mark-all notification reads should route through the pending action guard');
+  assert.match(app, /await runNotificationAction\('clear-read'/, 'Clear-read notification actions should route through the pending action guard');
+  assert.match(app, /disabled=\{!notifications\.some\(n => !n\.read\) \|\| isMarkingAllNotificationsRead\}/, 'Mark-all button should be disabled while pending');
+  assert.match(app, /aria-busy=\{isMarkingAllNotificationsRead\}/, 'Mark-all button should expose busy state');
+  assert.match(app, /isMarkingAllNotificationsRead \? t\('processing'\) : t\('markAllRead'\)/, 'Mark-all button should show localized pending copy');
+  assert.match(app, /disabled=\{!notifications\.some\(n => n\.read\) \|\| isClearingReadNotifications\}/, 'Clear-read button should be disabled while pending');
+  assert.match(app, /aria-busy=\{isClearingReadNotifications\}/, 'Clear-read button should expose busy state');
+  assert.match(app, /isClearingReadNotifications \? t\('processing'\) : t\('clearRead'\)/, 'Clear-read button should show localized pending copy');
+  assert.match(app, /pendingNotificationActionKeys\.includes\(`read:\$\{n\.id\}`\)/, 'Notification rows should derive pending state from the notification id');
+  assert.match(app, /disabled=\{isNotificationReadPending\}/, 'Notification rows should be disabled while marking read');
+  assert.match(app, /aria-busy=\{isNotificationReadPending\}/, 'Notification rows should expose busy state');
+});

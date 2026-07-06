@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useState, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, signOut, auth } from './lib/localAuth';
@@ -120,6 +120,10 @@ function AppContent() {
   const [notifications, setNotifications] = useState([]);
   const [projectActivities, setProjectActivities] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingNotificationActionKeys, setPendingNotificationActionKeys] = useState([]);
+  const pendingNotificationActionKeysRef = useRef(new Set());
+  const isMarkingAllNotificationsRead = pendingNotificationActionKeys.includes('mark-all-read');
+  const isClearingReadNotifications = pendingNotificationActionKeys.includes('clear-read');
 
   const [showFriends, setShowFriends] = useState(false);
   const currentUserName = () => user?.displayName || user?.email?.split('@')[0] || t('anonymousUser');
@@ -216,7 +220,23 @@ function AppContent() {
   };
 
   // Actions
-  const createActions = (showToast) => ({
+  const createActions = (showToast) => {
+    const runNotificationAction = async (actionKey, actionLabel, action) => {
+      if (pendingNotificationActionKeysRef.current.has(actionKey)) return;
+
+      pendingNotificationActionKeysRef.current.add(actionKey);
+      setPendingNotificationActionKeys([...pendingNotificationActionKeysRef.current]);
+      try {
+        await action();
+      } catch (error) {
+        showToast(t('errorWithMessage', { title: actionLabel, message: error?.message || t('failed') }), 'error');
+      } finally {
+        pendingNotificationActionKeysRef.current.delete(actionKey);
+        setPendingNotificationActionKeys([...pendingNotificationActionKeysRef.current]);
+      }
+    };
+
+    return ({
       handleAddItem: async (title, projectId, creatorName) => {
         const cleanTitle = normalizeProjectChildText(title);
         if (!cleanTitle || !user || !requireProjectWritable(projectId, showToast)) return;
@@ -507,27 +527,33 @@ function AppContent() {
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingCancelled, subject: reason || recipientId });
       },
       handleReadNotification: async (nId) => {
-        const operation = createMarkNotificationReadOperation(notifications, nId);
-        if (!operation) return;
-        await updateDoc(doc(db, operation.collection, operation.id), operation.data);
+        await runNotificationAction(`read:${nId}`, t('notifications'), async () => {
+          const operation = createMarkNotificationReadOperation(notifications, nId);
+          if (!operation) return;
+          await updateDoc(doc(db, operation.collection, operation.id), operation.data);
+        });
       },
       handleMarkAllNotificationsRead: async () => {
-        const operations = createMarkNotificationsReadOperations(notifications);
-        if (operations.length === 0) return;
-        const batch = writeBatch(db);
-        operations.forEach((operation) => {
-          batch.update(doc(db, operation.collection, operation.id), operation.data);
+        await runNotificationAction('mark-all-read', t('markAllRead'), async () => {
+          const operations = createMarkNotificationsReadOperations(notifications);
+          if (operations.length === 0) return;
+          const batch = writeBatch(db);
+          operations.forEach((operation) => {
+            batch.update(doc(db, operation.collection, operation.id), operation.data);
+          });
+          await batch.commit();
         });
-        await batch.commit();
       },
       handleClearReadNotifications: async () => {
-        const operations = createClearReadNotificationOperations(notifications);
-        if (operations.length === 0) return;
-        const batch = writeBatch(db);
-        operations.forEach((operation) => {
-          batch.delete(doc(db, operation.collection, operation.id));
+        await runNotificationAction('clear-read', t('clearRead'), async () => {
+          const operations = createClearReadNotificationOperations(notifications);
+          if (operations.length === 0) return;
+          const batch = writeBatch(db);
+          operations.forEach((operation) => {
+            batch.delete(doc(db, operation.collection, operation.id));
+          });
+          await batch.commit();
         });
-        await batch.commit();
       },
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          const cleanTitle = normalizeProjectChildText(title);
@@ -586,8 +612,9 @@ function AppContent() {
           setUserProfile((current) => ({ ...(current || {}), recentProjectIds: previousRecentProjectIds }));
           console.error('Error updating recent projects', error);
         }
-      }
-  });
+          }
+    });
+  };
 
   const handleCreateProject = async (title, type, creatorName, password, showToast) => {
     const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
@@ -662,18 +689,20 @@ function AppContent() {
                                      <button
                                        type="button"
                                        onClick={actions.handleMarkAllNotificationsRead}
-                                       disabled={!notifications.some(n => !n.read)}
+                                       disabled={!notifications.some(n => !n.read) || isMarkingAllNotificationsRead}
+                                       aria-busy={isMarkingAllNotificationsRead}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
-                                       {t('markAllRead')}
+                                       {isMarkingAllNotificationsRead ? t('processing') : t('markAllRead')}
                                      </button>
                                      <button
                                        type="button"
                                        onClick={actions.handleClearReadNotifications}
-                                       disabled={!notifications.some(n => n.read)}
+                                       disabled={!notifications.some(n => n.read) || isClearingReadNotifications}
+                                       aria-busy={isClearingReadNotifications}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
-                                       {t('clearRead')}
+                                       {isClearingReadNotifications ? t('processing') : t('clearRead')}
                                      </button>
                                  </div>
                              </div>
@@ -681,13 +710,22 @@ function AppContent() {
                                  {notifications.length === 0 ? (
                                      <div className="p-4 text-center text-xs text-m3-on-surface-variant">{t('noNotifications')}</div>
                                  ) : (
-                                     notifications.map(n => (
-                                         <button key={n.id} onClick={() => actions.handleReadNotification(n.id)} className={`w-full border-b border-m3-outline-variant/20 p-3 text-left transition-colors hover:bg-google-blue/5 ${n.read ? 'opacity-65' : 'bg-google-blue/5'}`}>
-                                             <div className="text-sm font-medium mb-1">{n.title}</div>
-                                             <div className="text-xs text-m3-on-surface-variant">{n.message}</div>
-                                             <div className="text-[10px] text-m3-on-surface-variant/60 mt-1 text-right">{formatDate(n.createdAt, t)}</div>
-                                         </button>
-                                     ))
+                                     notifications.map(n => {
+                                         const isNotificationReadPending = pendingNotificationActionKeys.includes(`read:${n.id}`);
+                                         return (
+                                             <button
+                                               key={n.id}
+                                               onClick={() => actions.handleReadNotification(n.id)}
+                                               disabled={isNotificationReadPending}
+                                               aria-busy={isNotificationReadPending}
+                                               className={`w-full border-b border-m3-outline-variant/20 p-3 text-left transition-colors hover:bg-google-blue/5 disabled:cursor-not-allowed ${n.read ? 'opacity-65' : 'bg-google-blue/5'}`}
+                                             >
+                                                 <div className="text-sm font-medium mb-1">{n.title}</div>
+                                                 <div className="text-xs text-m3-on-surface-variant">{n.message}</div>
+                                                 <div className="text-[10px] text-m3-on-surface-variant/60 mt-1 text-right">{formatDate(n.createdAt, t)}</div>
+                                             </button>
+                                         );
+                                     })
                                  )}
                              </div>
                          </div>
