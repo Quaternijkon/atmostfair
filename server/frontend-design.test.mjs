@@ -245,6 +245,49 @@ test('service health failures are visible before auth and globally recoverable',
   assert.match(files.login, /disabled=\{isAuthDisabled\}/, 'Login auth buttons should use the combined disabled state');
 });
 
+test('quick-start templates create initialized projects through rollback-safe writes', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
+    dashboardDomain: await readFile(path.join(root, 'src/lib/dashboardDomain.js'), 'utf8'),
+    projectDomain: await readFile(path.join(root, 'src/lib/projectDomain.js'), 'utf8'),
+  };
+
+  const seedKeys = [
+    'templateSeedLunchVegetarian',
+    'templateSeedLunchNoodles',
+    'templateSeedLunchRiceBowl',
+    'templateSeedFeedbackMood',
+    'templateSeedBookingRequiredInfo',
+    'templateSeedHackathonFrontend',
+    'templateSeedClaimVenue',
+    'templateSeedGameRoomRps',
+  ];
+  for (const key of seedKeys) {
+    assert.ok(TRANSLATIONS.en[key], `missing English template seed copy ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese template seed copy ${key}`);
+  }
+
+  assert.match(files.dashboardDomain, /export function getDashboardProjectTemplate\(templateId\)/, 'Dashboard domain should expose a stable template lookup helper');
+  assert.match(files.dashboardDomain, /seed:\s*\{[\s\S]{0,260}textKeys:/, 'Dashboard templates should include localized seed metadata');
+  assert.match(files.projectDomain, /export function createProjectTemplateSeedData\(/, 'Project domain should create template seed data');
+  assert.match(files.projectDomain, /export async function commitProjectCreateWithRollback\(/, 'Project domain should expose rollback-safe project creation');
+  assert.match(files.projectDomain, /kind === 'game_rooms'[\s\S]{0,900}createGameRoomCreateData/, 'Game templates should reuse shared game-room creation guards');
+
+  assert.match(files.dashboard, /\[selectedTemplateId,\s*setSelectedTemplateId\]\s*=\s*useState\(null\)/, 'Dashboard should track the selected quick-start template');
+  assert.match(files.dashboard, /setSelectedTemplateId\(template\.id\)/, 'Template selection should remember the selected template id');
+  assert.match(files.dashboard, /aria-pressed=\{selectedTemplateId === template\.id\}/, 'Template buttons should expose pressed state');
+  assert.match(files.dashboard, /setSelectedTemplateId\(null\)[\s\S]{0,160}setSelectedModule\(mod\)/, 'Manual module selection should clear template id');
+  assert.match(files.dashboard, /onCreateProject\(newTitle,\s*selectedModule\.id,\s*creatorName,\s*newPassword,\s*selectedTemplateId\)/, 'Dashboard should pass the template id to App');
+
+  assert.match(files.app, /createProjectTemplateSeedData/, 'App should create seed operations for template-created projects');
+  assert.match(files.app, /commitProjectCreateWithRollback/, 'App should use rollback-safe creation when seeding child records');
+  assert.match(files.app, /handleCreateProject = async \(title,\s*type,\s*creatorName,\s*password,\s*showToast,\s*templateId(?:\s*=\s*null)?\)/, 'App create handler should accept a template id');
+  assert.match(files.app, /projectData = \{ \.\.\.projectData, \.\.\.templateSeed\.projectPatch \}/, 'Project create data should include template configuration before the parent write');
+  assert.match(files.app, /createChildOperations:\s*\(projectRef\) => createProjectTemplateSeedData\(/, 'Seed child operations should be created after the project id is known');
+  assert.match(files.app, /onCreateProject=\{\(title,\s*type,\s*creatorName,\s*password,\s*templateId\) => handleCreateProject\(title,\s*type,\s*creatorName,\s*password,\s*showToast,\s*templateId\)\}/, 'Route wiring should preserve template id through the create boundary');
+});
+
 test('project workspaces expose recoverable child data load errors', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),

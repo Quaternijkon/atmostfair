@@ -13,6 +13,7 @@ import {
   createRecentDashboardProjects,
   createRecentProjectIdsPatch,
   filterAndSortDashboardProjects,
+  getDashboardProjectTemplate,
   getDashboardProjectTemplates,
   getProjectRoutePrefix,
   hasActiveDashboardFilters,
@@ -365,27 +366,39 @@ test('dashboard quick-start templates prefill accessible project creation drafts
     [],
     'Unknown tabs should not leak templates from another category',
   );
+  assert.equal(getDashboardProjectTemplate('team-lunch-vote')?.projectType, 'vote');
+  assert.equal(getDashboardProjectTemplate('missing-template'), null);
 
   for (const template of DASHBOARD_PROJECT_TEMPLATES) {
     assert.ok(template.id, 'template should have a stable id');
     assert.ok(template.tabId, `template ${template.id} should have a tab id`);
     assert.ok(template.projectType, `template ${template.id} should have a project type`);
+    assert.ok(template.seed, `template ${template.id} should describe how new projects are initialized`);
+    assert.ok(Array.isArray(template.seed.textKeys), `template ${template.id} should list localized seed text keys`);
     assert.ok(TRANSLATIONS.en[template.titleKey], `missing English title ${template.titleKey}`);
     assert.ok(TRANSLATIONS.zh[template.titleKey], `missing Chinese title ${template.titleKey}`);
     assert.ok(TRANSLATIONS.en[template.descKey], `missing English description ${template.descKey}`);
     assert.ok(TRANSLATIONS.zh[template.descKey], `missing Chinese description ${template.descKey}`);
+    for (const key of template.seed.textKeys) {
+      assert.ok(TRANSLATIONS.en[key], `missing English seed label ${key}`);
+      assert.ok(TRANSLATIONS.zh[key], `missing Chinese seed label ${key}`);
+    }
   }
 
   assert.ok(TRANSLATIONS.en.quickStartTemplates, 'missing English quick-start heading');
   assert.ok(TRANSLATIONS.zh.quickStartTemplates, 'missing Chinese quick-start heading');
   assert.match(dashboard, /getDashboardProjectTemplates/, 'Dashboard should render templates from the shared helper');
+  assert.match(dashboard, /\[selectedTemplateId,\s*setSelectedTemplateId\]\s*=\s*useState\(null\)/, 'Dashboard should remember which template seeded the current draft');
   assert.match(dashboard, /const quickStartTemplates = useMemo\(\(\) => getDashboardProjectTemplates\(activeTab\), \[activeTab\]\)/, 'Dashboard should filter templates by the active tab');
   assert.match(dashboard, /const applyProjectTemplate = \(template\) => \{[\s\S]{0,260}currentCategory\.modules\.find\(\(mod\) => mod\.id === template\.projectType\)/, 'Template selection should resolve a real module in the current category');
-  assert.match(dashboard, /setSelectedModule\(module\)[\s\S]{0,180}setNewTitle\(t\(template\.titleKey\)\)/, 'Template selection should preselect the module and title');
+  assert.match(dashboard, /setSelectedTemplateId\(template\.id\)[\s\S]{0,180}setSelectedModule\(module\)[\s\S]{0,180}setNewTitle\(t\(template\.titleKey\)\)/, 'Template selection should track the template, preselect the module, and title');
+  assert.match(dashboard, /onClick=\{\(\) => \{[\s\S]{0,160}setSelectedTemplateId\(null\)[\s\S]{0,160}setSelectedModule\(mod\)/, 'Manual module selection should clear stale template seed state');
+  assert.match(dashboard, /onCreateProject\(newTitle,\s*selectedModule\.id,\s*creatorName,\s*newPassword,\s*selectedTemplateId\)/, 'Dashboard should pass the selected template id through project creation');
   assert.match(dashboard, /setCreateError\(''\)[\s\S]{0,120}setIsTitleTouched\(false\)/, 'Template selection should clear stale create validation state');
   assert.match(dashboard, /aria-label=\{t\('quickStartTemplates'\)\}/, 'Template section should be named for assistive technology');
   assert.match(dashboard, /quickStartTemplates\.map\(template =>/, 'Dashboard should render each quick-start template');
   assert.match(dashboard, /onClick=\{\(\) => applyProjectTemplate\(template\)\}/, 'Template cards should apply the selected template');
+  assert.match(dashboard, /aria-pressed=\{selectedTemplateId === template\.id\}/, 'Template buttons should expose selected state');
   assert.match(dashboard, /disabled=\{isCreatingProject\}/, 'Template buttons should not mutate drafts during create submission');
   assert.match(dashboard, /t\(template\.titleKey\)/, 'Template title should be localized');
   assert.match(dashboard, /t\(template\.descKey\)/, 'Template description should be localized');

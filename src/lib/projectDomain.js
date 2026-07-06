@@ -1,3 +1,5 @@
+import { getDashboardProjectTemplate } from './dashboardDomain.js';
+
 export const PROJECT_CASCADE_COLLECTIONS = [
   { name: 'projects', field: 'id' },
   { name: 'voting_items', field: 'projectId' },
@@ -30,6 +32,7 @@ const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const MINE_TERMINAL_STATUSES = new Set(['dead', 'won']);
 const GAME_ROOM_INVITE_PARAM = 'room';
+const TEMPLATE_SEED_DAY_MS = 86400000;
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
 
@@ -973,6 +976,171 @@ export function createProjectCreateData(title, type, user, creatorName, password
   };
 }
 
+export function createProjectTemplateSeedData(templateId, projectType, projectId, user, creatorName, createdAt, translate = (key) => key) {
+  const template = getDashboardProjectTemplate(templateId);
+  if (!template || template.projectType !== projectType) return createEmptyProjectTemplateSeed();
+
+  const seedConfig = template.seed || {};
+  const projectPatch = createProjectTemplateProjectPatch(seedConfig, createdAt, translate);
+  const cleanProjectId = String(projectId || '').trim();
+  if (!cleanProjectId || !user?.uid) return { projectPatch, childOperations: [] };
+
+  return {
+    projectPatch,
+    childOperations: createProjectTemplateChildOperations(seedConfig, cleanProjectId, user, creatorName, createdAt, translate),
+  };
+}
+
+function createEmptyProjectTemplateSeed() {
+  return { projectPatch: {}, childOperations: [] };
+}
+
+function createProjectTemplateProjectPatch(seedConfig, createdAt, translate) {
+  if (seedConfig?.kind === 'schedule_config') {
+    const scheduleConfig = createScheduleConfigData({
+      mode: seedConfig.mode || 'date',
+      start: createTemplateSeedDate(createdAt, seedConfig.startOffsetDays),
+      end: createTemplateSeedDate(createdAt, seedConfig.endOffsetDays),
+      deadline: '',
+    });
+    return scheduleConfig ? { scheduleConfig } : {};
+  }
+
+  if (seedConfig?.kind === 'booking_slots') {
+    const bookingConfig = createBookingConfigData({
+      mode: seedConfig.mode || 'half',
+      start: createTemplateSeedDate(createdAt, seedConfig.startOffsetDays),
+      end: createTemplateSeedDate(createdAt, seedConfig.endOffsetDays),
+      requiredFields: translateTemplateSeedText(seedConfig.requiredFieldsKey, translate),
+    });
+    return bookingConfig ? { bookingConfig } : {};
+  }
+
+  if (seedConfig?.projectPatch) return clonePlainValue(seedConfig.projectPatch);
+  return {};
+}
+
+function createProjectTemplateChildOperations(seedConfig, projectId, user, creatorName, createdAt, translate) {
+  const ownerName = cleanName(creatorName, user);
+  const operations = [];
+
+  if (seedConfig?.kind === 'voting_items') {
+    for (const titleKey of seedConfig.itemTitleKeys || []) {
+      const title = translateTemplateSeedText(titleKey, translate);
+      if (!title) continue;
+      operations.push({
+        type: 'add',
+        collection: 'voting_items',
+        data: {
+          projectId,
+          title,
+          creatorId: user.uid,
+          creatorName: ownerName,
+          votes: [],
+          createdAt,
+        },
+      });
+    }
+  }
+
+  if (seedConfig?.kind === 'gather_fields') {
+    for (const field of seedConfig.fields || []) {
+      const label = translateTemplateSeedText(field.labelKey, translate);
+      const options = (field.optionKeys || []).map((key) => translateTemplateSeedText(key, translate));
+      const data = createGatherFieldData(projectId, user, label, field.type || 'text', options, createdAt);
+      if (!data) continue;
+      operations.push({ type: 'add', collection: 'gather_fields', data });
+    }
+  }
+
+  if (seedConfig?.kind === 'booking_slots') {
+    for (const slot of seedConfig.slots || []) {
+      const date = createTemplateSeedDate(createdAt, slot.offsetDays);
+      const period = String(slot.period || '').trim();
+      const label = translateTemplateSeedText(slot.labelKey, translate);
+      if (!date || !period || !label) continue;
+      const slotKey = `${date}_${period}`;
+      operations.push({
+        type: 'add',
+        collection: 'booking_slots',
+        data: {
+          projectId,
+          start: slotKey,
+          end: slotKey,
+          label,
+          bookedBy: null,
+          waitlist: [],
+          createdAt,
+        },
+      });
+    }
+  }
+
+  if (seedConfig?.kind === 'rooms') {
+    for (const room of seedConfig.rooms || []) {
+      const name = translateTemplateSeedText(room.nameKey, translate);
+      if (!name) continue;
+      operations.push({
+        type: 'add',
+        collection: 'rooms',
+        data: {
+          projectId,
+          name,
+          ownerId: user.uid,
+          maxMembers: Number.parseInt(room.maxMembers, 10) || 4,
+          members: [],
+          createdAt,
+        },
+      });
+    }
+  }
+
+  if (seedConfig?.kind === 'claim_items') {
+    for (const item of seedConfig.items || []) {
+      const title = translateTemplateSeedText(item.titleKey, translate);
+      if (!title) continue;
+      operations.push({
+        type: 'add',
+        collection: 'claim_items',
+        data: {
+          projectId,
+          title,
+          maxClaims: Number.parseInt(item.maxClaims, 10) || 1,
+          claimants: [],
+          creatorId: user.uid,
+          creatorName: ownerName,
+          createdAt,
+        },
+      });
+    }
+  }
+
+  if (seedConfig?.kind === 'game_rooms') {
+    for (const room of seedConfig.rooms || []) {
+      const name = translateTemplateSeedText(room.nameKey, translate);
+      const data = createGameRoomCreateData(projectId, user, name, room.game, room.options || {}, createdAt);
+      if (!data) continue;
+      operations.push({ type: 'add', collection: 'game_rooms', data });
+    }
+  }
+
+  return operations;
+}
+
+function translateTemplateSeedText(key, translate) {
+  const cleanKey = String(key || '').trim();
+  if (!cleanKey) return '';
+  const value = typeof translate === 'function' ? translate(cleanKey) : cleanKey;
+  return normalizeProjectChildText(value) || cleanKey;
+}
+
+function createTemplateSeedDate(createdAt, offsetDays = 0) {
+  const baseMs = Number(createdAt);
+  const safeBaseMs = Number.isFinite(baseMs) ? baseMs : Date.now();
+  const safeOffsetDays = Number.isFinite(Number(offsetDays)) ? Number(offsetDays) : 0;
+  return new Date(safeBaseMs + (safeOffsetDays * TEMPLATE_SEED_DAY_MS)).toISOString().slice(0, 10);
+}
+
 export function createProjectDuplicateData(sourceProject, user, creatorName, createdAt, titleSuffix = '') {
   if (!sourceProject?.id || !sourceProject?.type || !user?.uid) return null;
   const sourcePassword = sourceProject.password || '';
@@ -1081,7 +1249,7 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
   return operations;
 }
 
-export async function commitProjectDuplicateWithRollback({
+export async function commitProjectCreateWithRollback({
   db,
   collection,
   addDoc,
@@ -1109,6 +1277,10 @@ export async function commitProjectDuplicateWithRollback({
     await Promise.allSettled(refsToDelete.map((ref) => deleteDoc(ref)));
     throw error;
   }
+}
+
+export async function commitProjectDuplicateWithRollback(options) {
+  return commitProjectCreateWithRollback(options);
 }
 
 export function createProjectCascadeDeleteOperations(projectId, docsByCollection) {

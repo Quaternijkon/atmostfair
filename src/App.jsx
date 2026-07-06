@@ -28,6 +28,8 @@ import {
   createProjectCreateData,
   createProjectDuplicateChildOperations,
   createProjectDuplicateData,
+  createProjectTemplateSeedData,
+  commitProjectCreateWithRollback,
   commitProjectDuplicateWithRollback,
   createQueueJoinData,
   createQueueResultData,
@@ -723,14 +725,32 @@ function AppContent() {
     setServiceHealthReloadKey((current) => current + 1);
   };
 
-  const handleCreateProject = async (title, type, creatorName, password, showToast) => {
-    const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
+  const handleCreateProject = async (title, type, creatorName, password, showToast, templateId = null) => {
+    const createdAt = nowMs();
+    let projectData = createProjectCreateData(title, type, user, creatorName, password, createdAt);
     if (!projectData) {
       showToast(t('createProjectFailed'), 'error');
       return { ok: false };
     }
+    const templateSeed = createProjectTemplateSeedData(templateId, type, '', user, creatorName, createdAt, t);
+    projectData = { ...projectData, ...templateSeed.projectPatch };
     try {
-      const projectRef = await addDoc(collection(db, 'projects'), projectData);
+      const projectRef = await commitProjectCreateWithRollback({
+        db,
+        collection,
+        addDoc,
+        deleteDoc,
+        projectData,
+        createChildOperations: (projectRef) => createProjectTemplateSeedData(
+          templateId,
+          type,
+          projectRef.id,
+          user,
+          creatorName,
+          createdAt,
+          t,
+        ).childOperations,
+      });
       void recordProjectActivity({ projectId: projectRef.id, type: PROJECT_ACTIVITY_TYPES.projectCreated, subject: projectData.title, actorName: projectData.creatorName });
       showToast(t('createProjectSuccess', { title: projectData.title }), 'success');
       return { ok: true, projectId: projectRef.id };
@@ -955,7 +975,7 @@ function AppContent() {
                                 isUserProfileAvailable={!userProfileLoadError}
                                 onToggleProjectPin={actions.handleToggleProjectPin}
                                 onRecordProjectOpen={actions.handleRecordProjectOpen}
-                                onCreateProject={(title, type, creatorName, password) => handleCreateProject(title, type, creatorName, password, showToast)}
+                                onCreateProject={(title, type, creatorName, password, templateId) => handleCreateProject(title, type, creatorName, password, showToast, templateId)}
                                 defaultName={user.displayName || ''}
                                 t={t}
                               />

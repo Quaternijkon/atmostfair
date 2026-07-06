@@ -19,6 +19,12 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'vote',
     titleKey: 'templateTeamLunchVoteTitle',
     descKey: 'templateTeamLunchVoteDesc',
+    seed: {
+      kind: 'voting_items',
+      projectPatch: { votingConfig: { mode: 'single' } },
+      itemTitleKeys: ['templateSeedLunchVegetarian', 'templateSeedLunchNoodles', 'templateSeedLunchRiceBowl'],
+      textKeys: ['templateSeedLunchVegetarian', 'templateSeedLunchNoodles', 'templateSeedLunchRiceBowl'],
+    },
   },
   {
     id: 'feedback-pulse',
@@ -26,6 +32,26 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'gather',
     titleKey: 'templateFeedbackPulseTitle',
     descKey: 'templateFeedbackPulseDesc',
+    seed: {
+      kind: 'gather_fields',
+      fields: [
+        {
+          labelKey: 'templateSeedFeedbackMood',
+          type: 'option',
+          optionKeys: ['templateSeedFeedbackMoodGood', 'templateSeedFeedbackMoodMixed', 'templateSeedFeedbackMoodBlocked'],
+        },
+        { labelKey: 'templateSeedFeedbackWorked', type: 'text' },
+        { labelKey: 'templateSeedFeedbackBlockers', type: 'text' },
+      ],
+      textKeys: [
+        'templateSeedFeedbackMood',
+        'templateSeedFeedbackMoodGood',
+        'templateSeedFeedbackMoodMixed',
+        'templateSeedFeedbackMoodBlocked',
+        'templateSeedFeedbackWorked',
+        'templateSeedFeedbackBlockers',
+      ],
+    },
   },
   {
     id: 'meeting-time-finder',
@@ -33,6 +59,13 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'schedule',
     titleKey: 'templateMeetingTimeTitle',
     descKey: 'templateMeetingTimeDesc',
+    seed: {
+      kind: 'schedule_config',
+      mode: 'date',
+      startOffsetDays: 0,
+      endOffsetDays: 3,
+      textKeys: [],
+    },
   },
   {
     id: 'office-hours-booking',
@@ -40,6 +73,18 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'book',
     titleKey: 'templateOfficeHoursTitle',
     descKey: 'templateOfficeHoursDesc',
+    seed: {
+      kind: 'booking_slots',
+      mode: 'half',
+      startOffsetDays: 0,
+      endOffsetDays: 1,
+      requiredFieldsKey: 'templateSeedBookingRequiredInfo',
+      slots: [
+        { offsetDays: 0, period: 'Morning', labelKey: 'morning' },
+        { offsetDays: 0, period: 'Afternoon', labelKey: 'afternoon' },
+      ],
+      textKeys: ['templateSeedBookingRequiredInfo', 'morning', 'afternoon'],
+    },
   },
   {
     id: 'hackathon-teams',
@@ -47,6 +92,15 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'team',
     titleKey: 'templateHackathonTeamsTitle',
     descKey: 'templateHackathonTeamsDesc',
+    seed: {
+      kind: 'rooms',
+      rooms: [
+        { nameKey: 'templateSeedHackathonFrontend', maxMembers: 4 },
+        { nameKey: 'templateSeedHackathonBackend', maxMembers: 4 },
+        { nameKey: 'templateSeedHackathonDesign', maxMembers: 4 },
+      ],
+      textKeys: ['templateSeedHackathonFrontend', 'templateSeedHackathonBackend', 'templateSeedHackathonDesign'],
+    },
   },
   {
     id: 'task-claim-board',
@@ -54,6 +108,15 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'claim',
     titleKey: 'templateTaskClaimTitle',
     descKey: 'templateTaskClaimDesc',
+    seed: {
+      kind: 'claim_items',
+      items: [
+        { titleKey: 'templateSeedClaimVenue', maxClaims: 1 },
+        { titleKey: 'templateSeedClaimFood', maxClaims: 1 },
+        { titleKey: 'templateSeedClaimNotes', maxClaims: 1 },
+      ],
+      textKeys: ['templateSeedClaimVenue', 'templateSeedClaimFood', 'templateSeedClaimNotes'],
+    },
   },
   {
     id: 'giveaway-draw',
@@ -61,6 +124,10 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'roulette',
     titleKey: 'templateGiveawayDrawTitle',
     descKey: 'templateGiveawayDrawDesc',
+    seed: {
+      kind: 'none',
+      textKeys: [],
+    },
   },
   {
     id: 'fair-queue',
@@ -68,6 +135,10 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'queue',
     titleKey: 'templateFairQueueTitle',
     descKey: 'templateFairQueueDesc',
+    seed: {
+      kind: 'none',
+      textKeys: [],
+    },
   },
   {
     id: 'game-night',
@@ -75,6 +146,17 @@ export const DASHBOARD_PROJECT_TEMPLATES = [
     projectType: 'game_hub',
     titleKey: 'templateGameNightTitle',
     descKey: 'templateGameNightDesc',
+    seed: {
+      kind: 'game_rooms',
+      rooms: [
+        {
+          nameKey: 'templateSeedGameRoomRps',
+          game: 'rps',
+          options: { bestOf: 3, timeout: 30 },
+        },
+      ],
+      textKeys: ['templateSeedGameRoomRps'],
+    },
   },
 ];
 
@@ -100,6 +182,12 @@ export function getProjectRoutePrefix(projectType) {
 
 export function getDashboardProjectTemplates(tabId) {
   return DASHBOARD_PROJECT_TEMPLATES.filter((template) => template.tabId === tabId);
+}
+
+export function getDashboardProjectTemplate(templateId) {
+  const cleanTemplateId = String(templateId || '').trim();
+  if (!cleanTemplateId) return null;
+  return DASHBOARD_PROJECT_TEMPLATES.find((template) => template.id === cleanTemplateId) || null;
 }
 
 export function createProjectShareUrl(href, project) {

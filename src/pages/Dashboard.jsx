@@ -46,6 +46,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   // Creation Flow State
   const [showCreate, setShowCreate] = useState(false);
   const [selectedModule, setSelectedModule] = useState(null); // Sub-selection
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [creatorName, setCreatorName] = useState(() => normalizeCreatorNameInput(defaultName));
   const [newPassword, setNewPassword] = useState('');
@@ -152,6 +153,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   const applyProjectTemplate = (template) => {
     const module = currentCategory.modules.find((mod) => mod.id === template.projectType);
     if (!module || isCreatingProject) return;
+    setSelectedTemplateId(template.id);
     setSelectedModule(module);
     setNewTitle(t(template.titleKey));
     setCreateError('');
@@ -164,7 +166,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
     setIsCreatingProject(true);
     setCreateError('');
     try {
-      const result = await onCreateProject(newTitle, selectedModule.id, creatorName, newPassword);
+      const result = await onCreateProject(newTitle, selectedModule.id, creatorName, newPassword, selectedTemplateId);
       if (result?.ok === false) {
         setCreateError(t('createProjectFailed'));
         return;
@@ -178,6 +180,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
       setNewTitle('');
       setNewPassword('');
       setSelectedModule(null);
+      setSelectedTemplateId(null);
       setIsTitleTouched(false);
     } catch {
       setCreateError(t('createProjectFailed'));
@@ -291,10 +294,10 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
              }}
           />
 
-          <TabButton id="collect" label={t('collect')} icon={Vote} isActive={activeTab === 'collect'} onClick={() => { setActiveTab('collect'); setShowCreate(false); setSelectedModule(null); }} />
-          <TabButton id="connect" label={t('connect')} icon={Users} isActive={activeTab === 'connect'} onClick={() => { setActiveTab('connect'); setShowCreate(false); setSelectedModule(null); }} />
-          <TabButton id="select" label={t('select')} icon={Dices} isActive={activeTab === 'select'} onClick={() => { setActiveTab('select'); setShowCreate(false); setSelectedModule(null); }} />
-          <TabButton id="project" label={t('games')} icon={Gamepad2} isActive={activeTab === 'project'} onClick={() => { setActiveTab('project'); setShowCreate(false); setSelectedModule(null); }} />
+          <TabButton id="collect" label={t('collect')} icon={Vote} isActive={activeTab === 'collect'} onClick={() => { setActiveTab('collect'); setShowCreate(false); setSelectedTemplateId(null); setSelectedModule(null); }} />
+          <TabButton id="connect" label={t('connect')} icon={Users} isActive={activeTab === 'connect'} onClick={() => { setActiveTab('connect'); setShowCreate(false); setSelectedTemplateId(null); setSelectedModule(null); }} />
+          <TabButton id="select" label={t('select')} icon={Dices} isActive={activeTab === 'select'} onClick={() => { setActiveTab('select'); setShowCreate(false); setSelectedTemplateId(null); setSelectedModule(null); }} />
+          <TabButton id="project" label={t('games')} icon={Gamepad2} isActive={activeTab === 'project'} onClick={() => { setActiveTab('project'); setShowCreate(false); setSelectedTemplateId(null); setSelectedModule(null); }} />
         </div>
       </div>
 
@@ -418,8 +421,9 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                       key={template.id}
                       type="button"
                       disabled={isCreatingProject}
+                      aria-pressed={selectedTemplateId === template.id}
                       onClick={() => applyProjectTemplate(template)}
-                      className="min-h-[104px] rounded-2xl border border-m3-outline-variant/45 bg-m3-surface-container-low p-4 text-left transition-colors hover:border-google-blue/45 hover:bg-google-blue/5 disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`min-h-[104px] rounded-2xl border p-4 text-left transition-colors hover:border-google-blue/45 hover:bg-google-blue/5 disabled:cursor-not-allowed disabled:opacity-60 ${selectedTemplateId === template.id ? 'border-google-blue bg-google-blue/10 shadow-elevation-1' : 'border-m3-outline-variant/45 bg-m3-surface-container-low'}`}
                     >
                       <div className="mb-3 flex items-center gap-2">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/75">
@@ -443,7 +447,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                     type="button"
                     key={mod.id} 
                     disabled={isCreatingProject}
-                    onClick={() => setSelectedModule(mod)} 
+                    onClick={() => { setSelectedTemplateId(null); setSelectedModule(mod); }}
                     className={`app-card flex min-h-[104px] items-start gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-60 ${selectedModule?.id === mod.id ? 'border-google-blue bg-m3-primary-container/70 shadow-elevation-1' : 'hover:bg-m3-surface-container-low'}`}
                   >
                     <div className={`p-2 rounded-full ${selectedModule?.id === mod.id ? 'bg-white/50' : 'bg-m3-surface-container-high'}`}>

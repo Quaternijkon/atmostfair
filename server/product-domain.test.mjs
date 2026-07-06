@@ -1291,6 +1291,272 @@ test('project duplication rolls back the new project when copied child writes fa
   assert.deepEqual(deletedRefs, ['voting_items/voting_items-copy', 'projects/project-copy']);
 });
 
+test('quick-start templates generate initialized project configuration and child records', () => {
+  const createProjectTemplateSeedData = projectDomain.createProjectTemplateSeedData;
+  assert.equal(typeof createProjectTemplateSeedData, 'function');
+
+  const createdAt = Date.UTC(2026, 6, 7);
+  const user = { uid: 'owner-1', displayName: 'Ada' };
+  const t = (key) => TRANSLATIONS.en[key] || key;
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('team-lunch-vote', 'vote', 'project-1', user, 'Ada Lovelace', createdAt, t),
+    {
+      projectPatch: { votingConfig: { mode: 'single' } },
+      childOperations: [
+        {
+          type: 'add',
+          collection: 'voting_items',
+          data: {
+            projectId: 'project-1',
+            title: 'Vegetarian bowls',
+            creatorId: 'owner-1',
+            creatorName: 'Ada Lovelace',
+            votes: [],
+            createdAt,
+          },
+        },
+        {
+          type: 'add',
+          collection: 'voting_items',
+          data: {
+            projectId: 'project-1',
+            title: 'Noodles',
+            creatorId: 'owner-1',
+            creatorName: 'Ada Lovelace',
+            votes: [],
+            createdAt,
+          },
+        },
+        {
+          type: 'add',
+          collection: 'voting_items',
+          data: {
+            projectId: 'project-1',
+            title: 'Rice bowls',
+            creatorId: 'owner-1',
+            creatorName: 'Ada Lovelace',
+            votes: [],
+            createdAt,
+          },
+        },
+      ],
+    },
+  );
+
+  const gatherSeed = createProjectTemplateSeedData('feedback-pulse', 'gather', 'project-1', user, 'Ada Lovelace', createdAt, t);
+  assert.deepEqual(gatherSeed.projectPatch, {});
+  assert.deepEqual(gatherSeed.childOperations, [
+    {
+      type: 'add',
+      collection: 'gather_fields',
+      data: {
+        projectId: 'project-1',
+        label: 'Mood',
+        type: 'option',
+        options: ['Good', 'Mixed', 'Blocked'],
+        creatorId: 'owner-1',
+        createdAt,
+      },
+    },
+    {
+      type: 'add',
+      collection: 'gather_fields',
+      data: {
+        projectId: 'project-1',
+        label: 'What worked',
+        type: 'text',
+        creatorId: 'owner-1',
+        createdAt,
+      },
+    },
+    {
+      type: 'add',
+      collection: 'gather_fields',
+      data: {
+        projectId: 'project-1',
+        label: 'Blockers',
+        type: 'text',
+        creatorId: 'owner-1',
+        createdAt,
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('meeting-time-finder', 'schedule', 'project-1', user, 'Ada Lovelace', createdAt, t),
+    {
+      projectPatch: {
+        scheduleConfig: { mode: 'date', start: '2026-07-07', end: '2026-07-10', deadline: '' },
+      },
+      childOperations: [],
+    },
+  );
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('office-hours-booking', 'book', 'project-1', user, 'Ada Lovelace', createdAt, t),
+    {
+      projectPatch: {
+        bookingConfig: { mode: 'half', start: '2026-07-07', end: '2026-07-08', requiredFields: 'Name, Team, Topic' },
+      },
+      childOperations: [
+        {
+          type: 'add',
+          collection: 'booking_slots',
+          data: {
+            projectId: 'project-1',
+            start: '2026-07-07_Morning',
+            end: '2026-07-07_Morning',
+            label: 'Morning',
+            bookedBy: null,
+            waitlist: [],
+            createdAt,
+          },
+        },
+        {
+          type: 'add',
+          collection: 'booking_slots',
+          data: {
+            projectId: 'project-1',
+            start: '2026-07-07_Afternoon',
+            end: '2026-07-07_Afternoon',
+            label: 'Afternoon',
+            bookedBy: null,
+            waitlist: [],
+            createdAt,
+          },
+        },
+      ],
+    },
+  );
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('hackathon-teams', 'team', 'project-1', user, 'Ada Lovelace', createdAt, t).childOperations,
+    [
+      {
+        type: 'add',
+        collection: 'rooms',
+        data: { projectId: 'project-1', name: 'Frontend', ownerId: 'owner-1', maxMembers: 4, members: [], createdAt },
+      },
+      {
+        type: 'add',
+        collection: 'rooms',
+        data: { projectId: 'project-1', name: 'Backend', ownerId: 'owner-1', maxMembers: 4, members: [], createdAt },
+      },
+      {
+        type: 'add',
+        collection: 'rooms',
+        data: { projectId: 'project-1', name: 'Design', ownerId: 'owner-1', maxMembers: 4, members: [], createdAt },
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('task-claim-board', 'claim', 'project-1', user, 'Ada Lovelace', createdAt, t).childOperations,
+    [
+      {
+        type: 'add',
+        collection: 'claim_items',
+        data: {
+          projectId: 'project-1',
+          title: 'Venue',
+          maxClaims: 1,
+          claimants: [],
+          creatorId: 'owner-1',
+          creatorName: 'Ada Lovelace',
+          createdAt,
+        },
+      },
+      {
+        type: 'add',
+        collection: 'claim_items',
+        data: {
+          projectId: 'project-1',
+          title: 'Food',
+          maxClaims: 1,
+          claimants: [],
+          creatorId: 'owner-1',
+          creatorName: 'Ada Lovelace',
+          createdAt,
+        },
+      },
+      {
+        type: 'add',
+        collection: 'claim_items',
+        data: {
+          projectId: 'project-1',
+          title: 'Notes',
+          maxClaims: 1,
+          claimants: [],
+          creatorId: 'owner-1',
+          creatorName: 'Ada Lovelace',
+          createdAt,
+        },
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('game-night', 'game_hub', 'project-1', user, 'Ada Lovelace', createdAt, t).childOperations,
+    [
+      {
+        type: 'add',
+        collection: 'game_rooms',
+        data: createGameRoomCreateData('project-1', user, 'Rock-paper-scissors table', 'rps', { bestOf: 3, timeout: 30 }, createdAt),
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    createProjectTemplateSeedData('team-lunch-vote', 'gather', 'project-1', user, 'Ada Lovelace', createdAt, t),
+    { projectPatch: {}, childOperations: [] },
+    'Template/type mismatches should not seed unrelated project types',
+  );
+});
+
+test('project creation rollback removes seeded children and the parent project', async () => {
+  const commitProjectCreateWithRollback = projectDomain.commitProjectCreateWithRollback;
+  assert.equal(typeof commitProjectCreateWithRollback, 'function');
+
+  const addCalls = [];
+  const deletedRefs = [];
+  const childFailure = new Error('seed write failed');
+  const db = {};
+  const collection = (_db, name) => ({ collection: name });
+  const addDoc = async (collectionRef, data) => {
+    addCalls.push({ collection: collectionRef.collection, data });
+    if (collectionRef.collection === 'projects') {
+      return { collection: 'projects', id: 'project-new' };
+    }
+    if (data.title === 'Broken seed') throw childFailure;
+    return { collection: collectionRef.collection, id: `${collectionRef.collection}-new` };
+  };
+  const deleteDoc = async (ref) => {
+    deletedRefs.push(`${ref.collection}/${ref.id}`);
+  };
+
+  await assert.rejects(
+    () => commitProjectCreateWithRollback({
+      db,
+      collection,
+      addDoc,
+      deleteDoc,
+      projectData: { title: 'Seeded project', type: 'vote' },
+      createChildOperations: (projectRef) => [
+        { type: 'add', collection: 'voting_items', data: { projectId: projectRef.id, title: 'Created seed' } },
+        { type: 'add', collection: 'voting_items', data: { projectId: projectRef.id, title: 'Broken seed' } },
+      ],
+    }),
+    childFailure,
+  );
+
+  assert.deepEqual(
+    addCalls.map((call) => call.collection),
+    ['projects', 'voting_items', 'voting_items'],
+  );
+  assert.deepEqual(deletedRefs, ['voting_items/voting_items-new', 'projects/project-new']);
+});
+
 test('project cascade deletion covers every project-owned collection', () => {
   const docsByCollection = {
     projects: [{ id: 'project-1' }],
