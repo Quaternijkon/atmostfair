@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -21,8 +21,12 @@ export default function Login({ lang, setLang, t }) {
   const [password, setPassword] = useState('');
   const [guestName, setGuestName] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [pendingAuthAction, setPendingAuthAction] = useState(null);
+  const pendingAuthActionRef = useRef(null);
   const isEmailInputValid = isValidAuthEmail;
+  const isEmailPending = pendingAuthAction === 'email';
+  const isGuestPending = pendingAuthAction === 'guest';
+  const isAuthPending = Boolean(pendingAuthAction);
   const authErrorMessage = (action, authError) => t('actionFailed', {
     action,
     message: authError?.status >= 500 ? t('authServiceUnavailable') : authError?.message || t('failed')
@@ -31,6 +35,17 @@ export default function Login({ lang, setLang, t }) {
     if (authError?.code === 'auth/invalid-email') return t('invalidEmail');
     if (authError?.code === 'auth/weak-password') return t('weakPassword');
     return authErrorMessage(action, authError);
+  };
+  const startAuthAction = (action) => {
+    if (pendingAuthActionRef.current) return false;
+    pendingAuthActionRef.current = action;
+    setPendingAuthAction(action);
+    return true;
+  };
+  const finishAuthAction = (action) => {
+    if (pendingAuthActionRef.current !== action) return;
+    pendingAuthActionRef.current = null;
+    setPendingAuthAction(null);
   };
 
   // Standard Email/Pass with Auto-Registration
@@ -45,7 +60,7 @@ export default function Login({ lang, setLang, t }) {
       setError(t('weakPassword'));
       return;
     }
-    setLoading(true);
+    if (!startAuthAction('email')) return;
     setError('');
     try {
       await signInWithEmailAndPassword(auth, cleanEmail, password);
@@ -69,7 +84,7 @@ export default function Login({ lang, setLang, t }) {
         setError(localizedAuthErrorMessage(t('signIn'), e));
       }
     } finally {
-      setLoading(false);
+      finishAuthAction('email');
     }
   };
 
@@ -78,7 +93,7 @@ export default function Login({ lang, setLang, t }) {
     e.preventDefault();
     const cleanGuestName = normalizeUserDisplayName(guestName);
     if (!cleanGuestName) return setError(t('setGuestName'));
-    setLoading(true);
+    if (!startAuthAction('guest')) return;
     setError('');
     try {
       const result = await signInAnonymously(auth, cleanGuestName);
@@ -86,7 +101,7 @@ export default function Login({ lang, setLang, t }) {
     } catch (e) {
       setError(authErrorMessage(t('guestLogin'), e));
     } finally {
-      setLoading(false);
+      finishAuthAction('guest');
     }
   };
 
@@ -167,8 +182,8 @@ export default function Login({ lang, setLang, t }) {
               />
             </div>
 
-            <button type="submit" disabled={loading} className="app-button-primary w-full">
-              {loading ? t('processing') : t('loginReg')}
+            <button type="submit" disabled={isAuthPending} aria-busy={isEmailPending} className="app-button-primary w-full">
+              {isEmailPending ? t('processing') : t('loginReg')}
             </button>
           </form>
 
@@ -188,8 +203,8 @@ export default function Login({ lang, setLang, t }) {
                 maxLength={USER_DISPLAY_NAME_MAX_LENGTH}
                 aria-describedby={error ? 'auth-error' : undefined}
               />
-              <button type="submit" disabled={loading} className="app-button-tonal whitespace-nowrap">
-                {t('guestLogin')}
+              <button type="submit" disabled={isAuthPending} aria-busy={isGuestPending} className="app-button-tonal whitespace-nowrap">
+                {isGuestPending ? t('processing') : t('guestLogin')}
               </button>
             </div>
           </form>

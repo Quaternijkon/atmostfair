@@ -1360,6 +1360,28 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
   assert.match(files.admin, /activeStatus/, 'Admin project status should localize active status copy');
 });
 
+test('auth submit actions prevent duplicate submits and expose pending state', async () => {
+  const login = await readFile(path.join(root, 'src/pages/Login.jsx'), 'utf8');
+
+  assert.match(login, /useRef/, 'Login should use an immediate ref guard for auth submits');
+  assert.match(login, /pendingAuthActionRef\s*=\s*useRef\(null\)/, 'Auth submit guard should keep the pending action in a ref');
+  assert.match(login, /const startAuthAction = \(action\) => \{[\s\S]{0,180}if \(pendingAuthActionRef\.current\) return false;/, 'Auth submits should ignore duplicate attempts before rerender');
+  assert.match(login, /pendingAuthActionRef\.current = action[\s\S]{0,140}setPendingAuthAction\(action\)/, 'Auth submit guard should expose pending action state');
+  assert.match(login, /const finishAuthAction = \(action\) => \{[\s\S]{0,220}pendingAuthActionRef\.current = null[\s\S]{0,120}setPendingAuthAction\(null\)/, 'Auth submit guard should clear pending state after the matching action settles');
+  assert.match(login, /if \(!startAuthAction\('email'\)\) return;/, 'Email auth should route through the pending guard');
+  assert.match(login, /finally \{[\s\S]{0,80}finishAuthAction\('email'\)/, 'Email auth should clear its pending guard in finally');
+  assert.match(login, /if \(!startAuthAction\('guest'\)\) return;/, 'Guest auth should route through the pending guard');
+  assert.match(login, /finally \{[\s\S]{0,80}finishAuthAction\('guest'\)/, 'Guest auth should clear its pending guard in finally');
+  assert.match(login, /const isEmailPending = pendingAuthAction === 'email'/, 'Email button should derive its own pending state');
+  assert.match(login, /const isGuestPending = pendingAuthAction === 'guest'/, 'Guest button should derive its own pending state');
+  assert.match(login, /const isAuthPending = Boolean\(pendingAuthAction\)/, 'All auth buttons should share a disabled state while any auth action is pending');
+  assert.match(login, /disabled=\{isAuthPending\}/, 'Auth buttons should be disabled while any auth action is pending');
+  assert.match(login, /aria-busy=\{isEmailPending\}/, 'Email auth button should expose its busy state');
+  assert.match(login, /isEmailPending \? t\('processing'\) : t\('loginReg'\)/, 'Email auth button should show localized pending copy');
+  assert.match(login, /aria-busy=\{isGuestPending\}/, 'Guest auth button should expose its busy state');
+  assert.match(login, /isGuestPending \? t\('processing'\) : t\('guestLogin'\)/, 'Guest auth button should show localized pending copy');
+});
+
 test('workspace timestamps and defaults avoid render-time unstable values', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
