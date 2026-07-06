@@ -815,6 +815,38 @@ test('paused and finished team workspaces hide membership mutation controls', as
   );
 });
 
+test('team workspace actions prevent duplicate submits and expose pending state', async () => {
+  const team = await readFile(path.join(root, 'src/components/TeamView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.teamActionFailed, 'missing English team action failure translation');
+  assert.ok(TRANSLATIONS.zh.teamActionFailed, 'missing Chinese team action failure translation');
+
+  assert.match(team, /isCreatingTeamRef\s*=\s*useRef\(false\)/, 'Team creation should use a synchronous submit lock');
+  assert.match(team, /if \(isCreatingTeamRef\.current\) return;/, 'Team creation should ignore duplicate submits before state rerenders');
+  assert.match(team, /setIsCreatingTeam\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsCreatingTeam\(false\)/, 'Team creation should expose pending state for the whole write');
+  assert.match(team, /await onCreate\(newRoomName, 4, myName\)/, 'Team creation should await the write while pending');
+  assert.match(team, /<form onSubmit=\{handleCreateTeam\} aria-busy=\{isCreatingTeam\}/, 'Team creation should use an accessible pending form');
+  assert.match(team, /disabled=\{isCreatingTeam\}/, 'Team creation inputs should be disabled while creating');
+  assert.match(team, /disabled=\{isCreatingTeam \|\| !newRoomName\.trim\(\)\}/, 'Team creation button should be disabled while pending or blank');
+  assert.match(team, /isCreatingTeam \? t\('processing'\) : t\('createTeam'\)/, 'Team creation button should show localized progress copy');
+
+  assert.match(team, /pendingTeamActionKeysRef\s*=\s*useRef\(new Set\(\)\)/, 'Team membership actions should track pending action keys in a ref');
+  assert.match(team, /if \(pendingTeamActionKeysRef\.current\.has\(actionKey\)\) return;/, 'Team membership actions should ignore duplicate clicks for the same action');
+  assert.match(team, /pendingTeamActionKeysRef\.current\.add\(actionKey\)[\s\S]{0,220}setPendingTeamActionKeys\(\[\.\.\.pendingTeamActionKeysRef\.current\]\)/, 'Team membership actions should expose pending keys immediately');
+  assert.match(team, /await action\(\)/, 'Team membership actions should await writes while pending');
+  assert.match(team, /showToast\(t\('teamActionFailed'\), 'error'\)/, 'Team failures should use localized app feedback');
+  assert.match(team, /finally[\s\S]{0,260}pendingTeamActionKeysRef\.current\.delete\(actionKey\)[\s\S]{0,160}setPendingTeamActionKeys\(\[\.\.\.pendingTeamActionKeysRef\.current\]\)/, 'Team actions should clear pending state after writes settle');
+  assert.match(team, /pendingTeamActionKeys\.includes\(`join:\$\{room\.id\}`\)/, 'Team join buttons should derive pending state from the room id');
+  assert.match(team, /disabled=\{isJoinPending\}/, 'Team join buttons should be disabled while joining');
+  assert.match(team, /aria-busy=\{isJoinPending\}/, 'Team join buttons should expose pending state');
+  assert.match(team, /isJoinPending \? t\('processing'\) : t\('joinTeam'\)/, 'Team join buttons should show localized progress copy');
+  assert.match(team, /disabled=\{isDisbandPending\}/, 'Team disband button should be disabled while deleting');
+  assert.match(team, /disabled=\{isLeavePending\}/, 'Team leave button should be disabled while leaving');
+  assert.match(team, /disabled=\{isKickPending\}/, 'Team kick button should be disabled while removing a member');
+});
+
 test('paused and finished gather workspaces keep submissions read-only', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 

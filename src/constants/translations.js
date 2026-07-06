@@ -249,6 +249,7 @@ export const TRANSLATIONS = {
     yourNicknamePlaceholder: "Your Nickname",
     createTeam: "Create Team",
     joinTeam: "Join Team",
+    teamActionFailed: "Team action failed. Check your connection and try again.",
     fullOrClosed: "Full or Closed",
     teamHelpTitle: "Connect Rules",
     teamHelpSteps: [
@@ -838,6 +839,7 @@ export const TRANSLATIONS = {
     yourNicknamePlaceholder: "你的昵称",
     createTeam: "创建队伍",
     joinTeam: "加入队伍",
+    teamActionFailed: "队伍操作失败，请检查网络后重试。",
     fullOrClosed: "已满或关闭",
     teamHelpTitle: "Connect 规则说明",
     teamHelpSteps: [
