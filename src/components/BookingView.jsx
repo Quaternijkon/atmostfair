@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { CalendarCheck, CheckSquare, Plus, UserMinus } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
@@ -22,6 +22,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
   const [kickModal, setKickModal] = useState(null);
   const [kickReason, setKickReason] = useState(t('adminCancelled'));
   const [bookingForm, setBookingForm] = useState({});
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const isSubmittingBookingRef = useRef(false);
   const appLocale = getAppLocale(t);
   const formatDate = (date, options) => new Date(date).toLocaleDateString(appLocale, options);
 
@@ -78,6 +80,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
   const handleBookSubmit = async () => {
       if (!canInteract) return;
+      if (isSubmittingBookingRef.current) return;
+      if (!showBookModal) return;
       // Validate form
       for (let f of reqFields) {
 	          if (!bookingForm[f]) {
@@ -85,6 +89,8 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 	              return;
 	          }
       }
+      isSubmittingBookingRef.current = true;
+      setIsSubmittingBooking(true);
       try {
           if (bookModalMode === 'waitlist') {
               const waitlistPatch = await actions.handleToggleBookingWaitlist(showBookModal.id, bookingForm);
@@ -99,6 +105,9 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
       } catch (e) {
           console.error(e);
 	          showToast(t('bookingFailed'), 'error');
+      } finally {
+          isSubmittingBookingRef.current = false;
+          setIsSubmittingBooking(false);
       }
   };
 
@@ -380,7 +389,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
         {/* --- Booking Modal --- */}
 	        {showBookModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
-                <div className="app-dialog animate-scale-in">
+                <div className="app-dialog animate-scale-in" aria-busy={isSubmittingBooking}>
                     <h3 className="text-xl font-medium mb-4">{bookModalMode === 'waitlist' ? t('joinWaitlist') : t('confirmBooking')}</h3>
                     <div className="mb-4 text-sm text-m3-on-surface-variant flex items-center gap-2">
                          <CalendarCheck className="w-4 h-4" />
@@ -396,14 +405,17 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                     value={bookingForm[field] || ''}
                                     onChange={e => setBookingForm({...bookingForm, [field]: e.target.value})}
                                     className="app-input"
+                                    disabled={isSubmittingBooking}
                                 />
                             </div>
                         ))}
                     </div>
 
                     <div className="flex gap-3">
-                        <button onClick={resetBookingModal} className="app-button-quiet flex-1">{t('cancel')}</button>
-                        <button onClick={handleBookSubmit} className="app-button-primary flex-1">{bookModalMode === 'waitlist' ? t('joinWaitlist') : t('bookSlot')}</button>
+                        <button onClick={resetBookingModal} disabled={isSubmittingBooking} className="app-button-quiet flex-1">{t('cancel')}</button>
+                        <button onClick={handleBookSubmit} disabled={isSubmittingBooking} className="app-button-primary flex-1">
+                            {isSubmittingBooking ? t('processing') : (bookModalMode === 'waitlist' ? t('joinWaitlist') : t('bookSlot'))}
+                        </button>
                     </div>
                 </div>
             </div>

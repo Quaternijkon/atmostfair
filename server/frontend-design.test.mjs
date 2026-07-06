@@ -585,6 +585,23 @@ test('booking workspace exposes localized waitlist states for full slots', async
   assert.doesNotMatch(files.booking, />Join waitlist<|>Leave waitlist<|>Waitlisted<|waitlist:/i, 'Booking waitlist visible copy should be localized');
 });
 
+test('booking modal submissions prevent duplicate submits and expose pending state', async () => {
+  const booking = await readFile(path.join(root, 'src/components/BookingView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.bookingFailed, 'missing English booking failure translation');
+  assert.ok(TRANSLATIONS.zh.bookingFailed, 'missing Chinese booking failure translation');
+
+  assert.match(booking, /isSubmittingBookingRef\s*=\s*useRef\(false\)/, 'Booking modal submit should use a synchronous action lock');
+  assert.match(booking, /if \(isSubmittingBookingRef\.current\) return;/, 'Booking modal submit should ignore duplicate clicks before state rerenders');
+  assert.match(booking, /setIsSubmittingBooking\(true\)[\s\S]{0,1100}finally[\s\S]{0,240}setIsSubmittingBooking\(false\)/, 'Booking modal submit should expose pending state for the whole write');
+  assert.match(booking, /aria-busy=\{isSubmittingBooking\}/, 'Booking modal should expose pending state to assistive technology');
+  assert.match(booking, /disabled=\{isSubmittingBooking\}/, 'Booking modal controls should be disabled while submitting');
+  assert.match(booking, /isSubmittingBooking \? t\('processing'\) : \(bookModalMode === 'waitlist' \? t\('joinWaitlist'\) : t\('bookSlot'\)\)/, 'Booking modal submit button should show localized progress copy');
+  assert.match(booking, /showToast\(t\('bookingFailed'\), 'error'\)/, 'Booking modal failures should use localized app feedback');
+});
+
 test('paused and finished collaboration workspaces hide item deletion controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),
