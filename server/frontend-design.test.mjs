@@ -163,6 +163,26 @@ test('project detail distinguishes loading from missing projects with recovery c
   assert.doesNotMatch(files.detail, /<h2[^>]*>\{t\('loading'\)\}<\/h2>[\s\S]{0,160}<button/, 'Project detail should not show an infinite loading state with only a dashboard button');
 });
 
+test('project list exposes a recoverable load error state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.projectsLoadFailed, 'missing English project list load failure translation');
+  assert.ok(TRANSLATIONS.zh.projectsLoadFailed, 'missing Chinese project list load failure translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(app, /RotateCcw/, 'Project list retry should use the shared retry icon');
+  assert.match(app, /\[projectsLoadError,\s*setProjectsLoadError\]\s*=\s*useState\(false\)/, 'App should track project list load errors separately from an empty dashboard');
+  assert.match(app, /\[projectsReloadKey,\s*setProjectsReloadKey\]\s*=\s*useState\(0\)/, 'App should expose a retry trigger for failed project subscriptions');
+  assert.match(app, /setProjectsLoadError\(false\)[\s\S]{0,360}setProjects\(/, 'Successful project reads should clear the load error before rendering projects');
+  assert.match(app, /onSnapshot\(collection\(db, 'projects'\),[\s\S]{0,900}\(error\) => \{[\s\S]{0,300}setProjectsLoadError\(true\)/, 'Project list should handle subscription errors');
+  assert.match(app, /\}, \[projectsReloadKey, user\]\)/, 'Project list retry should recreate the data subscriptions');
+  assert.match(app, /projectsLoadError[\s\S]{0,260}role="alert"[\s\S]{0,420}t\('projectsLoadFailed'\)/, 'Project list should render announced localized load failure copy');
+  assert.match(app, /onClick=\{\(\) => setProjectsReloadKey\(\(current\) => current \+ 1\)\}/, 'Project list retry should refresh the subscription');
+  assert.match(app, /t\('chatRetry'\)/, 'Project list retry button should use localized copy');
+  assert.match(app, /projectsLoadError \? \(/, 'Project routes should be gated behind the project list load error state');
+});
+
 test('project detail actions await writes before navigation and expose pending state', async () => {
   const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
 

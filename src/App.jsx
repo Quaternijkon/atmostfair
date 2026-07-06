@@ -48,7 +48,7 @@ import {
   createMarkNotificationsReadOperations,
 } from './lib/notificationDomain';
 import { TRANSLATIONS } from './constants/translations';
-import { LogOut, Shield, Bell, Users, X } from './components/Icons';
+import { LogOut, Shield, Bell, Users, X, RotateCcw } from './components/Icons';
 import AtmostfairLogo from './components/Logo';
 import { UIProvider } from './components/UIComponents';
 import AnnouncementSystem from './components/AnnouncementSystem';
@@ -110,6 +110,8 @@ function AppContent() {
 
   const [projects, setProjects] = useState([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectsLoadError, setProjectsLoadError] = useState(false);
+  const [projectsReloadKey, setProjectsReloadKey] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
   const [items, setItems] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -178,6 +180,7 @@ function AppContent() {
       setUser(u);
       setUserProfile(null);
       setProjectsLoaded(false);
+      setProjectsLoadError(false);
       setAuthChecking(false);
       if (u) {
           try {
@@ -201,7 +204,12 @@ function AppContent() {
       setUserProfile(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
     });
     const unsubProjects = onSnapshot(collection(db, 'projects'), (s) => {
+      setProjectsLoadError(false);
       setProjects(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
+      setProjectsLoaded(true);
+    }, (error) => {
+      console.error("Error loading projects:", error);
+      setProjectsLoadError(true);
       setProjectsLoaded(true);
     });
     const unsubItems = onSnapshot(collection(db, 'voting_items'), (s) => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -217,7 +225,7 @@ function AppContent() {
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt)));
     const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
     return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubGameRooms(); unsubNotifications(); unsubProjectActivities(); };
-  }, [user]);
+  }, [projectsReloadKey, user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
     const activity = createProjectActivityData({
@@ -783,7 +791,21 @@ function AppContent() {
 
             <main id="main-content" tabIndex={-1} className="app-main">
               <Suspense fallback={<RouteLoadingFallback label={t('loading')} />}>
-                {showAdmin && isAdmin ? (
+                {projectsLoadError ? (
+                  <div className="flex min-h-[360px] w-full items-center justify-center px-4">
+                    <div role="alert" className="app-card flex max-w-md flex-col items-center gap-4 px-6 py-8 text-center">
+                      <p className="text-sm font-medium text-m3-on-surface-variant">{t('projectsLoadFailed')}</p>
+                      <button
+                        type="button"
+                        onClick={() => setProjectsReloadKey((current) => current + 1)}
+                        className="app-button-quiet text-google-blue"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        {t('chatRetry')}
+                      </button>
+                    </div>
+                  </div>
+                ) : showAdmin && isAdmin ? (
                   <AdminDashboard
                       projects={projects}
                       items={items}
