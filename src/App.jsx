@@ -127,6 +127,8 @@ function AppContent() {
   const [notificationsLoadError, setNotificationsLoadError] = useState(false);
   const [notificationsReloadKey, setNotificationsReloadKey] = useState(0);
   const [projectActivities, setProjectActivities] = useState([]);
+  const [projectActivitiesLoadError, setProjectActivitiesLoadError] = useState(false);
+  const [projectActivitiesReloadKey, setProjectActivitiesReloadKey] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingNotificationActionKeys, setPendingNotificationActionKeys] = useState([]);
   const pendingNotificationActionKeysRef = useRef(new Set());
@@ -184,6 +186,7 @@ function AppContent() {
       setProjectsLoaded(false);
       setProjectsLoadError(false);
       setNotificationsLoadError(false);
+      setProjectActivitiesLoadError(false);
       setAuthChecking(false);
       if (u) {
           try {
@@ -232,9 +235,15 @@ function AppContent() {
       console.error("Error loading notifications:", error);
       setNotificationsLoadError(true);
     });
-    const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0))));
+    const unsubProjectActivities = onSnapshot(collection(db, 'project_activities'), (s) => {
+      setProjectActivitiesLoadError(false);
+      setProjectActivities(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0)));
+    }, (error) => {
+      console.error("Error loading project activities:", error);
+      setProjectActivitiesLoadError(true);
+    });
     return () => { unsubUserProfile(); unsubProjects(); unsubItems(); unsubRooms(); unsubRoulette(); unsubQueue(); unsubGatherFields(); unsubGatherSubmissions(); unsubScheduleSubmissions(); unsubBookingSlots(); unsubClaimItems(); unsubGameRooms(); unsubNotifications(); unsubProjectActivities(); };
-  }, [notificationsReloadKey, projectsReloadKey, user]);
+  }, [notificationsReloadKey, projectActivitiesReloadKey, projectsReloadKey, user]);
 
   const recordProjectActivity = async ({ projectId, type, subject, metadata, actorName }) => {
     const activity = createProjectActivityData({
@@ -663,6 +672,10 @@ function AppContent() {
     });
   };
 
+  const retryProjectActivities = () => {
+    setProjectActivitiesReloadKey((current) => current + 1);
+  };
+
   const handleCreateProject = async (title, type, creatorName, password, showToast) => {
     const projectData = createProjectCreateData(title, type, user, creatorName, password, nowMs());
     if (!projectData) {
@@ -862,11 +875,11 @@ function AppContent() {
                             </PageTransition>
                           }
                         />
-                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
-                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/collect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/connect/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/select/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/games/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
+                        <Route path="/projects/:id" element={<PageTransition><ProjectDetail projects={projects} projectsLoaded={projectsLoaded} user={user} isAdmin={isAdmin} items={items} rooms={rooms} rouletteData={rouletteParticipants} queueData={queueParticipants} gatherFields={gatherFields} gatherSubmissions={gatherSubmissions} scheduleSubmissions={scheduleSubmissions} bookingSlots={bookingSlots} claimItems={claimItems} gameRooms={gameRooms} projectActivities={projectActivities} projectActivitiesLoadError={projectActivitiesLoadError} onRetryProjectActivities={retryProjectActivities} actions={actions} t={t} /></PageTransition>} />
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </AnimatePresence>

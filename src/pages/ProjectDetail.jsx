@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
+import { Activity, AlertTriangle, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
@@ -35,7 +35,7 @@ function downloadCsvExport(exportData) {
 
 const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
-function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, t }) {
+function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, loadError = false, onRetry = () => {}, t }) {
   const visibleActivities = (activities || []).slice(0, 8);
 
   return (
@@ -49,6 +49,7 @@ function ActivityTimeline({ activities, canExportActivities = false, onExportAct
           <button
             type="button"
             onClick={onExportActivities}
+            disabled={loadError}
             className="app-icon-button"
             title={t('exportActivities')}
             aria-label={t('exportActivities')}
@@ -57,11 +58,25 @@ function ActivityTimeline({ activities, canExportActivities = false, onExportAct
           </button>
         )}
       </div>
-      {visibleActivities.length === 0 ? (
+      {loadError && (
+        <div role="alert" className="rounded-lg border border-google-red/30 bg-google-red/5 px-3 py-4 text-xs text-m3-on-surface-variant">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-google-red" />
+            <div className="min-w-0 flex-1">
+              <p>{t('projectActivitiesLoadFailed')}</p>
+              <button type="button" onClick={onRetry} className="app-button-quiet mt-3 text-google-blue">
+                <RotateCcw className="h-4 w-4" />
+                {t('chatRetry')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!loadError && visibleActivities.length === 0 ? (
         <div className="rounded-lg border border-dashed border-m3-outline-variant/40 px-3 py-4 text-center text-xs text-m3-on-surface-variant">
           {t('noActivities')}
         </div>
-      ) : (
+      ) : visibleActivities.length > 0 ? (
         <div role="list" className="space-y-3">
           {visibleActivities.map((activity) => (
             <div key={activity.id} role="listitem" className="rounded-lg border border-m3-outline-variant/30 px-3 py-2">
@@ -77,7 +92,7 @@ function ActivityTimeline({ activities, canExportActivities = false, onExportAct
             </div>
           ))}
         </div>
-      )}
+      ) : null}
     </aside>
   );
 }
@@ -193,7 +208,7 @@ function ProjectInsightsCard({ projectInsightSummary, t }) {
   );
 }
 
-export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, actions, t }) {
+export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, projectActivitiesLoadError = false, onRetryProjectActivities = () => {}, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -602,6 +617,8 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
             activities={projectActivityItems}
             canExportActivities={hasAdminRights}
             onExportActivities={handleExportActivities}
+            loadError={projectActivitiesLoadError}
+            onRetry={onRetryProjectActivities}
             t={t}
           />
           {showChat && (
