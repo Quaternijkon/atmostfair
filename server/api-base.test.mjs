@@ -26,6 +26,15 @@ test('API base targets the live backend when the app is served from static hosts
   }
 });
 
+test('API base targets the live backend for custom production hosts', () => {
+  assert.equal(
+    resolveApiBaseUrl({
+      location: { hostname: 'atmostfair-preview.pages.dev', protocol: 'https:' },
+    }),
+    DEFAULT_PUBLIC_API_ORIGIN,
+  );
+});
+
 test('API base honors explicit build configuration', () => {
   assert.equal(
     resolveApiBaseUrl({

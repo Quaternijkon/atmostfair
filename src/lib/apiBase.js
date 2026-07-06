@@ -26,7 +26,7 @@ export function resolveApiBaseUrl({
     return DEFAULT_PUBLIC_API_ORIGIN;
   }
 
-  return '';
+  return DEFAULT_PUBLIC_API_ORIGIN;
 }
 
 function normalizeBaseUrl(value) {
