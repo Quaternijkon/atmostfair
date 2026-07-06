@@ -7,6 +7,7 @@ import {
   DASHBOARD_STATUS_FILTERS,
   createRecentDashboardProjects,
   filterAndSortDashboardProjects,
+  getDashboardProjectTemplates,
   getProjectRoutePrefix,
   hasActiveDashboardFilters,
   normalizePinnedProjectIds,
@@ -110,6 +111,7 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
   };
 
   const currentCategory = CATEGORIES[activeTab];
+  const quickStartTemplates = useMemo(() => getDashboardProjectTemplates(activeTab), [activeTab]);
   const normalizedPinnedProjectIds = useMemo(() => normalizePinnedProjectIds(pinnedProjectIds), [pinnedProjectIds]);
   const normalizedRecentProjectIds = useMemo(() => normalizeRecentProjectIds(recentProjectIds), [recentProjectIds]);
   const recentProjects = useMemo(
@@ -140,6 +142,14 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
     setSearchTerm('');
     setStatusFilter('all');
     setSortKey('recent');
+  };
+  const applyProjectTemplate = (template) => {
+    const module = currentCategory.modules.find((mod) => mod.id === template.projectType);
+    if (!module || isCreatingProject) return;
+    setSelectedModule(module);
+    setNewTitle(t(template.titleKey));
+    setCreateError('');
+    setIsTitleTouched(false);
   };
 
   const handleCreateSubmit = async (e) => {
@@ -390,6 +400,33 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
           <h3 className="mb-6 text-xl font-medium text-m3-on-surface">{t('createTitle', { type: currentCategory.label })}</h3>
           
           <form onSubmit={handleCreateSubmit} className="flex flex-col gap-5">
+            <section aria-label={t('quickStartTemplates')} className="space-y-3">
+              <div className="app-label mb-3 uppercase tracking-wide">{t('quickStartTemplates')}</div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {quickStartTemplates.map(template => {
+                  const module = currentCategory.modules.find((mod) => mod.id === template.projectType);
+                  const TemplateIcon = module?.icon || FolderPlus;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      disabled={isCreatingProject}
+                      onClick={() => applyProjectTemplate(template)}
+                      className="min-h-[104px] rounded-2xl border border-m3-outline-variant/45 bg-m3-surface-container-low p-4 text-left transition-colors hover:border-google-blue/45 hover:bg-google-blue/5 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <div className="mb-3 flex items-center gap-2">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/75">
+                          <TemplateIcon className={`h-4 w-4 ${currentCategory.color}`} />
+                        </span>
+                        <span className="text-sm font-semibold text-m3-on-surface">{t(template.titleKey)}</span>
+                      </div>
+                      <p className="text-xs leading-relaxed text-m3-on-surface-variant">{t(template.descKey)}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
             {/* Sub-selection Page: Choose Module */}
             <div className="mb-2">
               <label className="app-label mb-3 uppercase tracking-wide">{t('selectTool')}</label>

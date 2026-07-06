@@ -12,6 +12,72 @@ export const DASHBOARD_SORT_OPTIONS = [
   { id: 'status', labelKey: 'sortStatus' },
 ];
 
+export const DASHBOARD_PROJECT_TEMPLATES = [
+  {
+    id: 'team-lunch-vote',
+    tabId: 'collect',
+    projectType: 'vote',
+    titleKey: 'templateTeamLunchVoteTitle',
+    descKey: 'templateTeamLunchVoteDesc',
+  },
+  {
+    id: 'feedback-pulse',
+    tabId: 'collect',
+    projectType: 'gather',
+    titleKey: 'templateFeedbackPulseTitle',
+    descKey: 'templateFeedbackPulseDesc',
+  },
+  {
+    id: 'meeting-time-finder',
+    tabId: 'collect',
+    projectType: 'schedule',
+    titleKey: 'templateMeetingTimeTitle',
+    descKey: 'templateMeetingTimeDesc',
+  },
+  {
+    id: 'office-hours-booking',
+    tabId: 'collect',
+    projectType: 'book',
+    titleKey: 'templateOfficeHoursTitle',
+    descKey: 'templateOfficeHoursDesc',
+  },
+  {
+    id: 'hackathon-teams',
+    tabId: 'connect',
+    projectType: 'team',
+    titleKey: 'templateHackathonTeamsTitle',
+    descKey: 'templateHackathonTeamsDesc',
+  },
+  {
+    id: 'task-claim-board',
+    tabId: 'connect',
+    projectType: 'claim',
+    titleKey: 'templateTaskClaimTitle',
+    descKey: 'templateTaskClaimDesc',
+  },
+  {
+    id: 'giveaway-draw',
+    tabId: 'select',
+    projectType: 'roulette',
+    titleKey: 'templateGiveawayDrawTitle',
+    descKey: 'templateGiveawayDrawDesc',
+  },
+  {
+    id: 'fair-queue',
+    tabId: 'select',
+    projectType: 'queue',
+    titleKey: 'templateFairQueueTitle',
+    descKey: 'templateFairQueueDesc',
+  },
+  {
+    id: 'game-night',
+    tabId: 'project',
+    projectType: 'game_hub',
+    titleKey: 'templateGameNightTitle',
+    descKey: 'templateGameNightDesc',
+  },
+];
+
 const PROJECT_ROUTE_PREFIXES = {
   vote: 'collect',
   gather: 'collect',
@@ -30,6 +96,10 @@ const DEFAULT_RECENT_DASHBOARD_LIMIT = 4;
 
 export function getProjectRoutePrefix(projectType) {
   return PROJECT_ROUTE_PREFIXES[projectType] || 'projects';
+}
+
+export function getDashboardProjectTemplates(tabId) {
+  return DASHBOARD_PROJECT_TEMPLATES.filter((template) => template.tabId === tabId);
 }
 
 export function createProjectShareUrl(href, project) {

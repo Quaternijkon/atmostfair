@@ -7,11 +7,13 @@ import { TRANSLATIONS } from '../src/constants/translations.js';
 import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
+  DASHBOARD_PROJECT_TEMPLATES,
   createProjectArchivePatch,
   createProjectShareUrl,
   createRecentDashboardProjects,
   createRecentProjectIdsPatch,
   filterAndSortDashboardProjects,
+  getDashboardProjectTemplates,
   getProjectRoutePrefix,
   hasActiveDashboardFilters,
   normalizeRecentProjectIds,
@@ -332,6 +334,52 @@ test('dashboard create form caps creator display names with the shared project l
 
   assert.match(dashboard, /PROJECT_CREATOR_NAME_MAX_LENGTH/, 'Dashboard should share the creator display-name limit with the project domain');
   assert.match(dashboard, /maxLength=\{PROJECT_CREATOR_NAME_MAX_LENGTH\}/, 'Creator name input should cap text before submit');
+});
+
+test('dashboard quick-start templates prefill accessible project creation drafts', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.ok(Array.isArray(DASHBOARD_PROJECT_TEMPLATES), 'Dashboard should expose project templates from the domain layer');
+  assert.ok(DASHBOARD_PROJECT_TEMPLATES.length >= 6, 'Dashboard should provide a broad starter template set');
+  assert.deepEqual(
+    getDashboardProjectTemplates('collect').map((template) => template.projectType),
+    ['vote', 'gather', 'schedule', 'book'],
+    'Collect templates should cover each collect tool',
+  );
+  assert.deepEqual(
+    getDashboardProjectTemplates('connect').map((template) => template.projectType),
+    ['team', 'claim'],
+    'Connect templates should cover team and task workflows',
+  );
+  assert.deepEqual(
+    getDashboardProjectTemplates('missing'),
+    [],
+    'Unknown tabs should not leak templates from another category',
+  );
+
+  for (const template of DASHBOARD_PROJECT_TEMPLATES) {
+    assert.ok(template.id, 'template should have a stable id');
+    assert.ok(template.tabId, `template ${template.id} should have a tab id`);
+    assert.ok(template.projectType, `template ${template.id} should have a project type`);
+    assert.ok(TRANSLATIONS.en[template.titleKey], `missing English title ${template.titleKey}`);
+    assert.ok(TRANSLATIONS.zh[template.titleKey], `missing Chinese title ${template.titleKey}`);
+    assert.ok(TRANSLATIONS.en[template.descKey], `missing English description ${template.descKey}`);
+    assert.ok(TRANSLATIONS.zh[template.descKey], `missing Chinese description ${template.descKey}`);
+  }
+
+  assert.ok(TRANSLATIONS.en.quickStartTemplates, 'missing English quick-start heading');
+  assert.ok(TRANSLATIONS.zh.quickStartTemplates, 'missing Chinese quick-start heading');
+  assert.match(dashboard, /getDashboardProjectTemplates/, 'Dashboard should render templates from the shared helper');
+  assert.match(dashboard, /const quickStartTemplates = useMemo\(\(\) => getDashboardProjectTemplates\(activeTab\), \[activeTab\]\)/, 'Dashboard should filter templates by the active tab');
+  assert.match(dashboard, /const applyProjectTemplate = \(template\) => \{[\s\S]{0,260}currentCategory\.modules\.find\(\(mod\) => mod\.id === template\.projectType\)/, 'Template selection should resolve a real module in the current category');
+  assert.match(dashboard, /setSelectedModule\(module\)[\s\S]{0,180}setNewTitle\(t\(template\.titleKey\)\)/, 'Template selection should preselect the module and title');
+  assert.match(dashboard, /setCreateError\(''\)[\s\S]{0,120}setIsTitleTouched\(false\)/, 'Template selection should clear stale create validation state');
+  assert.match(dashboard, /aria-label=\{t\('quickStartTemplates'\)\}/, 'Template section should be named for assistive technology');
+  assert.match(dashboard, /quickStartTemplates\.map\(template =>/, 'Dashboard should render each quick-start template');
+  assert.match(dashboard, /onClick=\{\(\) => applyProjectTemplate\(template\)\}/, 'Template cards should apply the selected template');
+  assert.match(dashboard, /disabled=\{isCreatingProject\}/, 'Template buttons should not mutate drafts during create submission');
+  assert.match(dashboard, /t\(template\.titleKey\)/, 'Template title should be localized');
+  assert.match(dashboard, /t\(template\.descKey\)/, 'Template description should be localized');
 });
 
 test('dashboard opens the newly created project after a successful create', async () => {
