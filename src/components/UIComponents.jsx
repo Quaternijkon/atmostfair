@@ -1,5 +1,5 @@
 // src/components/UIComponents.jsx
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { X, Info, Trash2 } from './Icons';
 import { nowMs } from '../lib/time';
 import { UIContext } from './UIContext';
@@ -26,7 +26,7 @@ const Toast = ({ message, type = 'info', onClose, t }) => {
 };
 
 // --- Dialog Component (Modal) ---
-const Dialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText, cancelText, type = 'default', t }) => {
+const Dialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText, cancelText, type = 'default', isPending = false, t }) => {
     if (!isOpen) return null;
 
     const isDestructive = type === 'destructive';
@@ -42,15 +42,18 @@ const Dialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText, canc
                 <div className="flex justify-end gap-2 mt-6">
                     <button 
                          onClick={onCancel} 
+                         disabled={isPending}
                          className="app-button-quiet"
                     >
                         {cancelText || t('cancel')}
                     </button>
                     <button 
                         onClick={onConfirm} 
+                        disabled={isPending}
+                        aria-busy={isPending}
                         className={isDestructive ? 'app-button bg-google-red text-white hover:shadow-elevation-1' : 'app-button-primary'}
                     >
-                        {confirmText || t('confirm')}
+                        {isPending ? t('processing') : (confirmText || t('confirm'))}
                     </button>
                 </div>
             </div>
@@ -65,6 +68,7 @@ export const UIProvider = ({ children, t = (key) => key }) => {
     
     // Dialog State
     const [dialog, setDialog] = useState({ isOpen: false });
+    const confirmPendingRef = useRef(false);
 
     // Toast Actions
     const showToast = useCallback((message, type = 'info') => {
@@ -78,23 +82,36 @@ export const UIProvider = ({ children, t = (key) => key }) => {
 
     // Dialog Actions
     const confirm = useCallback(({ title, message, confirmText, cancelText, type, onConfirm }) => {
+        confirmPendingRef.current = false;
         setDialog({
             isOpen: true,
+            isPending: false,
             title,
             message,
             confirmText,
             cancelText,
             type,
-            onConfirm: () => {
-                if (onConfirm) onConfirm();
-                setDialog(prev => ({ ...prev, isOpen: false }));
+            onConfirm: async () => {
+                if (confirmPendingRef.current) return;
+                confirmPendingRef.current = true;
+                setDialog(prev => ({ ...prev, isPending: true }));
+                try {
+                    await onConfirm?.();
+                } finally {
+                    confirmPendingRef.current = false;
+                    setDialog(prev => ({ ...prev, isOpen: false, isPending: false }));
+                }
             },
-            onCancel: () => setDialog(prev => ({ ...prev, isOpen: false }))
+            onCancel: () => {
+                if (confirmPendingRef.current) return;
+                setDialog(prev => ({ ...prev, isOpen: false, isPending: false }));
+            }
         });
     }, []);
 
     const closeDialog = useCallback(() => {
-        setDialog(prev => ({ ...prev, isOpen: false }));
+        if (confirmPendingRef.current) return;
+        setDialog(prev => ({ ...prev, isOpen: false, isPending: false }));
     }, []);
 
     const contextValue = { showToast, confirm, closeDialog };

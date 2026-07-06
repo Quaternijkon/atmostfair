@@ -86,6 +86,24 @@ test('core pages use the shared app interaction primitives', async () => {
   }
 });
 
+test('global confirm dialog awaits async actions and exposes pending state', async () => {
+  const ui = await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.match(ui, /useRef/, 'Confirm dialog should use an immediate ref guard for async confirmations');
+  assert.match(ui, /confirmPendingRef\s*=\s*useRef\(false\)/, 'Confirm dialog should keep pending state in a ref');
+  assert.match(ui, /if \(confirmPendingRef\.current\) return;/, 'Confirm dialog should ignore duplicate confirm attempts before rerender');
+  assert.match(ui, /confirmPendingRef\.current\s*=\s*true[\s\S]{0,220}setDialog\(prev => \(\{ \.\.\.prev, isPending: true \}\)\)/, 'Confirm dialog should expose pending state before awaiting');
+  assert.match(ui, /await onConfirm\?\.\(\)/, 'Confirm dialog should await async confirm actions');
+  assert.match(ui, /finally[\s\S]{0,260}confirmPendingRef\.current\s*=\s*false[\s\S]{0,220}isOpen: false[\s\S]{0,120}isPending: false/, 'Confirm dialog should close and clear pending state after confirm settles');
+  assert.match(ui, /if \(confirmPendingRef\.current\) return;/, 'Cancel should not interrupt a pending confirm action');
+  assert.match(ui, /const Dialog = \(\{[\s\S]{0,160}isPending = false/, 'Dialog should receive pending state');
+  assert.match(ui, /disabled=\{isPending\}[\s\S]{0,180}\{cancelText \|\| t\('cancel'\)\}/, 'Cancel button should be disabled while confirming');
+  assert.match(ui, /disabled=\{isPending\}[\s\S]{0,120}aria-busy=\{isPending\}/, 'Confirm button should be disabled and expose busy state while confirming');
+  assert.match(ui, /isPending \? t\('processing'\) : \(confirmText \|\| t\('confirm'\)\)/, 'Confirm button should show localized pending copy');
+});
+
 test('global account actions prevent duplicate submits and expose pending state', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
 
