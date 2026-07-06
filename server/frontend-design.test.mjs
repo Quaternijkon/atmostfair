@@ -381,6 +381,25 @@ test('gather workspace supports localized typed fields', async () => {
   assert.doesNotMatch(gather, />Text<|>Number<|>Date<|>Option<|placeholder="Yes, No/, 'Gather typed field visible copy should be localized');
 });
 
+test('gather submission form prevents duplicate submits and exposes pending state', async () => {
+  const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
+  assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
+  assert.ok(TRANSLATIONS.en.submitError, 'missing English gather submit error translation');
+  assert.ok(TRANSLATIONS.zh.submitError, 'missing Chinese gather submit error translation');
+
+  assert.match(gather, /isSubmittingGatherRef\s*=\s*useRef\(false\)/, 'Gather submit should use a synchronous action lock');
+  assert.match(gather, /if \(isSubmittingGatherRef\.current\) return;/, 'Gather submit should ignore duplicate writes before state rerenders');
+  assert.match(gather, /setIsSubmittingGather\(true\)[\s\S]{0,900}finally[\s\S]{0,240}setIsSubmittingGather\(false\)/, 'Gather submit should expose pending state for the whole write');
+  assert.match(gather, /await actions\.handleSubmitGather\(project\.id, formData, submitterName\)/, 'Gather submit should await the write while pending');
+  assert.match(gather, /showToast\(t\('submitSuccess'\), 'success'\)/, 'Gather submit success should keep localized app feedback');
+  assert.match(gather, /showToast\(t\('errorWithMessage', \{ title: t\('submitError'\), message: error\.message \}\), 'error'\)/, 'Gather submit failures should use localized app feedback');
+  assert.match(gather, /<form onSubmit=\{handleSubmit\} aria-busy=\{isSubmittingGather\}/, 'Gather form should expose pending state to assistive technology');
+  assert.match(gather, /disabled=\{isSubmittingGather\}/, 'Gather form controls should be disabled while submitting');
+  assert.match(gather, /isSubmittingGather \? t\('processing'\) : t\('submit'\)/, 'Gather submit button should show localized progress copy');
+});
+
 test('voting workspace exposes localized admin vote-mode controls', async () => {
   const files = {
     voting: await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8'),

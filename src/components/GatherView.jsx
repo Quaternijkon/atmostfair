@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Plus, Download, ClipboardList, CheckCircle, FileText, X } from './Icons';
 import { formatDate, formatDateTime } from '../lib/locale';
 import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
@@ -13,6 +13,8 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   // Submission Form State
   const [formData, setFormData] = useState({});
   const [submitterName, setSubmitterName] = useState(user?.displayName || '');
+  const [isSubmittingGather, setIsSubmittingGather] = useState(false);
+  const isSubmittingGatherRef = useRef(false);
 
   const mySubmission = submissions.find(s => s.uid === user?.uid);
   const hasSubmitted = !!mySubmission;
@@ -46,6 +48,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
           onChange={e => setFieldValue(field.id, e.target.value)}
           className="app-input"
           aria-label={field.label}
+          disabled={isSubmittingGather}
         >
           <option value="">{t('selectOption')}</option>
           {(field.options || []).map((option) => (
@@ -64,6 +67,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
           onChange={e => setFieldValue(field.id, e.target.value)}
           className="app-input"
           placeholder={t('enterField', { field: field.label })}
+          disabled={isSubmittingGather}
         />
       );
     }
@@ -76,6 +80,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
           onChange={e => setFieldValue(field.id, e.target.value)}
           className="app-input"
           placeholder={t('enterField', { field: field.label })}
+          disabled={isSubmittingGather}
         />
       );
     }
@@ -87,26 +92,39 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
         onChange={e => setFieldValue(field.id, e.target.value)}
         className="app-input"
         placeholder={t('enterField', { field: field.label })}
+        disabled={isSubmittingGather}
       />
     );
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isSubmittingGatherRef.current) return;
+
     confirm({
         title: t('submit'),
         message: t('confirmSubmit'),
         confirmText: t('submit'),
         cancelText: t('cancel'),
-        onConfirm: () => {
+        onConfirm: async () => {
              // Validation
              if(!submitterName.trim()) {
                  showToast(t('setGuestName'), 'error');
                  return;
              }
-             actions.handleSubmitGather(project.id, formData, submitterName)
-                .then(() => showToast(t('submitSuccess'), 'success'))
-                .catch((e) => showToast(t('errorWithMessage', { title: t('submitError'), message: e.message }), 'error'));
+             if (isSubmittingGatherRef.current) return;
+
+             isSubmittingGatherRef.current = true;
+             setIsSubmittingGather(true);
+             try {
+                 await actions.handleSubmitGather(project.id, formData, submitterName);
+                 showToast(t('submitSuccess'), 'success');
+             } catch (error) {
+                 showToast(t('errorWithMessage', { title: t('submitError'), message: error.message }), 'error');
+             } finally {
+                 isSubmittingGatherRef.current = false;
+                 setIsSubmittingGather(false);
+             }
         }
     });
   };
@@ -275,7 +293,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                       </div>
                   </div>
               ) : (
-                <form onSubmit={handleSubmit} className="max-w-lg mx-auto">
+                <form onSubmit={handleSubmit} aria-busy={isSubmittingGather} className="max-w-lg mx-auto">
                     <div className="text-center mb-8">
                         <div className="w-16 h-16 rounded-full bg-google-blue/10 flex items-center justify-center mx-auto mb-4">
                             <FileText className="w-8 h-8 text-google-blue" />
@@ -293,6 +311,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                                 onChange={e => setSubmitterName(e.target.value)}
                                 className="app-input"
                                 placeholder={t('guestName')}
+                                disabled={isSubmittingGather}
                             />
                         </div>
 
@@ -310,8 +329,8 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                         )}
                         
                         {fields.length > 0 && (
-                            <button type="submit" className="app-button-primary mt-4 w-full text-lg">
-                                {t('submit')}
+                            <button type="submit" disabled={isSubmittingGather} className="app-button-primary mt-4 w-full text-lg">
+                                {isSubmittingGather ? t('processing') : t('submit')}
                             </button>
                         )}
                     </div>
