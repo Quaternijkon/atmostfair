@@ -4,6 +4,8 @@ const TOKEN_KEY = 'atmostfair.localAuthToken';
 const API_BASE_URL = resolveApiBaseUrl({
   configuredBaseUrl: import.meta.env?.VITE_API_BASE_URL || '',
 });
+const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
+const MAX_RETRY_ATTEMPTS = 1;
 
 export function getAuthToken() {
   if (typeof localStorage === 'undefined') return null;
@@ -17,27 +19,35 @@ export function setAuthToken(token) {
 }
 
 export async function apiRequest(path, { method = 'POST', body, token = getAuthToken() } = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestUrl = `${API_BASE_URL}${path}`;
+  const requestInit = {
     method,
     headers: {
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  };
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt += 1) {
+    const response = await fetch(requestUrl, requestInit);
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return payload;
+    if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRY_ATTEMPTS) continue;
+
     const serviceUnavailable = response.status >= 500;
-    const error = new Error(
-      payload.error?.message
-      || (serviceUnavailable ? 'Service is temporarily unavailable.' : 'Request failed.')
-    );
-    error.code = payload.error?.code || (serviceUnavailable ? 'request/service-unavailable' : 'request-failed');
-    error.status = response.status;
-    throw error;
+    throwApiError({ payload, serviceUnavailable, status: response.status });
   }
-  return payload;
+}
+
+function throwApiError({ payload, serviceUnavailable, status }) {
+  const error = new Error(
+    payload.error?.message
+    || (serviceUnavailable ? 'Service is temporarily unavailable.' : 'Request failed.')
+  );
+  error.code = payload.error?.code || (serviceUnavailable ? 'request/service-unavailable' : 'request-failed');
+  error.status = status;
+  throw error;
 }
 
 export function hasProjectPassword(project) {

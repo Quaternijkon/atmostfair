@@ -28,6 +28,35 @@ test('apiRequest hides raw status text for server outages', async (t) => {
   );
 });
 
+test('apiRequest retries transient gateway failures once', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response('<html>bad gateway</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const result = await apiRequest('/api/auth/email/login', {
+    body: { email: 'user@example.com', password: 'secret123' },
+    token: null,
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls, 2);
+});
+
 test('apiRequest hides raw status text for non-json client failures', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('<html>not found</html>', {
