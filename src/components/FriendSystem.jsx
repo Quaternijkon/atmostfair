@@ -4,7 +4,15 @@ import { collection, query, addDoc, deleteDoc, doc, where, onSnapshot, getDocs, 
 import { UserPlus, MessageSquare, Trash2, X, Send, Search, ArrowLeft, RotateCcw } from './Icons';
 import Avatar from './Avatar';
 import { useUI } from './UIContext';
-import { createFriendAcceptPatch, createFriendMessageData, createFriendRequestData, getRejectableFriendRequestId, getRemovableFriendshipId } from '../lib/friendDomain';
+import {
+    createFriendAcceptPatch,
+    createFriendMessageData,
+    createFriendRequestData,
+    getOtherFriendMemberId,
+    getRejectableFriendRequestId,
+    getRemovableFriendshipId,
+    normalizeFriendMemberId,
+} from '../lib/friendDomain';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../lib/messageDomain';
 import { nowMs } from '../lib/time';
 
@@ -67,7 +75,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
         // For simplicity in this demo, let's assume we store frienships in a `users/{uid}/friends` subcollection
         // Use a root collection `friendships` where array `members` contains [uid1, uid2].
         
-        const q = query(collection(db, 'friendships'), where('members', 'array-contains', user.uid));
+        const q = collection(db, 'friendships');
         
         const unsub = onSnapshot(q, (snapshot) => {
             const all = snapshot.docs.map(d => ({id:d.id, ...d.data()}));
@@ -76,14 +84,16 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
             
             const confirmed = [];
             const pendingRecv = [];
+            const currentUserId = normalizeFriendMemberId(user.uid);
             
             all.forEach(rel => {
-                const otherId = rel.members.find(id => id !== user.uid);
+                const otherId = getOtherFriendMemberId(rel, user);
+                if (!otherId) return;
                 const otherName = rel.names?.[otherId] || t('unknownUser');
                 
                 if (rel.status === 'confirmed') {
                     confirmed.push({ ...rel, otherId, otherName });
-                } else if (rel.status === 'pending' && rel.initiator !== user.uid) {
+                } else if (rel.status === 'pending' && normalizeFriendMemberId(rel.initiator) !== currentUserId) {
                     pendingRecv.push({ ...rel, otherId, otherName });
                 }
             });

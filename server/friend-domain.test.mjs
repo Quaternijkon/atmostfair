@@ -63,6 +63,17 @@ test('friend request guard prevents duplicate, self, and existing relationships'
   );
 
   assert.equal(
+    friendDomain.createFriendRequestData(
+      [...existing, { id: 'rel-5', members: [' u1 ', 'u2'], status: 'confirmed' }],
+      currentUser,
+      targetUser,
+      1004,
+    ),
+    null,
+    'legacy dirty member ids should block duplicate friend requests',
+  );
+
+  assert.equal(
     friendDomain.createFriendRequestData(existing, currentUser, { uid: 'u1', displayName: 'Ada' }, 1003),
     null,
     'users should not be able to send friend requests to themselves',
@@ -81,22 +92,27 @@ test('friend relationship guards reject stale or unauthorized actions', async ()
   const outgoingRequest = { id: 'rel-outgoing', members: ['u1', 'u3'], status: 'pending', initiator: 'u1' };
   const confirmedFriend = { id: 'rel-confirmed', members: ['u1', 'u4'], status: 'confirmed', initiator: 'u4' };
   const unrelatedRequest = { id: 'rel-unrelated', members: ['u5', 'u6'], status: 'pending', initiator: 'u5' };
+  const dirtyIncomingRequest = { id: 'rel-dirty-incoming', members: [' u1 ', 'u7'], status: 'pending', initiator: 'u7' };
+  const dirtyConfirmedFriend = { id: 'rel-dirty-confirmed', members: [' u1 ', 'u8'], status: 'confirmed', initiator: 'u8' };
 
   assert.deepEqual(friendDomain.createFriendAcceptPatch(incomingRequest, currentUser), { status: 'confirmed' });
+  assert.deepEqual(friendDomain.createFriendAcceptPatch(dirtyIncomingRequest, currentUser), { status: 'confirmed' });
   assert.equal(friendDomain.createFriendAcceptPatch(outgoingRequest, currentUser), null, 'initiators cannot accept their own sent requests');
   assert.equal(friendDomain.createFriendAcceptPatch(confirmedFriend, currentUser), null, 'confirmed relationships cannot be accepted again');
   assert.equal(friendDomain.createFriendAcceptPatch(unrelatedRequest, currentUser), null, 'non-members cannot accept requests');
 
   assert.equal(friendDomain.getRejectableFriendRequestId(incomingRequest, currentUser), 'rel-incoming');
+  assert.equal(friendDomain.getRejectableFriendRequestId(dirtyIncomingRequest, currentUser), 'rel-dirty-incoming');
   assert.equal(friendDomain.getRejectableFriendRequestId(outgoingRequest, currentUser), null, 'initiators cannot use the recipient ignore action');
   assert.equal(friendDomain.getRejectableFriendRequestId(confirmedFriend, currentUser), null, 'confirmed friendships cannot be deleted through request rejection');
   assert.equal(friendDomain.getRejectableFriendRequestId(unrelatedRequest, currentUser), null, 'non-members cannot reject requests');
 
   assert.equal(friendDomain.getRemovableFriendshipId(confirmedFriend, currentUser), 'rel-confirmed');
+  assert.equal(friendDomain.getRemovableFriendshipId(dirtyConfirmedFriend, currentUser), 'rel-dirty-confirmed');
   assert.equal(friendDomain.getRemovableFriendshipId(incomingRequest, currentUser), null, 'pending requests are handled by request rejection');
   assert.equal(friendDomain.getRemovableFriendshipId(unrelatedRequest, currentUser), null, 'non-members cannot remove unrelated friendships');
 
-  const relationships = [incomingRequest, outgoingRequest, confirmedFriend, unrelatedRequest];
+  const relationships = [incomingRequest, outgoingRequest, confirmedFriend, unrelatedRequest, dirtyConfirmedFriend];
   assert.deepEqual(
     friendDomain.createFriendMessageData(relationships, { id: 'rel-confirmed' }, currentUser, '  hello  ', 2000),
     {
@@ -105,6 +121,16 @@ test('friend relationship guards reject stale or unauthorized actions', async ()
       senderId: 'u1',
       createdAt: 2000,
     },
+  );
+  assert.deepEqual(
+    friendDomain.createFriendMessageData(relationships, { id: 'rel-dirty-confirmed' }, currentUser, '  legacy hello  ', 2006),
+    {
+      chatId: 'rel-dirty-confirmed',
+      text: 'legacy hello',
+      senderId: 'u1',
+      createdAt: 2006,
+    },
+    'legacy dirty member ids should still permit confirmed friend chat writes for the member',
   );
   assert.equal(
     friendDomain.createFriendMessageData(relationships, { id: 'rel-incoming' }, currentUser, 'hello', 2001),
@@ -137,8 +163,20 @@ test('friend system routes requests through the domain guard', async () => {
   const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
 
   assert.match(friendSystem, /createFriendRequestData/, 'FriendSystem should import and use the request guard');
+  assert.match(friendSystem, /getOtherFriendMemberId/, 'FriendSystem should import and use the normalized other-member helper');
   assert.match(friendSystem, /const \[relationships, setRelationships\] = useState\(\[\]\);/, 'FriendSystem should retain the full relationship snapshot');
   assert.match(friendSystem, /setRelationships\(all\);/, 'FriendSystem should update the full relationship snapshot from live data');
+  assert.match(friendSystem, /const q = collection\(db, 'friendships'\);/, 'FriendSystem should let the backend authorize readable friendships instead of exact-filtering member ids');
+  assert.doesNotMatch(
+    friendSystem,
+    /where\('members',\s*'array-contains',\s*user\.uid\)/,
+    'FriendSystem should not hide legacy dirty friendships with exact array-contains filters',
+  );
+  assert.match(
+    friendSystem,
+    /const otherId = getOtherFriendMemberId\(rel, user\);/,
+    'FriendSystem should derive the other member from normalized relationship members',
+  );
   assert.match(
     friendSystem,
     /const requestData = createFriendRequestData\(relationships, user, targetUser, nowMs\(\)\);/,

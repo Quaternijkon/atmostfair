@@ -5367,6 +5367,54 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       assert.equal(duplicateReverse.body.error.code, 'data/duplicate-friendship');
       assert.equal((await store.list('friendships')).length, 1);
 
+      const dirtyConfirmedFriendship = await store.add('friendships', {
+        members: [` ${alice.user.uid} `, charlie.user.uid],
+        names: { [alice.user.uid]: 'Alice', [charlie.user.uid]: 'Charlie' },
+        status: 'confirmed',
+        initiator: charlie.user.uid,
+        createdAt: 4,
+      });
+      const dirtyDuplicate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, charlie.user.uid],
+            names: { [alice.user.uid]: 'Alice', [charlie.user.uid]: 'Charlie' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(dirtyDuplicate.status, 409);
+      assert.equal(dirtyDuplicate.body.error.code, 'data/duplicate-friendship');
+
+      const dirtyFriendshipsForAlice = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: alice.token,
+        body: { collection: 'friendships', query: {} },
+      });
+      assert.ok(
+        dirtyFriendshipsForAlice.docs.some((entry) => entry.id === dirtyConfirmedFriendship.id),
+        'clean current users should be able to read legacy dirty friendship memberships',
+      );
+
+      const dirtyPendingFriendship = await store.add('friendships', {
+        members: [charlie.user.uid, ` ${bob.user.uid} `],
+        names: { [charlie.user.uid]: 'Charlie', [bob.user.uid]: 'Bob' },
+        status: 'pending',
+        initiator: charlie.user.uid,
+        createdAt: 6,
+      });
+      const dirtyAccept = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'friendships', id: dirtyPendingFriendship.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(dirtyAccept.doc.status, 'confirmed');
+
       const strangerMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: charlie.token,
@@ -5400,6 +5448,17 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       assert.equal(longMessage.status, 400);
       assert.equal(longMessage.body.error.code, 'data/invalid-message');
       assert.deepEqual(await store.list('friend_messages'), []);
+
+      const dirtyChatMessage = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'friend_messages',
+          data: { chatId: dirtyPendingFriendship.id, senderId: charlie.user.uid, text: '  legacy hello  ', createdAt: 7 },
+        },
+      });
+      assert.equal(dirtyChatMessage.doc.senderId, bob.user.uid);
+      assert.equal(dirtyChatMessage.doc.text, 'legacy hello');
 
       const sentMessage = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',

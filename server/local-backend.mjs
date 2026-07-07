@@ -14,6 +14,7 @@ import {
 } from '../src/lib/announcementDomain.js';
 import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds, normalizeRecentProjectIds } from '../src/lib/dashboardDomain.js';
+import { hasFriendMember, normalizeFriendMemberId, normalizeFriendMemberIds } from '../src/lib/friendDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
 import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
 import {
@@ -2048,14 +2049,15 @@ async function hasDuplicateFriendRequestNotification(store, senderId, recipientI
 }
 
 async function findPendingFriendRequest(store, initiatorId, recipientId) {
-  const relationships = await store.list('friendships', {
-    filters: [{ field: 'members', op: 'array-contains', value: initiatorId }],
-  });
+  const initiatorUid = normalizeFriendMemberId(initiatorId);
+  const recipientUid = normalizeFriendMemberId(recipientId);
+  const relationships = await store.list('friendships');
 
   return relationships.find((relationship) => (
     relationship.status === 'pending'
-    && relationship.initiator === initiatorId
-    && hasMember(relationship, recipientId)
+    && normalizeFriendMemberId(relationship.initiator) === initiatorUid
+    && hasMember(relationship, initiatorUid)
+    && hasMember(relationship, recipientUid)
   )) || null;
 }
 
@@ -2106,16 +2108,17 @@ async function authorizeFriendMessageOperation({ store, user, type, id, data }) 
 }
 
 async function normalizeFriendshipCreateData({ store, context, data, user }) {
-  const members = Array.isArray(data?.members) ? [...new Set(data.members)] : [];
-  if (members.length !== 2 || !members.includes(user.uid)) forbidden();
-  if (data?.initiator !== undefined && data.initiator !== user.uid) forbidden();
+  const userUid = normalizeFriendMemberId(user?.uid);
+  const members = normalizeFriendMemberIds(data?.members);
+  if (!userUid || members.length !== 2 || !members.includes(userUid)) forbidden();
+  if (data?.initiator !== undefined && normalizeFriendMemberId(data.initiator) !== userUid) forbidden();
   if (data?.status !== undefined && data.status !== 'pending') forbidden();
   await assertNoDuplicateFriendship({ store, context, members });
   return {
     ...(data || {}),
     members,
     status: 'pending',
-    initiator: user.uid,
+    initiator: userUid,
   };
 }
 
@@ -2141,12 +2144,10 @@ async function assertNoDuplicateFriendship({ store, context, members }) {
     throwDataError(409, 'data/duplicate-friendship', 'Friendship already exists.');
   }
 
-  const relationships = await store.list('friendships', {
-    filters: [{ field: 'members', op: 'array-contains', value: members[0] }],
-  });
+  const relationships = await store.list('friendships');
   const duplicate = relationships.some((relationship) => (
     ['pending', 'confirmed'].includes(relationship.status)
-    && hasMember(relationship, members[1])
+    && friendshipMembersKey(relationship.members) === key
   ));
   if (duplicate) throwDataError(409, 'data/duplicate-friendship', 'Friendship already exists.');
 
@@ -2154,7 +2155,7 @@ async function assertNoDuplicateFriendship({ store, context, members }) {
 }
 
 function friendshipMembersKey(members) {
-  return [...members].sort().join('\0');
+  return normalizeFriendMemberIds(members).sort().join('\0');
 }
 
 function canWriteNotification(notification, user) {
@@ -2184,7 +2185,7 @@ async function canAccessFriendMessage(store, user, message) {
 }
 
 function hasMember(record, uid) {
-  return Array.isArray(record?.members) && record.members.includes(uid);
+  return hasFriendMember(record, uid);
 }
 
 function createAuthorizationContext() {

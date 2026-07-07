@@ -1,23 +1,25 @@
 import { normalizeMessageText } from './messageDomain.js';
 
 export function createFriendRequestData(existingRelationships, user, targetUser, createdAt) {
-  if (!user?.uid || !targetUser?.uid || user.uid === targetUser.uid) return null;
+  const userUid = normalizeFriendMemberId(user?.uid);
+  const targetUid = normalizeFriendMemberId(targetUser?.uid);
+  if (!userUid || !targetUid || userUid === targetUid) return null;
   const relationships = Array.isArray(existingRelationships) ? existingRelationships : [];
   const hasExistingRelationship = relationships.some((relationship) => {
-    const members = Array.isArray(relationship?.members) ? relationship.members : [];
-    if (!members.includes(user.uid) || !members.includes(targetUser.uid)) return false;
+    const members = normalizeFriendMemberIds(relationship?.members);
+    if (!members.includes(userUid) || !members.includes(targetUid)) return false;
     return ['pending', 'confirmed'].includes(relationship.status);
   });
   if (hasExistingRelationship) return null;
 
   return {
-    members: [user.uid, targetUser.uid],
+    members: [userUid, targetUid],
     names: {
-      [user.uid]: cleanUserName(user),
-      [targetUser.uid]: cleanUserName(targetUser),
+      [userUid]: cleanUserName(user),
+      [targetUid]: cleanUserName(targetUser),
     },
     status: 'pending',
-    initiator: user.uid,
+    initiator: userUid,
     createdAt,
   };
 }
@@ -34,20 +36,19 @@ export function getRejectableFriendRequestId(relationship, user) {
 
 export function getRemovableFriendshipId(relationship, user) {
   if (!relationship?.id || relationship.status !== 'confirmed') return null;
-  if (!getMembers(relationship).includes(user?.uid)) return null;
+  if (!hasFriendMember(relationship, user?.uid)) return null;
   return relationship.id;
 }
 
 export function createFriendMessageData(existingRelationships, activeChatFriend, user, text, createdAt) {
-  const senderId = user?.uid;
+  const senderId = normalizeFriendMemberId(user?.uid);
   const chatId = activeChatFriend?.id;
   const cleanText = normalizeMessageText(text);
   if (!senderId || !chatId || !cleanText) return null;
 
   const relationships = Array.isArray(existingRelationships) ? existingRelationships : [];
   const relationship = relationships.find((entry) => entry?.id === chatId);
-  const members = getMembers(relationship);
-  if (relationship?.status !== 'confirmed' || !members.includes(senderId)) return null;
+  if (relationship?.status !== 'confirmed' || !hasFriendMember(relationship, senderId)) return null;
 
   return {
     chatId,
@@ -57,6 +58,33 @@ export function createFriendMessageData(existingRelationships, activeChatFriend,
   };
 }
 
+export function normalizeFriendMemberId(value) {
+  return String(value ?? '').trim();
+}
+
+export function normalizeFriendMemberIds(members) {
+  if (!Array.isArray(members)) return [];
+  const seen = new Set();
+  return members.reduce((normalized, value) => {
+    const memberId = normalizeFriendMemberId(value);
+    if (!memberId || seen.has(memberId)) return normalized;
+    seen.add(memberId);
+    normalized.push(memberId);
+    return normalized;
+  }, []);
+}
+
+export function hasFriendMember(relationship, uid) {
+  const memberId = normalizeFriendMemberId(uid);
+  return Boolean(memberId && normalizeFriendMemberIds(relationship?.members).includes(memberId));
+}
+
+export function getOtherFriendMemberId(relationship, user) {
+  const memberId = normalizeFriendMemberId(user?.uid);
+  if (!memberId) return '';
+  return normalizeFriendMemberIds(relationship?.members).find((id) => id !== memberId) || '';
+}
+
 function cleanUserName(user) {
   const explicitName = String(user?.displayName || '').trim();
   if (explicitName) return explicitName;
@@ -64,10 +92,7 @@ function cleanUserName(user) {
 }
 
 function isIncomingPendingRequest(relationship, userId) {
-  if (!userId || relationship?.status !== 'pending' || relationship?.initiator === userId) return false;
-  return getMembers(relationship).includes(userId);
-}
-
-function getMembers(relationship) {
-  return Array.isArray(relationship?.members) ? relationship.members : [];
+  const memberId = normalizeFriendMemberId(userId);
+  if (!memberId || relationship?.status !== 'pending' || normalizeFriendMemberId(relationship?.initiator) === memberId) return false;
+  return hasFriendMember(relationship, memberId);
 }
