@@ -288,6 +288,59 @@ test('friend search prevents duplicate submits and exposes pending state', async
   assert.match(friendSystem, /isSearchingFriends \? t\('processing'\) : t\('go'\)/, 'Friend search button should show localized progress copy');
 });
 
+test('friend search failures render a recoverable inline error state', async () => {
+  const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.friendSearchFailed, 'missing English friend search failure translation');
+  assert.ok(TRANSLATIONS.zh.friendSearchFailed, 'missing Chinese friend search failure translation');
+  assert.ok(TRANSLATIONS.en.friendSearchIndexPending, 'missing English friend search index translation');
+  assert.ok(TRANSLATIONS.zh.friendSearchIndexPending, 'missing Chinese friend search index translation');
+  assert.ok(TRANSLATIONS.en.chatRetry, 'missing English retry translation');
+  assert.ok(TRANSLATIONS.zh.chatRetry, 'missing Chinese retry translation');
+
+  assert.match(
+    friendSystem,
+    /\[friendSearchError,\s*setFriendSearchError\]\s*=\s*useState\(''\)/,
+    'Friend search should track a persistent inline error after failed queries',
+  );
+  assert.match(
+    friendSystem,
+    /setFriendSearchError\(''\)[\s\S]{0,180}setIsSearchingFriends\(true\)/,
+    'Starting a search should clear stale search errors before querying',
+  );
+  assert.match(
+    friendSystem,
+    /setSearchResults\(Array\.from\(results\.values\(\)\)\);[\s\S]{0,160}setFriendSearchError\(''\)/,
+    'Successful searches should clear the inline error',
+  );
+  assert.match(
+    friendSystem,
+    /setFriendSearchError\(t\('friendSearchIndexPending'\)\)/,
+    'Search index failures should render localized recovery copy',
+  );
+  assert.match(
+    friendSystem,
+    /setFriendSearchError\(t\('friendSearchFailed'\)\)/,
+    'Generic search failures should render localized recovery copy',
+  );
+  assert.match(
+    friendSystem,
+    /const nextTerm = e\.target\.value;[\s\S]{0,240}setFriendSearchError\(''\)/,
+    'Changing the search text should clear the stale search error',
+  );
+  assert.match(
+    friendSystem,
+    /friendSearchError[\s\S]{0,240}role="alert"[\s\S]{0,360}\{friendSearchError\}/,
+    'Friend search should render an announced inline error message',
+  );
+  assert.match(
+    friendSystem,
+    /friendSearchError[\s\S]{0,640}onClick=\{handleSearch\}[\s\S]{0,220}t\('chatRetry'\)/,
+    'Friend search error should provide an inline retry action',
+  );
+  assert.match(friendSystem, /friendSearchError[\s\S]{0,640}RotateCcw/, 'Friend search retry should use the shared retry icon');
+});
+
 test('friend search separates initial guidance from settled empty results', async () => {
   const friendSystem = await readFile(path.join(root, 'src/components/FriendSystem.jsx'), 'utf8');
 
@@ -311,13 +364,13 @@ test('friend search separates initial guidance from settled empty results', asyn
   );
   assert.match(
     friendSystem,
-    /showFriendSearchHint\s*=\s*!isSearchingFriends && !hasSearchedFriends && searchTerm\.trim\(\)/,
-    'Friend search hint should appear only before a settled search',
+    /showFriendSearchHint\s*=\s*!isSearchingFriends && !friendSearchError && !hasSearchedFriends && searchTerm\.trim\(\)/,
+    'Friend search hint should appear only before a settled search and while no error is active',
   );
   assert.match(
     friendSystem,
-    /showFriendSearchEmpty\s*=\s*!isSearchingFriends && hasSearchedFriends && searchResults\.length === 0/,
-    'Friend search empty state should not render while a query is still pending',
+    /showFriendSearchEmpty\s*=\s*!isSearchingFriends && !friendSearchError && hasSearchedFriends && searchResults\.length === 0/,
+    'Friend search empty state should not render while a query is pending or an error is active',
   );
   assert.match(friendSystem, /t\('noFriendSearchResults'\)/, 'Friend search should render localized no-result copy');
   assert.match(friendSystem, /role="status"/, 'Friend search result feedback should be announced accessibly');

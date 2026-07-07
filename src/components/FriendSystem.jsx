@@ -19,6 +19,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
     const [searchTerm, setSearchTerm] = useState('');
     const [isSearchingFriends, setIsSearchingFriends] = useState(false);
     const [hasSearchedFriends, setHasSearchedFriends] = useState(false);
+    const [friendSearchError, setFriendSearchError] = useState('');
     const [activeChatFriend, setActiveChatFriend] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
@@ -32,8 +33,8 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
     const [searchResults, setSearchResults] = useState([]);
     const currentUserName = () => user.displayName || user.email?.split('@')[0] || t('userLabel');
     const isFriendActionPending = (actionId) => pendingFriendActionIds.has(actionId);
-    const showFriendSearchHint = !isSearchingFriends && !hasSearchedFriends && searchTerm.trim();
-    const showFriendSearchEmpty = !isSearchingFriends && hasSearchedFriends && searchResults.length === 0;
+    const showFriendSearchHint = !isSearchingFriends && !friendSearchError && !hasSearchedFriends && searchTerm.trim();
+    const showFriendSearchEmpty = !isSearchingFriends && !friendSearchError && hasSearchedFriends && searchResults.length === 0;
 
     const runFriendAction = async (actionId, action) => {
         if (!actionId || pendingFriendActionIdsRef.current.has(actionId)) return false;
@@ -131,6 +132,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
         if (isSearchingFriendsRef.current) return;
 
         isSearchingFriendsRef.current = true;
+        setFriendSearchError('');
         setIsSearchingFriends(true);
         setSearchResults([]);
         setHasSearchedFriends(false);
@@ -168,13 +170,16 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
             results.delete(user.uid);
 
             setSearchResults(Array.from(results.values()));
+            setFriendSearchError('');
             setHasSearchedFriends(true);
         } catch(e) { 
             console.error(e); 
             // Fallback if index missing for name search
             if (e.code === 'failed-precondition') {
+                 setFriendSearchError(t('friendSearchIndexPending'));
                  showToast(t('friendSearchIndexPending'), 'error');
             } else {
+                 setFriendSearchError(t('friendSearchFailed'));
                  showToast(t('friendSearchFailed'), 'error');
             }
         } finally {
@@ -195,6 +200,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
         setView('list');
         setSearchResults([]);
         setHasSearchedFriends(false);
+        setFriendSearchError('');
         setSearchTerm('');
         
         // Notify via mailbox
@@ -324,7 +330,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                     {/* Action Area */}
                     <div className="p-4 pb-2 shrink-0">
                         <button 
-                            onClick={() => { setView(view === 'add' ? 'list' : 'add'); setSearchTerm(''); setSearchResults([]); setHasSearchedFriends(false); }}
+                            onClick={() => { setView(view === 'add' ? 'list' : 'add'); setSearchTerm(''); setSearchResults([]); setHasSearchedFriends(false); setFriendSearchError(''); }}
                             className={`app-button w-full ${view === 'add' ? 'bg-m3-secondary-container text-m3-on-secondary-container shadow-sm' : 'border border-m3-outline-variant bg-m3-surface hover:bg-m3-surface-container-high'}`}
                         >
                             {view === 'add' ? <ArrowLeft className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />} 
@@ -369,6 +375,7 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                                                 const nextTerm = e.target.value;
                                                 setSearchTerm(nextTerm);
                                                 setHasSearchedFriends(false);
+                                                setFriendSearchError('');
                                                 setSearchResults([]);
                                             }}
                                             onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -387,6 +394,16 @@ export default function FriendSystem({ user, onClose, t, onReadFriendChatNotific
                                         {isSearchingFriends ? t('processing') : t('go')}
                                     </button>
                                 </div>
+
+                                {friendSearchError && (
+                                    <div role="alert" aria-live="assertive" className="app-card-quiet mt-8 flex flex-col items-center gap-3 p-5 text-center text-sm text-m3-on-surface-variant">
+                                        <p>{friendSearchError}</p>
+                                        <button type="button" onClick={handleSearch} className="app-button-quiet text-google-blue">
+                                            <RotateCcw className="h-4 w-4" />
+                                            {t('chatRetry')}
+                                        </button>
+                                    </div>
+                                )}
 
                                 {showFriendSearchHint && (
                                     <div role="status" aria-live="polite" className="text-center text-sm text-m3-on-surface-variant mt-8 px-4 opacity-70">
