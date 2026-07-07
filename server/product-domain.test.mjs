@@ -1914,6 +1914,15 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
       null,
     ],
   };
+  const dirtyClaimedItem = {
+    id: 'claim-6',
+    maxClaims: 1,
+    claimants: [
+      { uid: ' u2 ', name: ' Dorothy ', at: 5 },
+      { uid: '', name: 'Ghost', at: 6 },
+      { uid: 'u2', name: 'Duplicate Dorothy', at: 7 },
+    ],
+  };
 
   assert.deepEqual(createClaimToggleData(openItem, user, 'Dorothy Vaughan', 3800), {
     type: 'add',
@@ -1932,6 +1941,10 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
   assert.deepEqual(createClaimToggleData(duplicatedLegacyItem, user, 'Dorothy Vaughan', 3804), {
     type: 'add',
     claimant: { uid: 'u2', name: 'Dorothy Vaughan', at: 3804 },
+  });
+  assert.deepEqual(createClaimToggleData(dirtyClaimedItem, user, 'Dorothy Vaughan', 3805), {
+    type: 'remove',
+    claimant: { uid: 'u2', name: 'Dorothy', at: 5 },
   });
 });
 

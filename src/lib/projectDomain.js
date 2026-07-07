@@ -1076,9 +1076,10 @@ export function createScheduleRecommendationSummary(submissions, config, limit =
 }
 
 export function createClaimToggleData(item, user, userName, claimedAt) {
-  if (!item?.id || !user?.uid) return null;
-  const rawClaimants = Array.isArray(item.claimants) ? item.claimants : [];
-  const existingClaim = rawClaimants.find((claimant) => claimant?.uid === user.uid);
+  const uid = String(user?.uid ?? '').trim();
+  if (!item?.id || !uid) return null;
+  const claimants = normalizeClaimItemClaimants(item);
+  const existingClaim = claimants.find((claimant) => claimant.uid === uid);
   if (existingClaim) {
     return {
       type: 'remove',
@@ -1087,12 +1088,11 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
   }
 
   const maxClaims = normalizeClaimCapacityInput(item.maxClaims);
-  const claimants = normalizeClaimItemClaimants(item);
   if (claimants.length >= maxClaims) return null;
   return {
     type: 'add',
     claimant: {
-      uid: user.uid,
+      uid,
       name: cleanName(userName, user),
       at: claimedAt,
     },

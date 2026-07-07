@@ -28,6 +28,7 @@ import {
   createMineRoomProgressPatch,
   createScheduleConfigData,
   normalizeClaimCapacityInput,
+  normalizeClaimItemClaimants,
   normalizeMineProgressInput,
   normalizeParticipantValueInput,
   normalizeGatherSubmissionData,
@@ -1467,7 +1468,7 @@ function normalizeClaimMetadataPatch(data, existing) {
   if (!Object.hasOwn(patch, 'maxClaims')) return patch;
 
   const maxClaims = normalizeClaimMaxClaims(patch.maxClaims);
-  const currentClaimants = Array.isArray(existing.claimants) ? existing.claimants : [];
+  const currentClaimants = normalizeClaimItemClaimants(existing);
   if (maxClaims < currentClaimants.length) {
     throwDataError(409, 'data/claim-capacity', 'Claim capacity cannot be less than current claimants.');
   }
@@ -1500,9 +1501,9 @@ function authorizeClaimantsPatch({ user, type, data, existing }) {
 }
 
 function authorizeClaimantAdd({ user, data, existing, claimant }) {
-  if (claimant.uid !== user.uid) forbidden();
+  if (normalizeClaimantUid(claimant) !== user.uid) forbidden();
 
-  const claimants = Array.isArray(existing.claimants) ? existing.claimants : [];
+  const claimants = normalizeClaimItemClaimants(existing);
   if (claimants.some((entry) => entry?.uid === user.uid)) {
     throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
   }
@@ -1530,19 +1531,23 @@ function normalizeClaimMaxClaims(value) {
 }
 
 function authorizeClaimantRemove({ user, data, existing, claimant }) {
-  if (claimant.uid !== user.uid) forbidden();
+  if (normalizeClaimantUid(claimant) !== user.uid) forbidden();
 
   const claimants = Array.isArray(existing.claimants) ? existing.claimants : [];
-  const existingClaim = claimants.find((entry) => entry?.uid === user.uid && deepEqualData(entry, claimant));
-  if (!existingClaim) forbidden();
+  const existingClaims = claimants.filter((entry) => normalizeClaimantUid(entry) === user.uid);
+  if (existingClaims.length === 0) forbidden();
 
   return {
     ...(data || {}),
     claimants: {
       __type: 'arrayRemove',
-      values: [existingClaim],
+      values: existingClaims,
     },
   };
+}
+
+function normalizeClaimantUid(claimant) {
+  return String(claimant?.uid ?? '').trim();
 }
 
 async function authorizeProjectUserEntryOperation({

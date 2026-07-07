@@ -4185,6 +4185,60 @@ test('HTTP data API restricts claim item updates to current-user claim toggles',
       assert.equal(legacyOverCapacityClaim.body.error.code, 'data/claim-full');
       assert.deepEqual((await store.get('claim_items', 'legacy-oversized-claim')).claimants, legacyClaimants);
 
+      await store.set('claim_items', 'dirty-open-claim', {
+        projectId: project.doc.id,
+        title: 'Dirty open claim',
+        maxClaims: 1,
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        claimants: [
+          { uid: ' ', name: ' ', at: 8 },
+          null,
+        ],
+        createdAt: 8,
+      });
+      const bobDirtyClaimant = { uid: bob.user.uid, name: 'Bob', at: 9 };
+      const bobDirtyClaim = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'claim_items',
+          id: 'dirty-open-claim',
+          data: { claimants: arrayUnion(bobDirtyClaimant) },
+        },
+      });
+      assert.deepEqual(bobDirtyClaim.doc.claimants, [
+        { uid: ' ', name: ' ', at: 8 },
+        null,
+        bobDirtyClaimant,
+      ]);
+
+      await store.set('claim_items', 'dirty-owned-claim', {
+        projectId: project.doc.id,
+        title: 'Dirty owned claim',
+        maxClaims: 2,
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        claimants: [
+          { uid: ` ${alice.user.uid} `, name: ' Alice ', at: 11 },
+          { uid: alice.user.uid, name: 'Duplicate Alice', at: 12 },
+          { uid: ' ', name: 'Ghost', at: 13 },
+        ],
+        createdAt: 11,
+      });
+      const aliceDropDirtyClaim = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'claim_items',
+          id: 'dirty-owned-claim',
+          data: { claimants: arrayRemove({ uid: alice.user.uid, name: 'Alice', at: 11 }) },
+        },
+      });
+      assert.deepEqual(aliceDropDirtyClaim.doc.claimants, [
+        { uid: ' ', name: 'Ghost', at: 13 },
+      ]);
+
       await store.set('claim_items', 'legacy-claimed-capacity', {
         projectId: project.doc.id,
         title: 'Legacy claimed capacity',
