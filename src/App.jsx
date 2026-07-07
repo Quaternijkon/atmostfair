@@ -44,6 +44,7 @@ import {
   createProjectStatusPatch,
   normalizeClaimCapacityInput,
   normalizeProjectChildText,
+  normalizeRouletteConfigInput,
   PROJECT_CASCADE_COLLECTIONS,
 } from './lib/projectDomain';
 import {
@@ -412,12 +413,12 @@ function AppContent() {
       },
       handleUpdateRouletteConfig: async (projectId, config) => {
          if (!user || !requireProjectWritable(projectId, showToast)) return;
-         await updateDoc(doc(db, 'projects', projectId), { rouletteConfig: config });
+         await updateDoc(doc(db, 'projects', projectId), { rouletteConfig: normalizeRouletteConfigInput(config) });
       },
       handleSaveRouletteResult: async (projectId, config) => {
          if (!user || !requireProjectWritable(projectId, showToast)) return;
          const parts = rouletteParticipants.filter(p => p.projectId === projectId);
-         const rouletteResult = createRouletteResultData(parts, config, nowMs());
+         const rouletteResult = createRouletteResultData(parts, normalizeRouletteConfigInput(config), nowMs());
          if (!rouletteResult) return;
 
          const batch = writeBatch(db);

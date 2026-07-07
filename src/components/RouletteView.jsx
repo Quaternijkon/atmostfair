@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForward, RotateCcw, X, Pause } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
+import { normalizeRouletteConfigInput, normalizeRoulettePrizeCountInput } from '../lib/projectDomain';
 
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
@@ -122,7 +123,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           // Flatten prizes
           let prizeQueue = [];
           (config.prizes || []).forEach(p => {
-              for(let i=0; i<(parseInt(p.count)||0); i++) prizeQueue.push(p.name);
+              for(let i=0; i<normalizeRoulettePrizeCountInput(p.count); i++) prizeQueue.push(p.name);
           });
           
           if (config.order === 'rev') prizeQueue = prizeQueue.reverse();
@@ -221,7 +222,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       isSavingRouletteConfigRef.current = true;
       setIsSavingRouletteConfig(true);
       try {
-          await actions.handleUpdateRouletteConfig(project.id, { ...config, mode: activeTab });
+          const normalizedConfig = normalizeRouletteConfigInput({ ...config, mode: activeTab });
+          await actions.handleUpdateRouletteConfig(project.id, normalizedConfig);
           showToast(t('rSaveConfig'), 'success');
       } catch (error) {
           console.error(error);
@@ -239,7 +241,8 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       isDrawingRouletteRef.current = true;
       setIsDrawingRoulette(true);
       try {
-          await actions.handleSaveRouletteResult(project.id, { ...config, mode: activeTab });
+          const normalizedConfig = normalizeRouletteConfigInput({ ...config, mode: activeTab });
+          await actions.handleSaveRouletteResult(project.id, normalizedConfig);
       } catch (error) {
           console.error(error);
           showToast(t('resultGenerationFailed'), 'error');
@@ -320,7 +323,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                       {(config.prizes || []).map((prize, idx) => (
                           <div key={idx} className="flex gap-2">
                               <input type="text" value={prize.name} onChange={e => {const n=[...config.prizes]; n[idx].name=e.target.value; setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} placeholder={t('rPrizeName')} className="app-input flex-1" />
-                              <input type="number" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=parseInt(e.target.value); setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} className="app-input w-24" />
+                              <input type="number" min="0" max="99" value={prize.count} onChange={e => {const n=[...config.prizes]; n[idx].count=e.target.value; setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} className="app-input w-24" />
                               <button onClick={() => {const n=[...config.prizes]; n.splice(idx,1); setConfig({...config, prizes:n})}} disabled={isSavingRouletteConfig} className="app-icon-button hover:bg-google-red/10 hover:text-google-red"><Trash2 className="w-4 h-4" /></button>
                           </div>
                       ))}

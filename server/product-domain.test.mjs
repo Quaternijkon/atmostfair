@@ -410,6 +410,43 @@ test('roulette result data records deterministic winners and replayable audit st
   assert.equal(createRouletteResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], { mode: 'classic' }, 4102), null);
 });
 
+test('roulette prize count input normalizes empty and bounded numeric values', () => {
+  const normalizeRoulettePrizeCountInput = projectDomain.normalizeRoulettePrizeCountInput;
+  const normalizeRouletteConfigInput = projectDomain.normalizeRouletteConfigInput;
+  assert.equal(typeof normalizeRoulettePrizeCountInput, 'function');
+  assert.equal(typeof normalizeRouletteConfigInput, 'function');
+
+  assert.equal(normalizeRoulettePrizeCountInput(''), 0);
+  assert.equal(normalizeRoulettePrizeCountInput('  '), 0);
+  assert.equal(normalizeRoulettePrizeCountInput('abc'), 0);
+  assert.equal(normalizeRoulettePrizeCountInput('-3'), 0);
+  assert.equal(normalizeRoulettePrizeCountInput('0'), 0);
+  assert.equal(normalizeRoulettePrizeCountInput('7'), 7);
+  assert.equal(normalizeRoulettePrizeCountInput('99'), 99);
+  assert.equal(normalizeRoulettePrizeCountInput('100'), 99);
+
+  assert.deepEqual(
+    normalizeRouletteConfigInput({
+      mode: 'multi',
+      prizes: [
+        { name: 'Gold', count: '' },
+        { name: 'Silver', count: '3' },
+        { name: 'Overflow', count: 120 },
+      ],
+      allowRepeat: true,
+    }),
+    {
+      mode: 'multi',
+      prizes: [
+        { name: 'Gold', count: 0 },
+        { name: 'Silver', count: 3 },
+        { name: 'Overflow', count: 99 },
+      ],
+      allowRepeat: true,
+    },
+  );
+});
+
 test('RPS room transition persists a reusable match result summary', () => {
   const createRpsNextRoundPatch = projectDomain.createRpsNextRoundPatch;
   const createGameRoomSummary = projectDomain.createGameRoomSummary;

@@ -24,6 +24,8 @@ export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 export const CLAIM_CAPACITY_MIN = 1;
 export const CLAIM_CAPACITY_MAX = 99;
+export const ROULETTE_PRIZE_COUNT_MIN = 0;
+export const ROULETTE_PRIZE_COUNT_MAX = 99;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
 const GAME_ROOM_TYPES = new Set(['rps', 'mine']);
@@ -375,7 +377,7 @@ export function createRouletteResultData(participants, config = {}, generatedAt)
   if (pool.length === 0 || !generatedAt) return null;
 
   const participantCount = pool.length;
-  const configSnapshot = clonePlainValue(config || {});
+  const configSnapshot = normalizeRouletteConfigInput(config || {});
   const initialTotal = pool.reduce((acc, participant) => acc + participant.value, 0);
   const steps = [];
   const winners = [];
@@ -916,6 +918,26 @@ export function normalizeClaimCapacityInput(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return CLAIM_CAPACITY_MIN;
   return Math.min(CLAIM_CAPACITY_MAX, Math.max(CLAIM_CAPACITY_MIN, parsed));
+}
+
+export function normalizeRoulettePrizeCountInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return ROULETTE_PRIZE_COUNT_MIN;
+  return Math.min(ROULETTE_PRIZE_COUNT_MAX, Math.max(ROULETTE_PRIZE_COUNT_MIN, parsed));
+}
+
+export function normalizeRouletteConfigInput(config = {}) {
+  const normalizedConfig = { ...(config || {}) };
+  if (Array.isArray(normalizedConfig.prizes)) {
+    normalizedConfig.prizes = normalizedConfig.prizes.map((prize) => {
+      const prizeRecord = prize && typeof prize === 'object' ? prize : {};
+      return {
+        ...prizeRecord,
+        count: normalizeRoulettePrizeCountInput(prizeRecord.count),
+      };
+    });
+  }
+  return normalizedConfig;
 }
 
 export function normalizeVotingMode(votingConfig) {
@@ -1516,7 +1538,7 @@ function createRouletteWinner(participant, rank, prize) {
 function createRoulettePrizeQueue(config) {
   let prizeQueue = [];
   for (const prize of Array.isArray(config.prizes) ? config.prizes : []) {
-    const count = Number.parseInt(prize?.count, 10) || 0;
+    const count = normalizeRoulettePrizeCountInput(prize?.count);
     for (let index = 0; index < count; index += 1) {
       prizeQueue.push(String(prize?.name || '').trim());
     }

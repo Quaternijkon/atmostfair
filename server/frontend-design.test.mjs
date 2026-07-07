@@ -1017,13 +1017,27 @@ test('roulette config saves prevent duplicate submits and expose pending state',
   assert.match(roulette, /isSavingRouletteConfigRef\s*=\s*useRef\(false\)/, 'Roulette config saves should use a synchronous action lock');
   assert.match(roulette, /if \(isSavingRouletteConfigRef\.current\) return;/, 'Roulette config saves should ignore duplicate clicks before rerender');
   assert.match(roulette, /isSavingRouletteConfigRef\.current = true[\s\S]{0,160}setIsSavingRouletteConfig\(true\)/, 'Roulette config saves should expose pending state before writing');
-  assert.match(roulette, /await actions\.handleUpdateRouletteConfig\(project\.id, \{ \.\.\.config, mode: activeTab \}\)/, 'Roulette config saves should await the write while pending');
+  assert.match(roulette, /normalizeRouletteConfigInput/, 'Roulette config saves should use the shared config normalizer');
+  assert.match(roulette, /const normalizedConfig = normalizeRouletteConfigInput\(\{ \.\.\.config, mode: activeTab \}\)/, 'Roulette config should be normalized at save time');
+  assert.match(roulette, /await actions\.handleUpdateRouletteConfig\(project\.id, normalizedConfig\)/, 'Roulette config saves should await the normalized write while pending');
   assert.match(roulette, /await actions\.handleUpdateRouletteConfig[\s\S]{0,220}showToast\(t\('rSaveConfig'\), 'success'\)/, 'Roulette config saves should show success only after the write resolves');
   assert.match(roulette, /finally \{[\s\S]{0,160}isSavingRouletteConfigRef\.current = false[\s\S]{0,120}setIsSavingRouletteConfig\(false\)/, 'Roulette config saves should clear pending state when they settle');
   assert.match(roulette, /showToast\(t\('rouletteConfigSaveFailed'\), 'error'\)/, 'Roulette config save failures should use localized app feedback');
   assert.match(roulette, /disabled=\{isSavingRouletteConfig\}/, 'Roulette config controls should be disabled while saving');
   assert.match(roulette, /aria-busy=\{isSavingRouletteConfig\}/, 'Roulette config save button should expose busy state');
   assert.match(roulette, /isSavingRouletteConfig \? t\('processing'\) : t\('rSaveConfig'\)/, 'Roulette config save button should show localized progress copy');
+  assert.match(roulette, /n\[idx\]\.count=e\.target\.value/, 'Roulette prize count input should keep a string-backed editable value');
+  assert.doesNotMatch(roulette, /n\[idx\]\.count=parseInt\(e\.target\.value\)/, 'Roulette prize count input should not parse partial edits into NaN while typing');
+});
+
+test('roulette config writes are normalized before persistence', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+  const domain = await readFile(path.join(root, 'src/lib/projectDomain.js'), 'utf8');
+
+  assert.match(domain, /export function normalizeRouletteConfigInput/, 'Project domain should expose a reusable roulette config normalizer');
+  assert.match(app, /normalizeRouletteConfigInput/, 'App roulette writes should use the shared config normalizer');
+  assert.match(app, /rouletteConfig: normalizeRouletteConfigInput\(config\)/, 'Roulette config updates should persist normalized config');
+  assert.match(app, /createRouletteResultData\(parts, normalizeRouletteConfigInput\(config\), nowMs\(\)\)/, 'Roulette result generation should use normalized config');
 });
 
 test('queue and roulette result actions prevent duplicate submits and expose pending state', async () => {
@@ -1049,6 +1063,8 @@ test('queue and roulette result actions prevent duplicate submits and expose pen
   assert.match(files.roulette, /isDrawingRouletteRef\s*=\s*useRef\(false\)/, 'Roulette drawing should use a synchronous action lock');
   assert.match(files.roulette, /if \(isDrawingRouletteRef\.current\) return;/, 'Roulette drawing should ignore duplicate clicks before state rerenders');
   assert.match(files.roulette, /setIsDrawingRoulette\(true\)[\s\S]{0,700}finally[\s\S]{0,220}setIsDrawingRoulette\(false\)/, 'Roulette drawing should expose pending state for the whole write');
+  assert.match(files.roulette, /const normalizedConfig = normalizeRouletteConfigInput\(\{ \.\.\.config, mode: activeTab \}\)/, 'Roulette drawing should normalize editable config before generating results');
+  assert.match(files.roulette, /await actions\.handleSaveRouletteResult\(project\.id, normalizedConfig\)/, 'Roulette drawing should pass normalized config to result generation');
   assert.match(files.roulette, /showToast\(t\('resultGenerationFailed'\), 'error'\)/, 'Roulette drawing failures should use localized app feedback');
   assert.match(files.roulette, /aria-busy=\{isDrawingRoulette\}/, 'Roulette draw buttons should expose pending state to assistive technology');
   assert.match(files.roulette, /disabled=\{isDrawingRoulette \|\| participants\.length < 1\}/, 'Roulette draw button should be disabled while pending or empty');
