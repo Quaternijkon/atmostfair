@@ -75,3 +75,16 @@ test('GitHub Pages workflow retries transient deploy failures once', async () =>
     'The retry attempt should fail the workflow when Pages still cannot deploy',
   );
 });
+
+test('Vite build splits stable vendor chunks without hiding size warnings', async () => {
+  const config = await readFile(path.join(root, 'vite.config.js'), 'utf8');
+
+  assert.match(config, /manualChunks/, 'Vite build should explicitly split stable vendor chunks');
+  assert.match(config, /react-vendor/, 'React and router dependencies should live in a reusable vendor chunk');
+  assert.match(config, /motion-vendor/, 'Framer Motion should live outside the app shell chunk');
+  assert.doesNotMatch(
+    config,
+    /chunkSizeWarningLimit/,
+    'Build config should not hide large chunks by increasing the warning threshold',
+  );
+});
