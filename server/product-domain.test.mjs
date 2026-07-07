@@ -995,6 +995,55 @@ test('game room summaries normalize stale stored result summaries before display
   });
 });
 
+test('game room summaries normalize dirty player membership before display', () => {
+  const rpsSummary = projectDomain.createGameRoomSummary({
+    id: 'game-dirty-summary-rps',
+    game: 'rps',
+    status: 'waiting',
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 2, move: null },
+      { uid: 'u1', name: 'Duplicate Ana', score: 7, move: 'rock' },
+      { uid: ' ', name: 'Blank', score: 1, move: null },
+      null,
+      { uid: 'u2', name: 'Bo', score: 'bad', move: null },
+    ],
+  });
+
+  assert.deepEqual(rpsSummary, {
+    game: 'rps',
+    status: 'waiting',
+    winnerId: null,
+    winnerName: '',
+    roundsPlayed: 0,
+    scoreLine: '2 - 0',
+    playerCount: 2,
+  });
+
+  const mineSummary = projectDomain.createGameRoomSummary({
+    id: 'game-dirty-summary-mine',
+    game: 'mine',
+    status: 'playing',
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 20, status: 'playing' },
+      { uid: 'u1', name: 'Duplicate Ana', progress: 100, status: 'won' },
+      { uid: ' ', name: 'Blank', progress: 100, status: 'won' },
+      null,
+      { uid: 'u2', name: 'Bo', progress: 70, status: 'playing' },
+    ],
+  });
+
+  assert.deepEqual(mineSummary, {
+    game: 'mine',
+    status: 'playing',
+    winnerId: null,
+    winnerName: '',
+    roundsPlayed: 0,
+    scoreLine: '70%',
+    playerCount: 2,
+  });
+});
+
 test('user game result history summarizes finished rooms for one player', () => {
   assert.equal(typeof createUserGameResultHistory, 'function');
 

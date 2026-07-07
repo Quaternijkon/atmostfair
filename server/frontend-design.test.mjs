@@ -584,8 +584,10 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.match(files.gameHub, /setActiveTab\('lobby'\)/, 'Game hub should expose active rooms');
   assert.match(files.gameHub, /currentActiveRoom/, 'Active game room should be derived from live room snapshots');
   assert.match(files.gameHub, /visibleRooms/, 'Room tabs should filter the full project room snapshot');
+  assert.match(files.gameHub, /roomSummary\.playerCount/, 'Room cards should show normalized player counts from the domain helper');
   assert.match(files.gameHub, /roomSummary\.winnerName/, 'Room cards should show the finished winner');
   assert.match(files.gameHub, /roomSummary\.scoreLine/, 'Room cards should show the score line');
+  assert.doesNotMatch(files.gameHub, /room\.players\?\.length \|\| 0/, 'Room cards should not render raw stored player array length');
   assert.match(files.projectDomain, /resultSummary/, 'Finished game rooms should persist a reusable result summary');
   assert.match(files.projectDomain, /createMineRoomProgressPatch/, 'Minesweeper completion should persist a reusable result summary');
   assert.doesNotMatch(files.gameHub, />Finished|>Active|>Winner|>Rounds|>Last round|No finished rooms/, 'Game hub result copy should be localized');

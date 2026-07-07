@@ -1173,6 +1173,8 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                   visibleRooms.map(room => {
                    const roomSummary = createGameRoomSummary(room) || {};
                    const isFinishedRoom = room.status === 'finished';
+                   const roomCapacity = room.game === 'mine' ? 8 : 2;
+                   const roomPlayerCount = Math.min(roomSummary.playerCount || 0, roomCapacity);
                    return (
                    <article key={room.id} className="app-card group relative w-full overflow-hidden p-5 hover:border-google-blue/30 hover:bg-m3-surface-container-high">
                        <button
@@ -1190,7 +1192,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
                                        {room.game === 'mine' ? <Bomb className="w-6 h-6"/> : <Scissors className="w-6 h-6"/>}
                                    </div>
                                    <div className="px-2 py-1 bg-m3-surface/50 rounded text-xs font-mono">
-                                       {room.players?.length || 0} / {room.game === 'mine' ? 8 : 2}
+                                       {roomPlayerCount} / {roomCapacity}
                                    </div>
                                </div>
 
