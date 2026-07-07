@@ -731,6 +731,22 @@ test('participant booking export uses the current booking config', async () => {
   assert.match(detail, /bookingConfig:\s*project\.bookingConfig/, 'Booking participant exports should use the current required field config');
 });
 
+test('config-backed workspaces remount when current project config changes', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.match(detail, /workspaceConfigKey/, 'Project detail should derive stable keys for config-backed workspaces');
+  assert.match(
+    detail,
+    /<ScheduleView\s+key=\{workspaceConfigKey\(project\.id,\s*project\.scheduleConfig\)\}/,
+    'Schedule workspace should remount when the current project or schedule config changes',
+  );
+  assert.match(
+    detail,
+    /<BookingView\s+key=\{workspaceConfigKey\(project\.id,\s*project\.bookingConfig\)\}/,
+    'Booking workspace should remount when the current project or booking config changes',
+  );
+});
+
 test('gather submission form prevents duplicate submits and exposes pending state', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 

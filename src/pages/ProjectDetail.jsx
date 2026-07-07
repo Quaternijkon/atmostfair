@@ -47,6 +47,15 @@ const PROJECT_WORKSPACE_DATA_COLLECTIONS = {
   game_hub: ['game_rooms'],
 };
 
+function workspaceConfigKey(projectId, config) {
+  if (!config || typeof config !== 'object') return `${projectId || ''}:unconfigured`;
+  const configKey = Object.keys(config)
+    .sort()
+    .map((key) => `${key}:${String(config[key] ?? '')}`)
+    .join('|');
+  return `${projectId || ''}:${configKey}`;
+}
+
 function ActivityTimeline({ activities, canExportActivities = false, onExportActivities = () => {}, loadError = false, onRetry = () => {}, t }) {
   const visibleActivities = (activities || []).slice(0, 8);
 
@@ -654,8 +663,8 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
               {project.type === 'roulette' && <RouletteView key={project.id} user={user} isAdmin={isAdmin} project={project} participants={projectRouletteData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
               {project.type === 'queue' && <QueueView user={user} isAdmin={isAdmin} project={project} participants={projectQueueData} isStopped={isStopped} isFinished={isFinished} isOwner={isOwner} actions={actions} t={t} />}
               {project.type === 'gather' && <GatherView user={user} isAdmin={isAdmin} project={project} fields={projectGatherFields} submissions={projectGatherSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-              {project.type === 'schedule' && <ScheduleView user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
-              {project.type === 'book' && <BookingView user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'schedule' && <ScheduleView key={workspaceConfigKey(project.id, project.scheduleConfig)} user={user} isAdmin={isAdmin} project={project} submissions={projectScheduleSubmissions} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
+              {project.type === 'book' && <BookingView key={workspaceConfigKey(project.id, project.bookingConfig)} user={user} isAdmin={isAdmin} project={project} slots={projectBookingSlots} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
               {project.type === 'claim' && <ClaimView user={user} isAdmin={isAdmin} project={project} items={projectClaimItems} isStopped={isStopped || isFinished} isOwner={isOwner} actions={actions} t={t} />}
               {project.type === 'game_hub' && <GameHubView project={project} user={user} isStopped={isStopped || isFinished} t={t} />}
               {project.type === 'project' && (
