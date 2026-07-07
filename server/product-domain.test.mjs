@@ -1150,6 +1150,50 @@ test('user game result history summarizes finished rooms for one player', () => 
   });
 });
 
+test('user game result history normalizes dirty player membership before summarizing', () => {
+  assert.equal(typeof createUserGameResultHistory, 'function');
+
+  const history = createUserGameResultHistory([
+    {
+      id: 'dirty-win',
+      name: 'Messy final',
+      game: 'rps',
+      status: 'finished',
+      winnerId: ' u1 ',
+      finishedAt: 9000,
+      config: { bestOf: 3, timeout: 30 },
+      players: [
+        { uid: ' u1 ', name: 'Ana', score: 2, move: null },
+        { uid: ' u1 ', name: 'Duplicate Ana', score: 99, move: null },
+        { uid: ' ', name: 'Blank', score: 99, move: null },
+        { uid: 'u2', name: 'Bo', score: 1, move: null },
+      ],
+      history: [{ round: 1 }, { round: 2 }, { round: 3 }],
+    },
+  ], 'u1', 3);
+
+  assert.deepEqual(history.stats, {
+    total: 1,
+    wins: 1,
+    losses: 0,
+    draws: 0,
+  });
+  assert.deepEqual(history.recent, [
+    {
+      id: 'dirty-win',
+      roomName: 'Messy final',
+      game: 'rps',
+      finishedAt: 9000,
+      result: 'win',
+      winnerId: 'u1',
+      winnerName: 'Ana',
+      scoreLine: '2 - 1',
+      roundsPlayed: 3,
+      playerCount: 2,
+    },
+  ]);
+});
+
 test('game room invite URL helpers preserve page state and normalize room ids', () => {
   assert.equal(typeof createGameRoomInviteUrl, 'function');
   assert.equal(typeof getGameRoomInviteId, 'function');

@@ -703,18 +703,21 @@ export function createUserGameResultHistory(rooms, uid, limit = 3) {
   const parsedLimit = Number.parseInt(limit, 10);
   const recentLimit = Number.isFinite(parsedLimit) ? Math.max(0, parsedLimit) : 3;
   const entries = (Array.isArray(rooms) ? rooms : [])
-    .filter((room) => (
+    .map((room) => ({
+      room,
+      players: normalizeGameRoomPlayers(room?.players),
+      winnerId: normalizeIdentityValue(room?.winnerId),
+    }))
+    .filter(({ room, players }) => (
       room?.status === 'finished'
-      && Array.isArray(room.players)
-      && room.players.some((player) => player.uid === cleanUid)
+      && players.some((player) => player.uid === cleanUid)
     ))
-    .map((room) => {
-      const summary = createGameRoomSummary(room) || {};
-      const players = Array.isArray(room.players) ? room.players : [];
-      const winner = room.winnerId
-        ? players.find((player) => player.uid === room.winnerId) || null
+    .map(({ room, players, winnerId }) => {
+      const summary = createGameRoomSummary({ ...room, players, winnerId }) || {};
+      const winner = winnerId
+        ? players.find((player) => player.uid === winnerId) || null
         : null;
-      const result = !room.winnerId ? 'draw' : room.winnerId === cleanUid ? 'win' : 'loss';
+      const result = !winnerId ? 'draw' : winnerId === cleanUid ? 'win' : 'loss';
 
       return {
         id: room.id,
@@ -722,7 +725,7 @@ export function createUserGameResultHistory(rooms, uid, limit = 3) {
         game: room.game || summary.game || '',
         finishedAt: room.finishedAt || room.createdAt || 0,
         result,
-        winnerId: room.winnerId || null,
+        winnerId: winnerId || null,
         winnerName: summary.winnerName || winner?.name || '',
         scoreLine: summary.scoreLine || '',
         roundsPlayed: summary.roundsPlayed || 0,
