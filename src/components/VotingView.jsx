@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Trophy, Trash2 } from './Icons';
 import { InfoCard } from './InfoCard';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { createVotingResultSummary, PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onDelete, onVote, votingConfig, onUpdateVotingConfig, isProjectOwner, projectId, t }) {
@@ -16,7 +16,7 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
   const pendingDeleteVoteItemIdsRef = useRef(new Set());
   const [isUpdatingVoteMode, setIsUpdatingVoteMode] = useState(false);
   const isUpdatingVoteModeRef = useRef(false);
-  const sortedItems = [...items].sort((a, b) => (b.votes?.length || 0) - (a.votes?.length || 0));
+  const voteSummary = useMemo(() => createVotingResultSummary(items), [items]);
   const hasAdminRights = isProjectOwner || isAdmin;
   const voteMode = votingConfig?.mode === 'single' ? 'single' : 'multiple';
   const voteModes = [
@@ -131,17 +131,30 @@ export default function VotingView({ user, isAdmin, items, isStopped, onAdd, onD
           <button type="submit" disabled={isAddingVoteItem || !newItem.trim()} className="app-button-primary px-8">{isAddingVoteItem ? t('processing') : t('add')}</button>
         </form>
       )}
+      <div className="mb-4 flex items-center justify-between rounded-2xl border border-m3-outline-variant/45 bg-m3-surface-container-low px-4 py-3 text-sm text-m3-on-surface-variant">
+        <span>{t('totalVotes', { count: voteSummary.totalVotes })}</span>
+        <span className="font-medium text-m3-on-surface">{voteMode === 'single' ? t('voteModeSingle') : t('voteModeMultiple')}</span>
+      </div>
       <div className="space-y-3">
-        {sortedItems.map((item, index) => {
-          const isVoted = item.votes?.includes(user.uid);
+        {voteSummary.items.map((entry, index) => {
+          const { item } = entry;
+          const isVoted = entry.voterIds.includes(user.uid);
           const isVotePending = pendingVoteItemIds.includes(item.id);
           const isDeletePending = pendingDeleteVoteItemIds.includes(item.id);
           const canDelete = !isStopped && (isAdmin || item.creatorId === user.uid || isProjectOwner);
+          const voteBarWidth = `${Math.round(entry.barPercent * 100)}%`;
+          const voteShare = Math.round(entry.percent * 100);
           return (
             <div key={item.id} className={`app-card relative flex items-center justify-between overflow-hidden p-4 ${isVoted ? 'border-google-blue/30 bg-m3-primary-container/30' : ''}`}>
               <div className="flex items-center gap-5 flex-1 z-10">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${isVoted ? 'bg-google-blue text-white' : 'bg-m3-surface-container text-m3-on-surface-variant'}`}>{index + 1}</div>
-                <div><h3 className="font-medium text-lg text-m3-on-surface">{item.title}</h3><div className="text-sm text-m3-on-surface-variant">{item.votes?.length || 0} {t('votes')} • {t('addedBy')} {item.creatorName}</div></div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium text-lg text-m3-on-surface">{item.title}</h3>
+                  <div className="text-sm text-m3-on-surface-variant">{entry.voteCount} {t('votes')} • {t('voteShare', { percent: voteShare })} • {t('addedBy')} {item.creatorName}</div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-m3-surface-container-high">
+                    <div className="h-full rounded-full bg-google-blue transition-[width] duration-300" style={{ width: voteBarWidth }} />
+                  </div>
+                </div>
               </div>
               <div className="flex items-center gap-2 z-10">
                 <button

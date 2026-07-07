@@ -824,6 +824,26 @@ test('voting workspace exposes localized admin vote-mode controls', async () => 
   assert.doesNotMatch(files.voting, />Multiple<|>Single<|>Mode</, 'Voting mode visible copy should be localized');
 });
 
+test('voting workspace renders normalized vote shares instead of raw vote lengths', async () => {
+  const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
+
+  for (const key of ['totalVotes', 'voteShare']) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
+
+  assert.match(voting, /createVotingResultSummary/, 'Voting view should derive display rows through the domain summary helper');
+  assert.match(voting, /voteSummary\.items\.map/, 'Voting view should render normalized summary rows');
+  assert.match(voting, /entry\.voteCount/, 'Voting rows should display deduplicated vote counts');
+  assert.match(voting, /entry\.voterIds\.includes\(user\.uid\)/, 'Voting rows should derive current-user state from normalized voter ids');
+  assert.match(voting, /entry\.percent/, 'Voting rows should display each option share');
+  assert.match(voting, /entry\.barPercent/, 'Voting rows should size bars from normalized share data');
+  assert.match(voting, /t\('totalVotes'/, 'Voting summary should show localized total votes');
+  assert.match(voting, /t\('voteShare'/, 'Voting rows should localize the share label');
+  assert.doesNotMatch(voting, /item\.votes\?\.includes\(user\.uid\)/, 'Voting rows should not derive current-user state from raw stored vote arrays');
+  assert.doesNotMatch(voting, /item\.votes\?\.length \|\| 0/, 'Voting rows should not display raw stored vote array lengths');
+});
+
 test('voting mode updates prevent duplicate submits and expose pending state', async () => {
   const voting = await readFile(path.join(root, 'src/components/VotingView.jsx'), 'utf8');
 

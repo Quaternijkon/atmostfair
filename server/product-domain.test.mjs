@@ -20,6 +20,7 @@ import {
   createQueueJoinData,
   createQueueResultData,
   createTeamJoinMember,
+  createVotingResultSummary,
   normalizeParticipantValueInput,
   normalizeTeamRoomCapacityInput,
   createScheduleRecommendationSummary,
@@ -1692,6 +1693,50 @@ test('single vote mode moves the user vote inside one project only', () => {
   ]);
 
   assert.deepEqual(createVoteToggleOperations(items, items[1], { uid: '' }, { mode: 'single' }), []);
+});
+
+test('voting result summary deduplicates votes and derives share bars', () => {
+  assert.equal(typeof createVotingResultSummary, 'function');
+
+  assert.deepEqual(createVotingResultSummary([
+    { id: 'vote-b', title: 'B', votes: ['u1', 'u1', ' ', null, 'u2'], createdAt: 20 },
+    { id: 'vote-a', title: 'A', votes: ['u3'], createdAt: 10 },
+    { id: 'vote-c', title: 'C', votes: 'not-a-list', createdAt: 30 },
+    { votes: ['missing-id'] },
+    null,
+  ]), {
+    totalVotes: 3,
+    maxVotes: 2,
+    items: [
+      {
+        item: { id: 'vote-b', title: 'B', votes: ['u1', 'u1', ' ', null, 'u2'], createdAt: 20 },
+        voterIds: ['u1', 'u2'],
+        voteCount: 2,
+        percent: 2 / 3,
+        barPercent: 1,
+      },
+      {
+        item: { id: 'vote-a', title: 'A', votes: ['u3'], createdAt: 10 },
+        voterIds: ['u3'],
+        voteCount: 1,
+        percent: 1 / 3,
+        barPercent: 0.5,
+      },
+      {
+        item: { id: 'vote-c', title: 'C', votes: 'not-a-list', createdAt: 30 },
+        voterIds: [],
+        voteCount: 0,
+        percent: 0,
+        barPercent: 0,
+      },
+    ],
+  });
+
+  assert.deepEqual(createVotingResultSummary([]), {
+    totalVotes: 0,
+    maxVotes: 0,
+    items: [],
+  });
 });
 
 test('project creation data normalizes valid input and rejects invalid project shells', () => {

@@ -211,7 +211,12 @@ export function createProjectInsightSummary(project, datasets = {}) {
 
 function countUniquePrimitiveIdentities(values) {
   if (!Array.isArray(values)) return 0;
-  return new Set(values.map(normalizeIdentityValue).filter(Boolean)).size;
+  return normalizePrimitiveIdentities(values).length;
+}
+
+function normalizePrimitiveIdentities(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map(normalizeIdentityValue).filter(Boolean))];
 }
 
 function countUniqueRecordIdentities(records, options = {}) {
@@ -1162,6 +1167,35 @@ export function normalizeRouletteConfigInput(config = {}) {
 
 export function normalizeVotingMode(votingConfig) {
   return votingConfig?.mode === 'single' ? 'single' : 'multiple';
+}
+
+export function createVotingResultSummary(items) {
+  const normalizedItems = (Array.isArray(items) ? items : [])
+    .filter((item) => item && String(item.id ?? '').trim())
+    .map((item) => ({
+      item,
+      voterIds: normalizePrimitiveIdentities(item.votes),
+      voteCount: countUniquePrimitiveIdentities(item.votes),
+    }));
+  const totalVotes = normalizedItems.reduce((sum, entry) => sum + entry.voteCount, 0);
+  const maxVotes = normalizedItems.reduce((max, entry) => Math.max(max, entry.voteCount), 0);
+
+  return {
+    totalVotes,
+    maxVotes,
+    items: normalizedItems
+      .map((entry) => ({
+        ...entry,
+        percent: totalVotes > 0 ? entry.voteCount / totalVotes : 0,
+        barPercent: maxVotes > 0 ? entry.voteCount / maxVotes : 0,
+      }))
+      .sort((a, b) => {
+        if (b.voteCount !== a.voteCount) return b.voteCount - a.voteCount;
+        const aCreatedAt = Number.isFinite(Number(a.item.createdAt)) ? Number(a.item.createdAt) : 0;
+        const bCreatedAt = Number.isFinite(Number(b.item.createdAt)) ? Number(b.item.createdAt) : 0;
+        return aCreatedAt - bCreatedAt || String(a.item.id).localeCompare(String(b.item.id));
+      }),
+  };
 }
 
 export function createVoteToggleOperations(items, targetItem, user, votingConfig) {
