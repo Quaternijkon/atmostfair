@@ -29,6 +29,7 @@ import {
   normalizeMineProgressInput,
   normalizeParticipantValueInput,
   normalizeRpsCurrentRoundInput,
+  normalizeRpsScoreInput,
   normalizeTeamRoomCapacityInput,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
@@ -837,11 +838,11 @@ function authorizeRpsShowdownPatch({ user, data, existing, existingPlayers, next
 
   const history = Array.isArray(existing.history) ? cloneDataValue(existing.history) : [];
   const round = normalizeRpsCurrentRoundInput(existing.currentRound, history.length + 1);
-  const p1 = { ...movedPlayers[0] };
-  const p2 = { ...movedPlayers[1] };
+  const p1 = { ...movedPlayers[0], score: normalizeRpsScoreInput(movedPlayers[0]?.score, existing.config) };
+  const p2 = { ...movedPlayers[1], score: normalizeRpsScoreInput(movedPlayers[1]?.score, existing.config) };
   const winnerId = getRpsRoundWinnerId(p1.move, p2.move, p1.uid, p2.uid);
-  if (winnerId === p1.uid) p1.score = (Number.parseInt(p1.score, 10) || 0) + 1;
-  if (winnerId === p2.uid) p2.score = (Number.parseInt(p2.score, 10) || 0) + 1;
+  if (winnerId === p1.uid) p1.score = normalizeRpsScoreInput(p1.score + 1, existing.config);
+  if (winnerId === p2.uid) p2.score = normalizeRpsScoreInput(p2.score + 1, existing.config);
 
   const incomingHistory = Array.isArray(data.history) ? data.history : [];
   if (incomingHistory.length !== history.length + 1) forbidden();

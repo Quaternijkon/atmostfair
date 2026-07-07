@@ -566,6 +566,9 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.match(files.gameHub, /roomInviteUnavailable/, 'Invalid room invite links should use localized feedback');
   assert.match(files.gameHub, /userResultHistory/, 'Game hub should expose a current-user result history panel');
   assert.match(files.gameHub, /createRpsNextRoundPatch/, 'RPS room transitions should use the domain helper');
+  assert.match(files.gameHub, /normalizeRpsScoreInput/, 'RPS score badges should normalize legacy scores before rendering');
+  assert.doesNotMatch(files.gameHub, /\{opponent\.score\}/, 'RPS opponent score badge should not render raw score values');
+  assert.doesNotMatch(files.gameHub, /\{me\.score\}/, 'RPS current-user score should not render raw score values');
   assert.match(files.gameHub, /createMineRoomProgressPatch/, 'Minesweeper progress should use the domain helper for terminal room summaries');
   assert.match(files.gameHub, /normalizeMineProgressInput/, 'Minesweeper player list should normalize legacy progress before sorting and rendering');
   assert.doesNotMatch(files.gameHub, /room\.players\?\.sort/, 'Minesweeper player list should not mutate live room player snapshots while sorting');

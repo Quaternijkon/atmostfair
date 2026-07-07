@@ -2749,6 +2749,57 @@ test('HTTP data API restricts game room writes to current-player transitions', a
       assert.equal(aliceShowdownFromLegacyRound.doc.status, 'showdown');
       assert.equal(aliceShowdownFromLegacyRound.doc.history[0].round, 1);
 
+      const legacyScoreRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Legacy score',
+        game: 'rps',
+        status: 'showdown',
+        createdBy: alice.user.uid,
+        currentRound: 1,
+        players: [
+          { uid: alice.user.uid, name: 'Alice', score: 999, move: 'rock' },
+          { uid: 'computer', name: 'Bot', score: -5, move: 'scissors' },
+        ],
+        history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: alice.user.uid, timestamp: 14 }],
+        config: { bestOf: 3, timeout: 30 },
+        createdAt: 5,
+      });
+      const aliceFinishesLegacyScore = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          id: legacyScoreRoom.id,
+          data: {
+            status: 'finished',
+            winnerId: alice.user.uid,
+            finishedAt: 15,
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 2, move: null, lastMove: 'rock' },
+              { uid: 'computer', name: 'Bot', score: 0, move: null, lastMove: 'scissors' },
+            ],
+            resultSummary: {
+              game: 'rps',
+              status: 'finished',
+              winnerId: alice.user.uid,
+              winnerName: 'Alice',
+              roundsPlayed: 1,
+              scoreLine: '2 - 0',
+              playerCount: 2,
+              lastRound: {
+                round: 1,
+                p1Move: 'rock',
+                p2Move: 'scissors',
+                winnerId: alice.user.uid,
+                winnerName: 'Alice',
+              },
+            },
+          },
+        },
+      });
+      assert.equal(aliceFinishesLegacyScore.doc.status, 'finished');
+      assert.equal(aliceFinishesLegacyScore.doc.resultSummary.scoreLine, '2 - 0');
+
       const mineRoom = await store.add('game_rooms', {
         projectId: project.doc.id,
         name: 'Mine',

@@ -15,6 +15,7 @@ import {
   createMineRoomProgressPatch,
   createRpsNextRoundPatch,
   normalizeMineProgressInput,
+  normalizeRpsScoreInput,
 } from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
@@ -41,6 +42,8 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
   const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
   const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
   const opponent = isPlayer ? room.players.find(p => p.uid !== user.uid) : null;
+  const myScore = me ? normalizeRpsScoreInput(me.score, room.config) : 0;
+  const opponentScore = opponent ? normalizeRpsScoreInput(opponent.score, room.config) : 0;
   const isSpectator = !isPlayer;
   const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
   
@@ -76,23 +79,24 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
       
       if (allMoved) {
           // Both moved -> Calculate Result & Enter Showdown
-          const p1 = newPlayers[0];
-          const p2 = newPlayers[1];
-          let winnerId = null; // Round winner
+            const p1 = { ...newPlayers[0], score: normalizeRpsScoreInput(newPlayers[0]?.score, room.config) };
+            const p2 = { ...newPlayers[1], score: normalizeRpsScoreInput(newPlayers[1]?.score, room.config) };
+            let winnerId = null; // Round winner
 
-          if (p1.move !== p2.move) {
-              if (
-                  (p1.move === 'rock' && p2.move === 'scissors') ||
-                  (p1.move === 'paper' && p2.move === 'rock') ||
-                  (p1.move === 'scissors' && p2.move === 'paper')
-              ) {
-                  winnerId = p1.uid;
-                  p1.score = (p1.score || 0) + 1;
-              } else {
-                  winnerId = p2.uid;
-                  p2.score = (p2.score || 0) + 1;
-              }
-          }
+            if (p1.move !== p2.move) {
+                if (
+                    (p1.move === 'rock' && p2.move === 'scissors') ||
+                    (p1.move === 'paper' && p2.move === 'rock') ||
+                    (p1.move === 'scissors' && p2.move === 'paper')
+                ) {
+                    winnerId = p1.uid;
+                    p1.score = normalizeRpsScoreInput(p1.score + 1, room.config);
+                } else {
+                    winnerId = p2.uid;
+                    p2.score = normalizeRpsScoreInput(p2.score + 1, room.config);
+                }
+            }
+            newPlayers = [p1, p2];
            
           // Record History
           const historyItem = {
@@ -270,7 +274,7 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                    ) : <User className="w-8 h-8 text-m3-on-surface-variant/30"/>}
                    
                    {/* Score Badge */}
-                    {opponent && <div className="absolute -top-1 -right-1 bg-google-red text-white text-xs w-6 h-6 flex items-center justify-center rounded-full border border-white">{opponent.score}</div>}
+                   {opponent && <div className="absolute -top-1 -right-1 bg-google-red text-white text-xs w-6 h-6 flex items-center justify-center rounded-full border border-white">{opponentScore}</div>}
                 </div>
                 <div className="text-sm font-medium text-m3-on-surface">{opponent?.name || t('waiting')}</div>
                 {opponent?.move && room.status === 'playing' && <div className="text-xs text-google-green mt-1 font-medium">{t('ready')}</div>}
@@ -316,7 +320,7 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                         </div>
                         <div className="flex flex-col items-center">
                             <div className="text-lg font-medium">{me.name} ({t('you')})</div>
-                            <div className="text-sm text-m3-on-surface-variant">{t('score')}: {me.score}</div>
+                            <div className="text-sm text-m3-on-surface-variant">{t('score')}: {myScore}</div>
                         </div>
                     </>
                 ) : (

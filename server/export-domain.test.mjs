@@ -210,9 +210,10 @@ test('participant export builds localized CSV for each participant workflow', ()
         status: 'finished',
         winnerId: 'u1',
         finishedAt: 1714554000000,
+        config: { bestOf: 3, timeout: 30 },
         players: [
-          { uid: 'u1', name: 'Ana', score: 2 },
-          { uid: 'u2', name: 'Bo', score: 1 },
+          { uid: 'u1', name: 'Ana', score: 999 },
+          { uid: 'u2', name: 'Bo', score: -4 },
         ],
         history: [{ round: 1 }, { round: 2 }, { round: 3 }],
         createdAt: 1714540000000,
@@ -221,7 +222,7 @@ test('participant export builds localized CSV for each participant workflow', ()
   }, t);
   assert.equal(gameExport.filename, 'Game-Night_game_results.csv');
   assert.match(gameExport.csv, /^Room,Game,Status,Winner,Score,Players,Rounds,Finished At,Player List\n/);
-  assert.match(gameExport.csv, /Final RPS,Rock Paper Scissors,Finished,Ana,2 - 1,2,3,2024-05-01T09:00:00.000Z,Ana \(2\); Bo \(1\)/);
+  assert.match(gameExport.csv, /Final RPS,Rock Paper Scissors,Finished,Ana,2 - 0,2,3,2024-05-01T09:00:00.000Z,Ana \(2\); Bo \(0\)/);
   assert.match(gameExport.csv, /Mine room,Minesweeper,Playing,,100%,2,0,,Cy \(100%\); Dee \(0%\)/);
 });
 

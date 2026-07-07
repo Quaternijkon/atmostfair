@@ -704,6 +704,57 @@ test('RPS room transition normalizes legacy current round before continuing', ()
   });
 });
 
+test('RPS summaries and transitions normalize legacy scores before displaying results', () => {
+  assert.equal(typeof projectDomain.normalizeRpsScoreInput, 'function');
+  assert.equal(projectDomain.normalizeRpsScoreInput('', { bestOf: 3 }), 0);
+  assert.equal(projectDomain.normalizeRpsScoreInput('-5', { bestOf: 3 }), 0);
+  assert.equal(projectDomain.normalizeRpsScoreInput('1', { bestOf: 1 }), 1);
+  assert.equal(projectDomain.normalizeRpsScoreInput('2', { bestOf: 3 }), 2);
+  assert.equal(projectDomain.normalizeRpsScoreInput('999', { bestOf: 5 }), 3);
+  assert.equal(projectDomain.normalizeRpsScoreInput('999', { bestOf: 99 }), 2);
+
+  const legacyRoom = {
+    id: 'game-legacy-score',
+    game: 'rps',
+    status: 'showdown',
+    currentRound: 1,
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 999, move: 'rock' },
+      { uid: 'u2', name: 'Bo', score: -5, move: 'scissors' },
+    ],
+    history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 1000 }],
+  };
+
+  assert.equal(projectDomain.createGameRoomSummary({ ...legacyRoom, winnerId: 'u1' }).scoreLine, '2 - 0');
+
+  assert.deepEqual(projectDomain.createRpsNextRoundPatch(legacyRoom, 9100), {
+    status: 'finished',
+    winnerId: 'u1',
+    finishedAt: 9100,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 2, lastMove: 'rock', move: null },
+      { uid: 'u2', name: 'Bo', score: 0, lastMove: 'scissors', move: null },
+    ],
+    resultSummary: {
+      game: 'rps',
+      status: 'finished',
+      winnerId: 'u1',
+      winnerName: 'Ana',
+      roundsPlayed: 1,
+      scoreLine: '2 - 0',
+      playerCount: 2,
+      lastRound: {
+        round: 1,
+        p1Move: 'rock',
+        p2Move: 'scissors',
+        winnerId: 'u1',
+        winnerName: 'Ana',
+      },
+    },
+  });
+});
+
 test('user game result history summarizes finished rooms for one player', () => {
   assert.equal(typeof createUserGameResultHistory, 'function');
 

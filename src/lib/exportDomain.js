@@ -1,4 +1,4 @@
-import { createGameRoomSummary, normalizeMineProgressInput } from './projectDomain.js';
+import { createGameRoomSummary, normalizeMineProgressInput, normalizeRpsScoreInput } from './projectDomain.js';
 import { getActivityMessageKey } from './activityDomain.js';
 
 const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim', 'game_hub']);
@@ -244,7 +244,7 @@ function createGameExport({ gameRooms = [] }, t) {
       summary.playerCount,
       summary.roundsPlayed,
       formatExportDate(room.finishedAt),
-      formatGamePlayers(room.players),
+      formatGamePlayers(room.players, room.config),
     ];
   });
 
@@ -345,12 +345,12 @@ function formatGameStatus(status, t) {
   return status || '';
 }
 
-function formatGamePlayers(players = []) {
+function formatGamePlayers(players = [], config = {}) {
   return (Array.isArray(players) ? players : [])
     .map((player) => {
       const name = player.name || player.uid || '';
       const score = Number.parseInt(player.score, 10);
-      if (Number.isInteger(score)) return `${name} (${score})`;
+      if (Number.isInteger(score)) return `${name} (${normalizeRpsScoreInput(score, config)})`;
       const progress = Number.parseInt(player.progress, 10);
       if (Number.isInteger(progress)) return `${name} (${normalizeMineProgressInput(progress)}%)`;
       return name;

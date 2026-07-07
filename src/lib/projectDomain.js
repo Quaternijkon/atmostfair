@@ -495,17 +495,17 @@ export function createRouletteResultData(participants, config = {}, generatedAt)
 
 export function createRpsNextRoundPatch(room, transitionAt) {
   if (!room?.id || room.game !== 'rps' || !transitionAt) return null;
-  const players = normalizeRpsPlayers(room.players);
+  const players = normalizeRpsPlayers(room.players, room.config);
   if (players.length < 2) return null;
 
+  const { bestOf } = normalizeRpsRoomConfig(room.config);
   const resetPlayers = players.map((player) => ({
     ...player,
     lastMove: player.move || player.lastMove || null,
     move: null,
   }));
-  const { bestOf } = normalizeRpsRoomConfig(room.config);
   const winThreshold = Math.floor(bestOf / 2) + 1;
-  const winner = players.find((player) => (Number.parseInt(player.score, 10) || 0) >= winThreshold);
+  const winner = players.find((player) => player.score >= winThreshold);
 
   if (winner) {
     return {
@@ -540,12 +540,13 @@ export function createGameRoomSummary(room) {
   const players = Array.isArray(room.players) ? room.players : [];
   const playerCount = players.length;
   if (room.game === 'rps') {
-    const winner = players.find((player) => player.uid === room.winnerId) || null;
-    const scores = players.map((player) => Number.parseInt(player.score, 10) || 0);
+    const rpsPlayers = normalizeRpsPlayers(players, room.config);
+    const winner = rpsPlayers.find((player) => player.uid === room.winnerId) || null;
+    const scores = rpsPlayers.map((player) => player.score);
     const history = Array.isArray(room.history) ? room.history : [];
     const lastRound = history[history.length - 1] || null;
     const lastRoundWinner = lastRound?.winnerId
-      ? players.find((player) => player.uid === lastRound.winnerId)
+      ? rpsPlayers.find((player) => player.uid === lastRound.winnerId)
       : null;
 
     return {
@@ -777,6 +778,14 @@ export function normalizeRpsCurrentRoundInput(value, fallback = 1) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 1) return fallback;
   return parsed;
+}
+
+export function normalizeRpsScoreInput(value, config) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return 0;
+  const { bestOf } = normalizeRpsRoomConfig(config);
+  const maxScore = Math.floor(bestOf / 2) + 1;
+  return Math.min(maxScore, Math.max(0, parsed));
 }
 
 export function normalizeMineProgressInput(value) {
@@ -1575,13 +1584,13 @@ function normalizedRouletteParticipants(participants) {
     .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
 }
 
-function normalizeRpsPlayers(players) {
+function normalizeRpsPlayers(players, config) {
   if (!Array.isArray(players)) return [];
   return players
     .filter((player) => player?.uid)
     .map((player) => ({
       ...clonePlainValue(player),
-      score: Number.parseInt(player.score, 10) || 0,
+      score: normalizeRpsScoreInput(player.score, config),
       move: player.move || null,
     }));
 }
