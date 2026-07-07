@@ -5139,6 +5139,132 @@ test('HTTP data API restricts voting item writes to current-user vote toggles', 
   });
 });
 
+test('HTTP data API canonicalizes existing votes when switching a project to single-vote mode', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123' },
+      });
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Mode switch vote', type: 'vote', status: 'active', votingConfig: { mode: 'multiple' }, createdAt: 1 },
+        },
+      });
+      const firstItem = await store.add('voting_items', {
+        projectId: project.doc.id,
+        title: 'First',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [` ${alice.user.uid} `, bob.user.uid, alice.user.uid],
+        createdAt: 2,
+      });
+      const secondItem = await store.add('voting_items', {
+        projectId: project.doc.id,
+        title: 'Second',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [alice.user.uid, bob.user.uid],
+        createdAt: 3,
+      });
+
+      const switched = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: project.doc.id,
+          data: { votingConfig: { mode: 'single' } },
+        },
+      });
+      assert.equal(switched.doc.votingConfig.mode, 'single');
+
+      assert.deepEqual((await store.get('voting_items', firstItem.id)).votes, [alice.user.uid, bob.user.uid]);
+      assert.deepEqual((await store.get('voting_items', secondItem.id)).votes, []);
+
+      const duplicateVote = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: secondItem.id,
+          data: { votes: arrayUnion(alice.user.uid) },
+        },
+      });
+      assert.equal(duplicateVote.status, 403);
+      assert.equal(duplicateVote.body.error.code, 'data/forbidden');
+
+      const batchProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Batch mode switch vote', type: 'vote', status: 'active', votingConfig: { mode: 'multiple' }, createdAt: 10 },
+        },
+      });
+      const batchFirstItem = await store.add('voting_items', {
+        projectId: batchProject.doc.id,
+        title: 'Batch first',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [alice.user.uid, bob.user.uid],
+        createdAt: 11,
+      });
+      const batchSecondItem = await store.add('voting_items', {
+        projectId: batchProject.doc.id,
+        title: 'Batch second',
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        votes: [alice.user.uid],
+        createdAt: 12,
+      });
+
+      const batchSwitched = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            {
+              type: 'update',
+              collection: 'projects',
+              id: batchProject.doc.id,
+              data: { votingConfig: { mode: 'single' } },
+            },
+          ],
+        },
+      });
+      assert.equal(batchSwitched.results[0].votingConfig.mode, 'single');
+      assert.deepEqual((await store.get('voting_items', batchFirstItem.id)).votes, [alice.user.uid, bob.user.uid]);
+      assert.deepEqual((await store.get('voting_items', batchSecondItem.id)).votes, []);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API filters private notifications and friend records by current user', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

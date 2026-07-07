@@ -236,6 +236,9 @@ async function handleDataApi({ request, response, url, store, body, user, now })
       : null;
     const rawDoc = await store.set(collection, id, data, body.options || {});
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
+    if (collection === 'projects') {
+      await applyProjectSingleVoteLifecycle({ store, project: rawDoc });
+    }
     const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
@@ -249,6 +252,9 @@ async function handleDataApi({ request, response, url, store, body, user, now })
       : null;
     const rawDoc = await store.update(collection, id, data);
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
+    if (collection === 'projects') {
+      await applyProjectSingleVoteLifecycle({ store, project: rawDoc });
+    }
     const doc = await toDataWriteResponseDoc({ store, user, collection, doc: rawDoc, now });
     return sendJson(response, 200, { doc });
   }
@@ -269,8 +275,10 @@ async function handleDataApi({ request, response, url, store, body, user, now })
     const operations = validateDataBatchOperations(body.operations || []);
     const authorizedOperations = await authorizeDataOperations({ store, user, operations, now });
     const accessLifecycleChanges = await getProjectAccessLifecycleChanges({ store, operations: authorizedOperations });
+    const projectIdsForVoteLifecycle = getWrittenProjectIds(authorizedOperations);
     const rawResults = await store.batch(authorizedOperations);
     await applyProjectAccessLifecycleChanges({ store, changes: accessLifecycleChanges });
+    await applyProjectSingleVoteLifecycles({ store, projectIds: projectIdsForVoteLifecycle });
     const results = await toReadableDataBatchResults({ store, user, operations: authorizedOperations, results: rawResults, now });
     return sendJson(response, 200, { results });
   }
@@ -1990,6 +1998,65 @@ async function deleteProjectOwnedData({ store, projectId }) {
       await store.delete(name, doc.id);
     }
   }
+}
+
+function getWrittenProjectIds(operations) {
+  return [...new Set((operations || [])
+    .filter((operation) => operation?.collection === 'projects' && operation.type !== 'add')
+    .map((operation) => operation.id)
+    .filter(Boolean))];
+}
+
+async function applyProjectSingleVoteLifecycles({ store, projectIds }) {
+  for (const projectId of projectIds || []) {
+    const project = await store.get('projects', projectId);
+    await applyProjectSingleVoteLifecycle({ store, project });
+  }
+}
+
+async function applyProjectSingleVoteLifecycle({ store, project }) {
+  if (!project?.id || project?.votingConfig?.mode !== 'single') return;
+
+  const items = await store.list('voting_items', {
+    filters: [{ field: 'projectId', op: '==', value: project.id }],
+  });
+  const canonicalVotesByItemId = createSingleVoteCanonicalVotes(items);
+
+  for (const item of items) {
+    const canonicalVotes = canonicalVotesByItemId.get(item.id) || [];
+    if (!deepEqualData(Array.isArray(item.votes) ? item.votes : [], canonicalVotes)) {
+      await store.update('voting_items', item.id, { votes: canonicalVotes });
+    }
+  }
+}
+
+function createSingleVoteCanonicalVotes(items) {
+  const sortedItems = [...(items || [])].sort(compareProjectChildCreationOrder);
+  const keptItemByVoter = new Map();
+  const votesByItemId = new Map(sortedItems.map((item) => [item.id, []]));
+
+  for (const item of sortedItems) {
+    const itemVotes = [];
+    for (const rawVote of Array.isArray(item.votes) ? item.votes : []) {
+      const uid = normalizeVoteIdentityValue(rawVote);
+      if (!uid || itemVotes.includes(uid)) continue;
+      itemVotes.push(uid);
+    }
+
+    for (const uid of itemVotes) {
+      if (keptItemByVoter.has(uid)) continue;
+      keptItemByVoter.set(uid, item.id);
+      votesByItemId.get(item.id).push(uid);
+    }
+  }
+
+  return votesByItemId;
+}
+
+function compareProjectChildCreationOrder(a, b) {
+  const aCreatedAt = Number.isFinite(Number(a?.createdAt)) ? Number(a.createdAt) : 0;
+  const bCreatedAt = Number.isFinite(Number(b?.createdAt)) ? Number(b.createdAt) : 0;
+  return aCreatedAt - bCreatedAt || String(a?.id || '').localeCompare(String(b?.id || ''));
 }
 
 async function removeProjectDashboardReferences({ store, projectId }) {
