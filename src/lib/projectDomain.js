@@ -271,6 +271,19 @@ export function createTeamJoinMember(room, user, userName, joinedAt) {
   };
 }
 
+export function createTeamMemberRemovalData(room, user, member, canManage = false) {
+  const actorUid = normalizeIdentityValue(user?.uid);
+  const targetUid = normalizeIdentityValue(member?.uid);
+  if (!room || !actorUid || !targetUid) return null;
+  if (targetUid !== actorUid && canManage !== true) return null;
+
+  const members = Array.isArray(room.members) ? room.members : [];
+  const storedMember = members.find((entry) => (
+    entry && typeof entry === 'object' && !Array.isArray(entry) && normalizeIdentityValue(entry.uid) === targetUid
+  ));
+  return storedMember ? clonePlainValue(storedMember) : null;
+}
+
 export function createTeamRoomMembershipSummary(room, user) {
   const members = normalizeTeamRoomMembers(room?.members);
   const capacity = normalizeTeamRoomCapacityInput(room?.maxMembers);

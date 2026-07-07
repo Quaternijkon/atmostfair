@@ -40,6 +40,7 @@ import {
   createScheduleConfigData,
   createScheduleSubmissionWrite,
   createTeamJoinMember,
+  createTeamMemberRemovalData,
   createVoteToggleOperations,
   createClaimToggleData,
   createProjectStatusPatch,
@@ -372,10 +373,15 @@ function AppContent() {
          void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamJoined, subject: room.name, actorName: member.name });
       },
       handleKickMember: async (roomId, memberObject) => {
+        if (!user) return;
         const room = rooms.find((entry) => entry.id === roomId);
         if (!room || !requireProjectWritable(room.projectId, showToast)) return;
-        await updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberObject) });
-        if (room) void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamMemberRemoved, subject: memberObject?.name || room.name });
+        const project = projects.find((entry) => entry.id === room.projectId);
+        const canManageRoom = isAdmin || project?.creatorId === user.uid || room.ownerId === user.uid;
+        const memberRemoval = createTeamMemberRemovalData(room, user, memberObject, canManageRoom);
+        if (!memberRemoval) return;
+        await updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(memberRemoval) });
+        void recordProjectActivity({ projectId: room.projectId, type: PROJECT_ACTIVITY_TYPES.teamMemberRemoved, subject: memberRemoval?.name || room.name });
       },
       handleDeleteRoom: async (roomId) => {
         const room = rooms.find((entry) => entry.id === roomId);

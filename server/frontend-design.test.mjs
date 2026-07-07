@@ -1577,9 +1577,13 @@ test('team workspace actions prevent duplicate submits and expose pending state'
 
   assert.match(domain, /export function normalizeTeamRoomCapacityInput/, 'Project domain should expose a reusable team room capacity normalizer');
   assert.match(domain, /export function createTeamRoomMembershipSummary/, 'Project domain should expose reusable normalized team room membership summaries');
+  assert.match(domain, /export function createTeamMemberRemovalData/, 'Project domain should expose reusable normalized team member removal data');
   assert.match(app, /normalizeTeamRoomCapacityInput/, 'App room creation should use the shared team capacity normalizer');
   assert.match(app, /maxMembers: normalizeTeamRoomCapacityInput\(maxMembers\)/, 'Room creation should persist normalized team capacity');
   assert.doesNotMatch(app, /maxMembers:\s*parseInt\(maxMembers\)\|\|4/, 'Room creation should not persist ad hoc parsed team capacity');
+  assert.match(app, /createTeamMemberRemovalData\(room, user, memberObject/, 'Room member removal should resolve the stored member object through the domain helper');
+  assert.match(app, /arrayRemove\(memberRemoval\)/, 'Room member removal should remove the canonical stored member object');
+  assert.doesNotMatch(app, /arrayRemove\(memberObject\)/, 'Room member removal should not remove raw UI member objects');
   assert.match(team, /createTeamRoomMembershipSummary/, 'Team view should use normalized membership summaries for display and join checks');
   assert.doesNotMatch(team, /room\.members\.length/, 'Team view should not use raw stored member count for display or join checks');
 });

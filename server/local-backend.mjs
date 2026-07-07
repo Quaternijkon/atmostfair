@@ -27,6 +27,7 @@ import {
   createGameRoomJoinPatch,
   createMineRoomProgressPatch,
   createScheduleConfigData,
+  createTeamMemberRemovalData,
   normalizeClaimCapacityInput,
   normalizeClaimItemClaimants,
   normalizeMineProgressInput,
@@ -1197,11 +1198,13 @@ function authorizeRoomMemberAdd({ user, data, existing, member }) {
 }
 
 function authorizeRoomMemberRemove({ user, data, existing, project, member }) {
-  const members = Array.isArray(existing.members) ? existing.members : [];
-  const existingMember = members.find((entry) => entry?.uid === member.uid && deepEqualData(entry, member));
+  const existingMember = createTeamMemberRemovalData(
+    existing,
+    user,
+    member,
+    canManageRoom(project, existing, user),
+  );
   if (!existingMember) forbidden();
-
-  if (existingMember.uid !== user.uid && !canManageRoom(project, existing, user)) forbidden();
 
   return {
     ...(data || {}),

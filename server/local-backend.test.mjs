@@ -2727,6 +2727,44 @@ test('HTTP data API restricts room member writes to self-join and managed remova
       });
       assert.deepEqual(roomOwnerKick.doc.members, [{ uid: alice.user.uid, name: 'alice', joinedAt: 2 }]);
 
+      const dirtySelfRemovalRoom = await store.add('rooms', {
+        projectId: project.doc.id,
+        name: 'Dirty self removal',
+        ownerId: alice.user.uid,
+        maxMembers: 4,
+        members: [{ uid: ` ${bob.user.uid} `, name: 'Bob', joinedAt: 7 }],
+      });
+      const bobLeavesDirtyRoom = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: dirtySelfRemovalRoom.id,
+          data: { members: arrayRemove({ uid: bob.user.uid, name: 'Bob', joinedAt: 7 }) },
+        },
+      });
+      assert.equal(bobLeavesDirtyRoom.status, 200);
+      assert.deepEqual(bobLeavesDirtyRoom.body.doc.members, []);
+
+      const dirtyManagedRemovalRoom = await store.add('rooms', {
+        projectId: project.doc.id,
+        name: 'Dirty managed removal',
+        ownerId: alice.user.uid,
+        maxMembers: 4,
+        members: [{ uid: ` ${bob.user.uid} `, name: 'Bob', joinedAt: 8 }],
+      });
+      const aliceKicksDirtyMember = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'rooms',
+          id: dirtyManagedRemovalRoom.id,
+          data: { members: arrayRemove({ uid: bob.user.uid, name: 'Bob', joinedAt: 8 }) },
+        },
+      });
+      assert.equal(aliceKicksDirtyMember.status, 200);
+      assert.deepEqual(aliceKicksDirtyMember.body.doc.members, []);
+
       const projectOwnerMetadata = await fetchJson(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: owner.token,

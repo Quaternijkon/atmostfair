@@ -20,6 +20,7 @@ import {
   createQueueJoinData,
   createQueueResultData,
   createTeamJoinMember,
+  createTeamMemberRemovalData,
   createVotingResultSummary,
   normalizeParticipantValueInput,
   normalizeTeamRoomCapacityInput,
@@ -136,6 +137,41 @@ test('team room membership summary normalizes dirty members before display check
   assert.equal(existingMemberSummary.isMember, true);
   assert.equal(existingMemberSummary.canJoin, false);
   assert.deepEqual(existingMemberSummary.currentMember, { uid: 'u2', name: 'Ada', joinedAt: 2000 });
+});
+
+test('team member removal guard matches stored members by normalized uid', () => {
+  assert.equal(typeof createTeamMemberRemovalData, 'function');
+
+  const room = {
+    id: 'dirty-removal-team',
+    ownerId: 'owner-1',
+    maxMembers: 4,
+    members: [
+      { uid: ' u2 ', name: 'Ada', joinedAt: 2000 },
+      { uid: 'u3', name: 'Grace', joinedAt: 2001 },
+    ],
+  };
+
+  assert.deepEqual(
+    createTeamMemberRemovalData(room, { uid: 'u2', displayName: 'Ada' }, { uid: 'u2' }),
+    { uid: ' u2 ', name: 'Ada', joinedAt: 2000 },
+    'self-removal should return the stored member object so arrayRemove can remove legacy dirty data',
+  );
+  assert.deepEqual(
+    createTeamMemberRemovalData(room, { uid: 'owner-1', displayName: 'Owner' }, { uid: ' u3 ' }, true),
+    { uid: 'u3', name: 'Grace', joinedAt: 2001 },
+    'managed removal should match the target by normalized uid',
+  );
+  assert.equal(
+    createTeamMemberRemovalData(room, { uid: 'u4', displayName: 'Lin' }, { uid: 'u3' }, false),
+    null,
+    'non-manager users should not remove other members',
+  );
+  assert.equal(
+    createTeamMemberRemovalData(room, { uid: 'u2', displayName: 'Ada' }, { uid: 'missing' }, true),
+    null,
+    'missing target members should not produce a removal object',
+  );
 });
 
 test('queue join guard creates one participant per project and user', () => {
