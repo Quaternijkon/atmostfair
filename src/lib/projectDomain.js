@@ -541,8 +541,12 @@ export function createRpsNextRoundPatch(room, transitionAt) {
 
 export function createGameRoomSummary(room) {
   if (!room?.id) return null;
-  if (room.resultSummary) return clonePlainValue(room.resultSummary);
+  const derivedSummary = createDerivedGameRoomSummary(room);
+  if (!room.resultSummary) return derivedSummary;
+  return mergeStoredGameRoomSummary(derivedSummary, room.resultSummary);
+}
 
+function createDerivedGameRoomSummary(room) {
   const players = Array.isArray(room.players) ? room.players : [];
   const playerCount = players.length;
   if (room.game === 'rps') {
@@ -590,6 +594,51 @@ export function createGameRoomSummary(room) {
     scoreLine: leader ? `${leader.progress}%` : '',
     playerCount,
   };
+}
+
+function mergeStoredGameRoomSummary(derivedSummary, storedSummary) {
+  if (!storedSummary || typeof storedSummary !== 'object' || Array.isArray(storedSummary)) {
+    return derivedSummary;
+  }
+
+  const storedLastRound = normalizeStoredGameLastRound(storedSummary.lastRound);
+  const summary = {
+    game: derivedSummary.game || normalizeSummaryText(storedSummary.game),
+    status: derivedSummary.status || normalizeSummaryText(storedSummary.status),
+    winnerId: derivedSummary.winnerId || null,
+    winnerName: derivedSummary.winnerName || '',
+    roundsPlayed: Number.isInteger(derivedSummary.roundsPlayed)
+      ? derivedSummary.roundsPlayed
+      : normalizeNonNegativeInteger(storedSummary.roundsPlayed),
+    scoreLine: derivedSummary.scoreLine || normalizeSummaryText(storedSummary.scoreLine),
+    playerCount: Number.isInteger(derivedSummary.playerCount)
+      ? derivedSummary.playerCount
+      : normalizeNonNegativeInteger(storedSummary.playerCount),
+  };
+
+  const lastRound = derivedSummary.lastRound || storedLastRound;
+  return lastRound ? { ...summary, lastRound } : summary;
+}
+
+function normalizeStoredGameLastRound(lastRound) {
+  if (!lastRound || typeof lastRound !== 'object' || Array.isArray(lastRound)) return null;
+  return {
+    round: Math.max(1, normalizeNonNegativeInteger(lastRound.round)),
+    p1Move: normalizeSummaryText(lastRound.p1Move),
+    p2Move: normalizeSummaryText(lastRound.p2Move),
+    winnerId: normalizeSummaryText(lastRound.winnerId) || null,
+    winnerName: normalizeSummaryText(lastRound.winnerName),
+  };
+}
+
+function normalizeNonNegativeInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+function normalizeSummaryText(value) {
+  return String(value ?? '').trim();
 }
 
 export function createUserGameResultHistory(rooms, uid, limit = 3) {

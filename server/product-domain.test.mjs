@@ -880,6 +880,83 @@ test('RPS summaries and transitions normalize legacy scores before displaying re
   });
 });
 
+test('game room summaries normalize stale stored result summaries before display', () => {
+  const rpsSummary = projectDomain.createGameRoomSummary({
+    id: 'game-stale-summary-rps',
+    game: 'rps',
+    status: 'finished',
+    winnerId: 'u1',
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 999, move: null },
+      { uid: 'u2', name: 'Bo', score: -4, move: null },
+    ],
+    history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1' }],
+    resultSummary: {
+      game: 'mine',
+      status: 'finished',
+      winnerId: 'ghost',
+      winnerName: 'Ghost',
+      roundsPlayed: 'many',
+      scoreLine: '999 - -4',
+      playerCount: 'bad',
+      lastRound: {
+        round: 'bad',
+        p1Move: 'paper',
+        p2Move: 'paper',
+        winnerId: 'ghost',
+        winnerName: 'Ghost',
+      },
+    },
+  });
+
+  assert.deepEqual(rpsSummary, {
+    game: 'rps',
+    status: 'finished',
+    winnerId: 'u1',
+    winnerName: 'Ana',
+    roundsPlayed: 1,
+    scoreLine: '2 - 0',
+    playerCount: 2,
+    lastRound: {
+      round: 1,
+      p1Move: 'rock',
+      p2Move: 'scissors',
+      winnerId: 'u1',
+      winnerName: 'Ana',
+    },
+  });
+
+  const mineSummary = projectDomain.createGameRoomSummary({
+    id: 'game-stale-summary-mine',
+    game: 'mine',
+    status: 'finished',
+    players: [
+      { uid: 'u3', name: 'Cy', progress: 142, status: 'won' },
+      { uid: 'u4', name: 'Dee', progress: -4, status: 'dead' },
+    ],
+    resultSummary: {
+      game: 'rps',
+      status: 'finished',
+      winnerId: 'ghost',
+      winnerName: 'Ghost',
+      roundsPlayed: 99,
+      scoreLine: '500%',
+      playerCount: 'bad',
+    },
+  });
+
+  assert.deepEqual(mineSummary, {
+    game: 'mine',
+    status: 'finished',
+    winnerId: 'u3',
+    winnerName: 'Cy',
+    roundsPlayed: 0,
+    scoreLine: '100%',
+    playerCount: 2,
+  });
+});
+
 test('user game result history summarizes finished rooms for one player', () => {
   assert.equal(typeof createUserGameResultHistory, 'function');
 
