@@ -1444,6 +1444,34 @@ test('HTTP data API restricts notification creation to verified app events', asy
       assert.equal(validFriendMessageNotification.doc.read, false);
       assert.equal(validFriendMessageNotification.doc.message, 'Hello Bob');
 
+      const notificationCountBeforeStaleBatch = (await store.list('notifications')).length;
+      const staleBatchFriendMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'friendships', id: friendship.doc.id },
+            {
+              type: 'add',
+              collection: 'notifications',
+              data: {
+                recipientId: bob.user.uid,
+                type: 'friend_message',
+                title: 'Stale batch message',
+                message: 'after delete',
+                chatId: friendship.doc.id,
+                read: false,
+                createdAt: 11.5,
+              },
+            },
+          ],
+        },
+      });
+      assert.equal(staleBatchFriendMessageNotification.status, 403);
+      assert.equal(staleBatchFriendMessageNotification.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('friendships', friendship.doc.id)).status, 'confirmed');
+      assert.equal((await store.list('notifications')).length, notificationCountBeforeStaleBatch);
+
       const project = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
@@ -1508,6 +1536,33 @@ test('HTTP data API restricts notification creation to verified app events', asy
       });
       assert.equal(lockedProjectNotification.status, 409);
       assert.equal(lockedProjectNotification.body.error.code, 'data/project-locked');
+
+      const notificationCountBeforeLockedBatch = (await store.list('notifications')).length;
+      const lockedBatchProjectNotification = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            { type: 'update', collection: 'projects', id: project.doc.id, data: { status: 'stopped' } },
+            {
+              type: 'add',
+              collection: 'notifications',
+              data: {
+                recipientId: charlie.user.uid,
+                type: 'kicked',
+                title: 'Batch after stop',
+                projectId: project.doc.id,
+                read: false,
+                createdAt: 15.5,
+              },
+            },
+          ],
+        },
+      });
+      assert.equal(lockedBatchProjectNotification.status, 409);
+      assert.equal(lockedBatchProjectNotification.body.error.code, 'data/project-locked');
+      assert.equal((await store.get('projects', project.doc.id)).status, 'active');
+      assert.equal((await store.list('notifications')).length, notificationCountBeforeLockedBatch);
 
       const blockedBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
         method: 'POST',

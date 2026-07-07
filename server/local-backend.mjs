@@ -359,7 +359,7 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   }
 
   if (collection === 'notifications') {
-    return authorizeNotificationOperation({ store, user, type, id, data });
+    return authorizeNotificationOperation({ store, user, context, type, id, data });
   }
 
   if (collection === 'friendships') {
@@ -1803,7 +1803,7 @@ async function canReadDataDoc({ store, user, collection, doc, query, now }) {
   if (collection === 'notifications') {
     return normalizeNotificationRecipientId(doc.recipientId) === user.uid || (
       isExactProjectQuery(query, doc.projectId)
-      && await canManageProjectNotification(store, user, doc)
+      && await canManageProjectNotification({ store, user, notification: doc })
     );
   }
   if (collection === 'friendships') return hasMember(doc, user.uid);
@@ -2098,16 +2098,16 @@ function hasProjectPassword(project) {
   return normalizeProjectPassword(project?.password) !== '';
 }
 
-async function authorizeNotificationOperation({ store, user, type, id, data }) {
-  if (type === 'add') return normalizeNotificationCreateData({ store, user, data });
+async function authorizeNotificationOperation({ store, user, context, type, id, data }) {
+  if (type === 'add') return normalizeNotificationCreateData({ store, user, context, data });
 
-  const existing = await store.get('notifications', id);
+  const existing = await getProjectedDoc({ store, context, collection: 'notifications', id });
   if (!existing) {
-    if (type === 'set') return normalizeNotificationCreateData({ store, user, data });
+    if (type === 'set') return normalizeNotificationCreateData({ store, user, context, data });
     throwDataError(404, 'data/not-found', 'Notification not found.');
   }
   if (!canWriteNotification(existing, user)) {
-    if (!(type === 'delete' && await canManageProjectNotification(store, user, existing))) forbidden();
+    if (!(type === 'delete' && await canManageProjectNotification({ store, context, user, notification: existing }))) forbidden();
   }
 
   if (type === 'delete') return undefined;
@@ -2123,7 +2123,7 @@ function authorizeNotificationReadAcknowledgement({ type, data }) {
   return { read: true };
 }
 
-async function normalizeNotificationCreateData({ store, user, data }) {
+async function normalizeNotificationCreateData({ store, user, context, data }) {
   const notification = data || {};
   const recipientId = normalizeNotificationRecipientId(notification.recipientId);
   if (isAdminUser(user)) {
@@ -2148,13 +2148,13 @@ async function normalizeNotificationCreateData({ store, user, data }) {
   }
 
   if (notification.type === 'friend_message') {
-    return normalizeFriendMessageNotificationData({ store, user, notification, recipientId });
+    return normalizeFriendMessageNotificationData({ store, context, user, notification, recipientId });
   }
 
   if (PROJECT_NOTIFICATION_TYPES.has(notification.type)) {
     const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : '';
     if (!projectId) throwDataError(400, 'data/invalid-project', 'Project id is required.');
-    const project = await store.get('projects', projectId);
+    const project = await getProjectedDoc({ store, context, collection: 'projects', id: projectId });
     if (!project) throwDataError(404, 'data/project-not-found', 'Project not found.');
     if (!canWriteProject(project, user)) forbidden();
     if (isProjectLocked(project)) throwDataError(409, 'data/project-locked', 'Project is paused, finished, or archived.');
@@ -2169,10 +2169,10 @@ async function normalizeNotificationCreateData({ store, user, data }) {
   forbidden();
 }
 
-async function normalizeFriendMessageNotificationData({ store, user, notification, recipientId }) {
+async function normalizeFriendMessageNotificationData({ store, context, user, notification, recipientId }) {
   const chatId = typeof notification.chatId === 'string' ? notification.chatId.trim() : '';
   if (!chatId || recipientId === user.uid) forbidden();
-  const relationship = await store.get('friendships', chatId);
+  const relationship = await getProjectedDoc({ store, context, collection: 'friendships', id: chatId });
   if (
     relationship?.status !== 'confirmed'
     || !hasMember(relationship, user.uid)
@@ -2320,11 +2320,11 @@ function canWriteNotification(notification, user) {
   return normalizeNotificationRecipientId(notification.recipientId) === user.uid || isAdminUser(user);
 }
 
-async function canManageProjectNotification(store, user, notification) {
+async function canManageProjectNotification({ store, context, user, notification }) {
   if (!PROJECT_NOTIFICATION_TYPES.has(notification?.type)) return false;
   const projectId = typeof notification.projectId === 'string' ? notification.projectId.trim() : '';
   if (!projectId) return false;
-  const project = await store.get('projects', projectId);
+  const project = await getProjectedDoc({ store, context, collection: 'projects', id: projectId });
   return Boolean(project && canWriteProject(project, user));
 }
 
