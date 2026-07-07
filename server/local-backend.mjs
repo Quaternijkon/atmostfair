@@ -1609,6 +1609,8 @@ async function authorizeProjectUserEntryOperation({
     return normalizeProjectUserEntryCreateData({ store, context, user, collection, projectId, data, project });
   }
 
+  if (type !== 'update') forbidden();
+
   if (collection === 'queue_participants') {
     if (!canWriteProject(project, user)) forbidden();
     return allowOnlyFields(data, ['queueOrder']);

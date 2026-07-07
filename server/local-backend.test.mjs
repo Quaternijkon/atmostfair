@@ -2317,6 +2317,194 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
   });
 });
 
+test('HTTP data API rejects replacing existing participant records with partial set writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123', displayName: 'Admin' },
+      });
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Participation', status: 'active', createdAt: 1 } },
+      });
+      const queueEntry = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'queue_participants',
+          data: { projectId: project.doc.id, name: 'Alice Queue', value: 4, joinedAt: 2 },
+        },
+      });
+      const rouletteEntry = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'roulette_participants',
+          data: { projectId: project.doc.id, name: 'Alice Roulette', value: 9, joinedAt: 3 },
+        },
+      });
+      const scheduleSubmission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          data: { projectId: project.doc.id, name: 'Alice Schedule', availability: ['2026-07-05'], submittedAt: 4 },
+        },
+      });
+      const gatherSubmission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'gather_submissions',
+          data: { projectId: project.doc.id, name: 'Alice Gather', data: {}, submittedAt: 5 },
+        },
+      });
+
+      const queueUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'queue_participants', id: queueEntry.doc.id, data: { queueOrder: 1 } },
+      });
+      assert.equal(queueUpdate.doc.projectId, project.doc.id);
+      assert.equal(queueUpdate.doc.uid, alice.user.uid);
+      assert.equal(queueUpdate.doc.name, 'Alice Queue');
+      assert.equal(queueUpdate.doc.queueOrder, 1);
+
+      const rouletteUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'roulette_participants', id: rouletteEntry.doc.id, data: { isWinner: true } },
+      });
+      assert.equal(rouletteUpdate.doc.projectId, project.doc.id);
+      assert.equal(rouletteUpdate.doc.uid, alice.user.uid);
+      assert.equal(rouletteUpdate.doc.name, 'Alice Roulette');
+      assert.equal(rouletteUpdate.doc.isWinner, true);
+
+      const scheduleUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          id: scheduleSubmission.doc.id,
+          data: { availability: ['2026-07-06'], submittedAt: 6 },
+        },
+      });
+      assert.equal(scheduleUpdate.doc.projectId, project.doc.id);
+      assert.equal(scheduleUpdate.doc.uid, alice.user.uid);
+      assert.equal(scheduleUpdate.doc.name, 'Alice Schedule');
+      assert.deepEqual(scheduleUpdate.doc.availability, ['2026-07-06']);
+
+      const gatherUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'gather_submissions',
+          id: gatherSubmission.doc.id,
+          data: { data: {}, submittedAt: 7 },
+        },
+      });
+      assert.equal(gatherUpdate.doc.projectId, project.doc.id);
+      assert.equal(gatherUpdate.doc.uid, alice.user.uid);
+      assert.equal(gatherUpdate.doc.name, 'Alice Gather');
+      assert.equal(gatherUpdate.doc.submittedAt, 7);
+
+      for (const attempt of [
+        {
+          collection: 'queue_participants',
+          id: queueEntry.doc.id,
+          token: owner.token,
+          data: { queueOrder: 2 },
+        },
+        {
+          collection: 'roulette_participants',
+          id: rouletteEntry.doc.id,
+          token: owner.token,
+          data: { isWinner: false },
+        },
+        {
+          collection: 'schedule_submissions',
+          id: scheduleSubmission.doc.id,
+          token: alice.token,
+          data: { availability: ['2026-07-07'], submittedAt: 8 },
+        },
+        {
+          collection: 'gather_submissions',
+          id: gatherSubmission.doc.id,
+          token: admin.token,
+          data: { data: {}, submittedAt: 9 },
+        },
+      ]) {
+        const replacement = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+          method: 'POST',
+          token: attempt.token,
+          body: { collection: attempt.collection, id: attempt.id, data: attempt.data },
+        });
+        assert.equal(replacement.status, 403);
+        assert.equal(replacement.body.error.code, 'data/forbidden');
+      }
+
+      assert.deepEqual(await store.get('queue_participants', queueEntry.doc.id), {
+        id: queueEntry.doc.id,
+        projectId: project.doc.id,
+        name: 'Alice Queue',
+        value: 4,
+        joinedAt: 2,
+        uid: alice.user.uid,
+        queueOrder: 1,
+      });
+      assert.deepEqual(await store.get('roulette_participants', rouletteEntry.doc.id), {
+        id: rouletteEntry.doc.id,
+        projectId: project.doc.id,
+        name: 'Alice Roulette',
+        value: 9,
+        joinedAt: 3,
+        uid: alice.user.uid,
+        isWinner: true,
+      });
+      assert.deepEqual(await store.get('schedule_submissions', scheduleSubmission.doc.id), {
+        id: scheduleSubmission.doc.id,
+        projectId: project.doc.id,
+        name: 'Alice Schedule',
+        availability: ['2026-07-06'],
+        submittedAt: 6,
+        uid: alice.user.uid,
+      });
+      assert.deepEqual(await store.get('gather_submissions', gatherSubmission.doc.id), {
+        id: gatherSubmission.doc.id,
+        projectId: project.doc.id,
+        name: 'Alice Gather',
+        data: {},
+        submittedAt: 7,
+        uid: alice.user.uid,
+      });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API normalizes gather submission values against current fields', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
