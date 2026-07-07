@@ -73,6 +73,38 @@ export function createProjectActivityExport(project, activities = [], t = (key) 
   };
 }
 
+export function createDashboardProjectExport(projects = [], options = {}, t = (key) => key) {
+  const rows = (Array.isArray(projects) ? projects : [])
+    .filter((project) => project?.id)
+    .map((project) => [
+      project.id,
+      project.title || '',
+      formatProjectType(project.type, t),
+      formatProjectStatus(project, t),
+      project.creatorName || '',
+      project.archived ? t('archived') : '',
+      formatExportDate(project.createdAt),
+    ]);
+
+  if (!rows.length) return null;
+
+  return {
+    filename: `${sanitizeFilename(options.filenamePrefix || t('exportFile'))}_projects.csv`,
+    csv: serializeCsv([
+      [
+        t('exportProjectId'),
+        t('exportProjectTitle'),
+        t('exportProjectType'),
+        t('exportProjectStatus'),
+        t('exportProjectCreator'),
+        t('exportProjectArchived'),
+        t('exportProjectCreatedAt'),
+      ],
+      ...rows,
+    ]),
+  };
+}
+
 function createQueueExport({ queueParticipants = [] }, t) {
   const rows = [...queueParticipants]
     .sort((a, b) => (a.queueOrder ?? Number.MAX_SAFE_INTEGER) - (b.queueOrder ?? Number.MAX_SAFE_INTEGER)
@@ -282,6 +314,28 @@ function formatGameName(game, t) {
   if (game === 'rps') return t('rockPaperScissors');
   if (game === 'mine') return t('minesweeper');
   return game || '';
+}
+
+function formatProjectType(type, t) {
+  const key = {
+    vote: 'voting',
+    gather: 'gather',
+    schedule: 'schedule',
+    book: 'book',
+    team: 'teams',
+    claim: 'tasks',
+    roulette: 'roulette',
+    queue: 'queue',
+    game_hub: 'gameHub',
+  }[type];
+  return key ? t(key) : type || '';
+}
+
+function formatProjectStatus(project, t) {
+  if (project?.archived) return t('archived');
+  if (project?.status === 'finished') return t('finished');
+  if (project?.status === 'stopped') return t('paused');
+  return t('activeStatus');
 }
 
 function formatGameStatus(status, t) {

@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2, Pin as PinIcon, Clock } from '../components/Icons';
+import { Archive, Search, Plus, X, Lock, Vote, Users, Dices, FolderPlus, ClipboardList, CheckSquare, ListOrdered, CalendarClock, CalendarCheck, Gamepad2, Pin as PinIcon, Clock, Download } from '../components/Icons';
+import { useUI } from '../components/UIContext';
 import {
   DASHBOARD_SORT_OPTIONS,
   DASHBOARD_STATUS_FILTERS,
@@ -14,6 +15,7 @@ import {
   normalizeRecentProjectIds,
 } from '../lib/dashboardDomain';
 import { hasProjectPassword, unlockProjectAccess } from '../lib/apiClient';
+import { createDashboardProjectExport } from '../lib/exportDomain';
 import { PROJECT_CREATOR_NAME_MAX_LENGTH, PROJECT_PASSWORD_MAX_LENGTH, PROJECT_TITLE_MAX_LENGTH } from '../lib/projectDomain';
 
 const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => {
@@ -35,8 +37,21 @@ const DASHBOARD_TAB_BG_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853'];
 const normalizeCreatorNameInput = (value) => String(value || '').slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
 const normalizeProjectPasswordInput = (value) => String(value || '').slice(0, PROJECT_PASSWORD_MAX_LENGTH);
 
+function downloadDashboardExport(exportData) {
+  const blob = new Blob([exportData.csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = exportData.filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], isUserProfileAvailable = true, onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
+  const { showToast } = useUI();
   // Navigation State: 'collect' | 'connect' | 'select' | 'play'
   const [activeTab, setActiveTab] = useState('collect');
   const [searchTerm, setSearchTerm] = useState('');
@@ -149,6 +164,16 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
     setSearchTerm('');
     setStatusFilter('all');
     setSortKey('recent');
+  };
+  const handleExportProjects = () => {
+    const exportData = createDashboardProjectExport(filteredProjects, {
+      filenamePrefix: currentCategory.label,
+    }, t);
+    if (!exportData) {
+      showToast(t('noProjectExportData'), 'info');
+      return;
+    }
+    downloadDashboardExport(exportData);
   };
   const applyProjectTemplate = (template) => {
     const module = currentCategory.modules.find((mod) => mod.id === template.projectType);
@@ -373,6 +398,10 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
             className="app-input rounded-full pl-12"
           />
         </div>
+        <button type="button" onClick={handleExportProjects} className="app-button-quiet w-full md:w-auto" title={t('exportProjects')} aria-label={t('exportProjects')}>
+          <Download className="w-5 h-5" />
+          <span className="text-base">{t('exportProjects')}</span>
+        </button>
         <button onClick={() => setShowCreate(!showCreate)} className="app-button-tonal w-full md:w-auto">
           {showCreate ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
           <span className="text-base">{showCreate ? t('closeCreator') : t('newProject')}</span>

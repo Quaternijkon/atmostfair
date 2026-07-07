@@ -31,6 +31,14 @@ const LABELS = {
   exportFinishedAt: 'Finished At',
   exportGameRoom: 'Room',
   exportGameType: 'Game',
+  exportProjectArchived: 'Archived',
+  exportProjectCreatedAt: 'Created At',
+  exportProjectCreator: 'Creator',
+  exportProjectId: 'Project ID',
+  exportProjects: 'Export projects',
+  exportProjectStatus: 'Status',
+  exportProjectTitle: 'Title',
+  exportProjectType: 'Type',
   exportJoinedAt: 'Joined At',
   exportParticipantId: 'Participant ID',
   exportParticipants: 'Export participants',
@@ -46,6 +54,7 @@ const LABELS = {
   maxClaims: 'Max People',
   nameLabel: 'Name',
   noExportData: 'No participant data to export',
+  noProjectExportData: 'No projects to export',
   queue: 'Queue',
   startDate: 'Start Date',
   endDate: 'End Date',
@@ -60,6 +69,10 @@ const LABELS = {
   waitlisted: 'Waitlisted',
   activityQueueJoined: '{actor} joined queue as {subject}',
   activityUpdated: '{actor} updated {subject}',
+  archived: 'Archived',
+  activeStatus: 'Active',
+  paused: 'Paused',
+  voting: 'Collect',
 };
 
 function t(key, params = {}) {
@@ -266,6 +279,40 @@ test('project activity export builds a localized audit CSV', () => {
   assert.equal(createProjectActivityExport({ title: 'Empty' }, [], t), null);
 });
 
+test('dashboard project export builds localized CSV for the current project list', async () => {
+  const { createDashboardProjectExport } = await import('../src/lib/exportDomain.js');
+  assert.equal(typeof createDashboardProjectExport, 'function', 'dashboard project export helper should be exported');
+
+  const exportData = createDashboardProjectExport([
+    {
+      id: 'p-2',
+      title: 'Ops, "Plan"',
+      type: 'vote',
+      status: 'stopped',
+      creatorName: 'Ana',
+      archived: false,
+      createdAt: 1714554000000,
+    },
+    {
+      id: 'p-1',
+      title: 'Retired Queue',
+      type: 'queue',
+      status: 'active',
+      creatorName: 'Bo',
+      archived: true,
+      createdAt: 0,
+    },
+  ], {
+    filenamePrefix: 'Collect visible',
+  }, t);
+
+  assert.equal(exportData.filename, 'Collect-visible_projects.csv');
+  assert.match(exportData.csv, /^Project ID,Title,Type,Status,Creator,Archived,Created At\n/);
+  assert.match(exportData.csv, /p-2,"Ops, ""Plan""",Collect,Paused,Ana,,2024-05-01T09:00:00.000Z/);
+  assert.match(exportData.csv, /p-1,Retired Queue,Queue,Archived,Bo,Archived,1970-01-01T00:00:00.000Z/);
+  assert.equal(createDashboardProjectExport([], { filenamePrefix: 'Empty' }, t), null);
+});
+
 test('project detail exposes owner/admin participant export without native dialogs', async () => {
   const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
 
@@ -305,6 +352,32 @@ test('project detail exposes owner/admin participant export without native dialo
   assert.match(detail, /getDocs\(query\(collection\(db, 'game_rooms'\), where\('projectId', '==', project\.id\)\)\)/, 'Game hub export should load live game rooms before exporting');
   assert.match(detail, /gameRooms:\s*projectGameRooms/, 'Project detail should pass game rooms into participant export');
   assert.match(detail, /catch \(error\) \{[\s\S]{0,260}showToast\(t\('actionFailed'/, 'Game hub export failures should use app toast feedback');
+});
+
+test('dashboard exposes current project list export without native dialogs', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.match(dashboard, /Download/, 'Dashboard project export should use the download icon');
+  assert.match(dashboard, /createDashboardProjectExport/, 'Dashboard should use the project export domain helper');
+  assert.match(dashboard, /handleExportProjects/, 'Dashboard should wire an export click handler');
+  assert.match(dashboard, /filteredProjects/, 'Dashboard export should use the current filtered project list');
+  assert.match(dashboard, /showToast\(t\('noProjectExportData'\)/, 'Empty dashboard export attempts should use app toast feedback');
+  assert.doesNotMatch(dashboard, /\b(?:alert|prompt)\(/, 'Dashboard export should not use native browser dialogs');
+
+  for (const key of [
+    'exportProjects',
+    'exportProjectArchived',
+    'exportProjectCreatedAt',
+    'exportProjectCreator',
+    'exportProjectId',
+    'exportProjectStatus',
+    'exportProjectTitle',
+    'exportProjectType',
+    'noProjectExportData',
+  ]) {
+    assert.ok(TRANSLATIONS.en[key], `missing English translation ${key}`);
+    assert.ok(TRANSLATIONS.zh[key], `missing Chinese translation ${key}`);
+  }
 });
 
 test('project detail exposes owner/admin activity export from the activity timeline', async () => {
