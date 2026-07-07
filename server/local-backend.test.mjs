@@ -2049,6 +2049,61 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
       assert.equal(bobScheduleUpdate.status, 403);
       assert.equal(bobScheduleUpdate.body.error.code, 'data/forbidden');
       assert.deepEqual((await store.get('schedule_submissions', scheduleSubmission.doc.id)).availability, ['2026-07-06']);
+
+      const timedScheduleProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Timed schedule',
+            type: 'schedule',
+            status: 'active',
+            scheduleConfig: { mode: 'time', start: '2026-07-05', end: '2026-07-07', deadline: '' },
+            createdAt: 5,
+          },
+        },
+      });
+      const timedScheduleSubmission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          data: {
+            projectId: timedScheduleProject.doc.id,
+            name: 'Alice Time',
+            availability: [
+              { id: 'r1', date: '2026-07-05', start: '9:00', end: '10:00', note: 'legacy' },
+              { id: 'r2', date: '2026-07-05', start: '09:00', end: '10:00' },
+              { id: 'r3', date: '2026-07-08', start: '09:00', end: '10:00' },
+            ],
+            submittedAt: 34,
+          },
+        },
+      });
+      assert.deepEqual(timedScheduleSubmission.doc.availability, [
+        { id: 'r1', date: '2026-07-05', start: '09:00', end: '10:00' },
+      ]);
+
+      const timedScheduleUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          id: timedScheduleSubmission.doc.id,
+          data: {
+            availability: [
+              { date: '2026-07-06', start: '8:30', end: '9:00' },
+              { date: '2026-07-06', start: '08:30', end: '09:00' },
+              { date: '2026-07-06', start: '10:00', end: '09:00' },
+            ],
+            submittedAt: 35,
+          },
+        },
+      });
+      assert.deepEqual(timedScheduleUpdate.doc.availability, [
+        { date: '2026-07-06', start: '08:30', end: '09:00' },
+      ]);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

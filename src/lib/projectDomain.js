@@ -820,7 +820,7 @@ function normalizeBoundedInt(value, min, max, fallback) {
 
 export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt, config) {
   if (!projectId || !user?.uid) return null;
-  const normalizedAvailability = normalizeScheduleAvailability(availability, config);
+  const normalizedAvailability = normalizeScheduleAvailabilityInput(availability, config);
   if (normalizedAvailability === null) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
   const existing = submissions.find((submission) => submission.projectId === projectId && submission.uid === user.uid);
@@ -885,48 +885,19 @@ export function createDateRangeDays(config) {
   return dates;
 }
 
+export function createScheduleHeatmapData(submissions, config) {
+  return Object.fromEntries(
+    [...createScheduleBucketCounts(submissions, config).values()].map((entry) => [entry.key, entry.count]),
+  );
+}
+
 export function createScheduleRecommendationSummary(submissions, config, limit = 3) {
   const participantCount = Array.isArray(submissions) ? submissions.length : 0;
   if (!participantCount || !config?.mode) {
     return { participantCount, recommendations: [] };
   }
 
-  const counts = new Map();
-  const addCount = (key, meta) => {
-    const current = counts.get(key);
-    counts.set(key, current ? { ...current, count: current.count + 1 } : { ...meta, key, count: 1 });
-  };
-
-  for (const submission of submissions) {
-    const availability = Array.isArray(submission?.availability) ? submission.availability : [];
-    if (config.mode === 'date') {
-      for (const date of availability) {
-        if (!isValidDateOnly(date) || !isDateInConfigRange(date, config)) continue;
-        addCount(date, { date });
-      }
-    } else if (config.mode === 'half') {
-      for (const key of availability) {
-        const [date, slot] = String(key || '').split('_');
-        if (!isValidDateOnly(date) || !HALF_DAY_SLOTS.has(slot) || !isDateInConfigRange(date, config)) continue;
-        addCount(`${date}_${slot}`, { date, slot });
-      }
-    } else if (config.mode === 'time') {
-      for (const range of availability) {
-        if (!range || !isValidDateOnly(range.date) || !isDateInConfigRange(range.date, config)) continue;
-        const startMinutes = parseTimeToMinutes(range.start);
-        const endMinutes = parseTimeToMinutes(range.end);
-        if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) continue;
-        for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
-          if (minutes < startMinutes || minutes >= endMinutes) continue;
-          const start = formatMinutes(minutes);
-          const end = formatMinutes(minutes + 30);
-          addCount(`${range.date}_${start}`, { date: range.date, start, end });
-        }
-      }
-    }
-  }
-
-  const recommendations = [...counts.values()]
+  const recommendations = [...createScheduleBucketCounts(submissions, config).values()]
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
     .slice(0, Math.max(0, Number.parseInt(limit, 10) || 0))
     .map((entry) => ({
@@ -1493,7 +1464,7 @@ function countInclusiveDays(start, end) {
   return Math.floor((endMs - startMs) / 86400000) + 1;
 }
 
-function normalizeScheduleAvailability(availability, config) {
+export function normalizeScheduleAvailabilityInput(availability, config) {
   if (!config?.mode) return availability || {};
 
   const scheduleConfig = createScheduleConfigData(config);
@@ -1513,12 +1484,68 @@ function normalizeScheduleAvailability(availability, config) {
     }));
   }
 
-  return values.filter((range) => {
-    if (!range || !isValidDateOnly(range.date) || !isDateInConfigRange(range.date, scheduleConfig)) return false;
+  const seen = new Set();
+  const normalizedRanges = [];
+  for (const range of values) {
+    if (!range || typeof range !== 'object' || !isValidDateOnly(range.date) || !isDateInConfigRange(range.date, scheduleConfig)) continue;
     const startMinutes = parseTimeToMinutes(range.start);
     const endMinutes = parseTimeToMinutes(range.end);
-    return Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes > startMinutes;
-  });
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) continue;
+
+    const start = formatMinutes(startMinutes);
+    const end = formatMinutes(endMinutes);
+    const key = `${range.date}_${start}_${end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    normalizedRanges.push({
+      ...(typeof range.id === 'string' && range.id.trim() ? { id: range.id.trim() } : {}),
+      date: range.date,
+      start,
+      end,
+    });
+  }
+  return normalizedRanges;
+}
+
+function createScheduleBucketCounts(submissions, config) {
+  const counts = new Map();
+  const scheduleConfig = createScheduleConfigData(config);
+  if (!scheduleConfig || !Array.isArray(submissions)) return counts;
+
+  const addCount = (key, meta) => {
+    const current = counts.get(key);
+    counts.set(key, current ? { ...current, count: current.count + 1 } : { ...meta, key, count: 1 });
+  };
+
+  for (const submission of submissions) {
+    const availability = normalizeScheduleAvailabilityInput(submission?.availability, scheduleConfig);
+    if (!Array.isArray(availability)) continue;
+
+    if (scheduleConfig.mode === 'date') {
+      for (const date of availability) {
+        addCount(date, { date });
+      }
+    } else if (scheduleConfig.mode === 'half') {
+      for (const key of availability) {
+        const [date, slot] = String(key || '').split('_');
+        addCount(`${date}_${slot}`, { date, slot });
+      }
+    } else if (scheduleConfig.mode === 'time') {
+      for (const range of availability) {
+        const startMinutes = parseTimeToMinutes(range.start);
+        const endMinutes = parseTimeToMinutes(range.end);
+        for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+          if (minutes < startMinutes || minutes >= endMinutes) continue;
+          const start = formatMinutes(minutes);
+          const end = formatMinutes(minutes + 30);
+          addCount(`${range.date}_${start}`, { date: range.date, start, end });
+        }
+      }
+    }
+  }
+
+  return counts;
 }
 
 function normalizeRequiredFields(value) {
@@ -1674,7 +1701,7 @@ function isDateInConfigRange(date, config) {
 }
 
 function parseTimeToMinutes(value) {
-  const match = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ''));
   if (!match) return Number.NaN;
   const hours = Number(match[1]);
   const minutes = Number(match[2]);

@@ -1296,6 +1296,32 @@ test('schedule submission guard sanitizes availability against the active config
   );
 });
 
+test('schedule time availability is canonicalized and deduped before persistence', () => {
+  const user = { uid: 'u2', displayName: 'Rosalind' };
+
+  assert.deepEqual(
+    projectDomain.createScheduleSubmissionWrite(
+      [],
+      'project-1',
+      user,
+      'Rosalind Franklin',
+      [
+        { id: 'r1', date: '2026-07-05', start: '9:00', end: '10:00', note: 'legacy' },
+        { id: 'r2', date: '2026-07-05', start: '09:00', end: '10:00' },
+        { id: 'r3', date: '2026-07-05', start: 900, end: '10:00' },
+        { id: 'r4', date: '2026-07-08', start: '09:00', end: '10:00' },
+        { date: '2026-07-06', start: '8:30', end: '9:00' },
+      ],
+      3713,
+      { mode: 'time', start: '2026-07-05', end: '2026-07-07' },
+    ).data.availability,
+    [
+      { id: 'r1', date: '2026-07-05', start: '09:00', end: '10:00' },
+      { date: '2026-07-06', start: '08:30', end: '09:00' },
+    ],
+  );
+});
+
 test('schedule recommendation summary ranks date availability and filters stale values', () => {
   const config = { mode: 'date', start: '2026-07-05', end: '2026-07-07' };
   const submissions = [
@@ -1339,6 +1365,40 @@ test('schedule recommendation summary supports half-day slots and time buckets',
       { key: '2026-07-05_09:30', date: '2026-07-05', start: '09:30', end: '10:00', count: 2, participantCount: 3, coverage: 2 / 3 },
       { key: '2026-07-05_09:00', date: '2026-07-05', start: '09:00', end: '09:30', count: 1, participantCount: 3, coverage: 1 / 3 },
     ],
+  });
+});
+
+test('schedule time recommendations and heatmap count one participant once per bucket', () => {
+  const timeConfig = { mode: 'time', start: '2026-07-05', end: '2026-07-05' };
+  const submissions = [
+    {
+      uid: 'u1',
+      availability: [
+        { date: '2026-07-05', start: '9:00', end: '10:00' },
+        { date: '2026-07-05', start: '09:00', end: '10:00' },
+        { date: '2026-07-05', start: '09:00', end: '10:00' },
+        { date: '2026-07-05', start: null, end: '11:00' },
+      ],
+    },
+    { uid: 'u2', availability: [{ date: '2026-07-05', start: '09:30', end: '10:30' }] },
+    { uid: 'u3', availability: [{ date: '2026-07-05', start: '8:30', end: '9:00' }] },
+  ];
+
+  assert.deepEqual(createScheduleRecommendationSummary(submissions, timeConfig, 4), {
+    participantCount: 3,
+    recommendations: [
+      { key: '2026-07-05_09:30', date: '2026-07-05', start: '09:30', end: '10:00', count: 2, participantCount: 3, coverage: 2 / 3 },
+      { key: '2026-07-05_08:30', date: '2026-07-05', start: '08:30', end: '09:00', count: 1, participantCount: 3, coverage: 1 / 3 },
+      { key: '2026-07-05_09:00', date: '2026-07-05', start: '09:00', end: '09:30', count: 1, participantCount: 3, coverage: 1 / 3 },
+      { key: '2026-07-05_10:00', date: '2026-07-05', start: '10:00', end: '10:30', count: 1, participantCount: 3, coverage: 1 / 3 },
+    ],
+  });
+  assert.equal(typeof projectDomain.createScheduleHeatmapData, 'function');
+  assert.deepEqual(projectDomain.createScheduleHeatmapData(submissions, timeConfig), {
+    '2026-07-05_08:30': 1,
+    '2026-07-05_09:00': 1,
+    '2026-07-05_09:30': 2,
+    '2026-07-05_10:00': 1,
   });
 });
 

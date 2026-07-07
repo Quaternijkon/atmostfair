@@ -4,6 +4,7 @@ import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
 import {
   createDateRangeDays,
+  createScheduleHeatmapData,
   createScheduleConfigData,
   createScheduleRecommendationSummary,
 } from '../lib/projectDomain';
@@ -123,35 +124,7 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   };
 
   // --- Heatmap Logic ---
-  const heatmapData = useMemo(() => {
-      const counts = {};
-      submissions.forEach(sub => {
-          if (config.mode === 'date' || config.mode === 'half') {
-              sub.availability.forEach(key => {
-                  counts[key] = (counts[key] || 0) + 1;
-              });
-          } else if (config.mode === 'time') {
-              // Time logic: 30min buckets
-              sub.availability.forEach(range => {
-                 // range: { date, start: "HH:MM", end: "HH:MM" }
-                 const start = parseInt(range.start.replace(':', ''));
-                 const end = parseInt(range.end.replace(':', ''));
-                 // Simple bucket fill
-                 // Not perfect but visual enough
-                 for(let h = 0; h < 24; h++) {
-                     for (let m of [0, 30]) {
-                        const timeVal = h * 100 + m;
-                        if (timeVal >= start && timeVal < end) {
-                            const key = `${range.date}_${h}:${m === 0 ? '00' : '30'}`;
-                            counts[key] = (counts[key] || 0) + 1;
-                        }
-                     }
-                 }
-              });
-          }
-      });
-      return counts;
-  }, [submissions, config.mode]);
+  const heatmapData = useMemo(() => createScheduleHeatmapData(submissions, config), [submissions, config]);
 
   const maxCount = Math.max(...Object.values(heatmapData), 1);
   const getColor = (count) => {
@@ -370,11 +343,12 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
                                         {/* Render 24h * 2 blocks */}
                                         {Array.from({length: 48}).map((_, i) => {
                                             const h = Math.floor(i/2); const m = i%2===0 ? '00':'30';
-                                            const key = `${d}_${h}:${m}`;
+                                            const hour = String(h).padStart(2, '0');
+                                            const key = `${d}_${hour}:${m}`;
                                             const count = heatmapData[key] || 0;
                                             if (h < 8 || h > 22) return null; // Crop display 8am-10pm
                                                 return (
-                                                    <div key={i} className="flex-1 h-full border-r border-white/20" style={{ backgroundColor: getColor(count) }} title={`${h}:${m} · ${t('peopleCount', { count })}`}></div>
+                                                    <div key={i} className="flex-1 h-full border-r border-white/20" style={{ backgroundColor: getColor(count) }} title={`${hour}:${m} · ${t('peopleCount', { count })}`}></div>
                                                 );
                                         })}
                                     </div>

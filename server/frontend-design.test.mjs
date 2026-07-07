@@ -1264,6 +1264,15 @@ test('schedule availability submissions prevent duplicate submits and expose pen
   assert.match(schedule, /isSubmittingSchedule \? t\('processing'\) : \(mySubmission \? t\('update'\) : t\('submit'\)\)/, 'Schedule submit button should show localized progress copy');
 });
 
+test('schedule time heatmap uses normalized domain buckets', async () => {
+  const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
+
+  assert.match(schedule, /createScheduleHeatmapData/, 'Schedule heatmap should use the shared domain bucket helper');
+  assert.match(schedule, /createScheduleHeatmapData\(submissions, config\)/, 'Schedule heatmap should derive buckets from submissions and the active config');
+  assert.doesNotMatch(schedule, /range\.start\.replace/, 'Schedule heatmap should not assume legacy range.start is a string');
+  assert.doesNotMatch(schedule, /parseInt\(range\.start/, 'Schedule heatmap should not parse time strings ad hoc in the component');
+});
+
 test('claim workspace actions prevent duplicate submits and expose pending state', async () => {
   const claim = await readFile(path.join(root, 'src/components/ClaimView.jsx'), 'utf8');
 

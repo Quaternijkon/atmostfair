@@ -28,6 +28,7 @@ import {
   normalizeClaimCapacityInput,
   normalizeMineProgressInput,
   normalizeParticipantValueInput,
+  normalizeScheduleAvailabilityInput,
   normalizeBookingDataInput,
   normalizeRpsCurrentRoundInput,
   normalizeRpsScoreInput,
@@ -1415,7 +1416,7 @@ async function authorizeProjectUserEntryOperation({
   projectId,
 }) {
   if (!existing) {
-    return normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data });
+    return normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data, project });
   }
 
   if (collection === 'queue_participants') {
@@ -1430,7 +1431,7 @@ async function authorizeProjectUserEntryOperation({
 
   if (collection === 'schedule_submissions') {
     if (existing.uid !== user.uid && !isAdminUser(user)) forbidden();
-    return allowOnlyFields(data, ['availability', 'submittedAt']);
+    return normalizeScheduleSubmissionData(allowOnlyFields(data, ['availability', 'submittedAt']), project);
   }
 
   if (collection === 'gather_submissions') {
@@ -1441,7 +1442,7 @@ async function authorizeProjectUserEntryOperation({
   return data || {};
 }
 
-async function normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data }) {
+async function normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data, project }) {
   await assertNoDuplicateProjectUserEntry(store, collection, projectId, user.uid);
 
   const base = {
@@ -1467,7 +1468,25 @@ async function normalizeProjectUserEntryCreateData({ store, user, collection, pr
     };
   }
 
+  if (collection === 'schedule_submissions') {
+    return normalizeScheduleSubmissionData(base, project);
+  }
+
   return base;
+}
+
+function normalizeScheduleSubmissionData(data, project) {
+  const normalized = data || {};
+  if (!Object.hasOwn(normalized, 'availability')) return normalized;
+
+  const availability = normalizeScheduleAvailabilityInput(normalized.availability, project?.scheduleConfig);
+  if (availability === null) {
+    throwDataError(400, 'data/invalid-schedule-availability', 'Schedule availability is invalid.');
+  }
+  return {
+    ...normalized,
+    availability,
+  };
 }
 
 async function assertNoDuplicateProjectUserEntry(store, collection, projectId, uid) {
