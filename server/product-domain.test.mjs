@@ -715,6 +715,81 @@ test('gather submission guard creates one response per project and user', () => 
   );
 });
 
+test('gather submission guard matches existing responses by normalized uid', () => {
+  const createGatherSubmissionData = projectDomain.createGatherSubmissionData;
+  const user = { uid: ' u2 ', displayName: 'Katherine' };
+  const fields = [{ id: 'note', label: 'Note', type: 'text' }];
+
+  assert.equal(
+    createGatherSubmissionData(
+      [{ id: 'dirty-u2', projectId: 'project-1', uid: 'u2', data: { note: 'old' }, submittedAt: 3500 }],
+      'project-1',
+      user,
+      'Katherine Johnson',
+      { note: 'new' },
+      3501,
+      fields,
+    ),
+    null,
+    'same user should not duplicate a gather response when either uid has whitespace',
+  );
+
+  assert.deepEqual(
+    createGatherSubmissionData([], 'project-1', user, 'Katherine Johnson', { note: '  keep  ' }, 3502, fields),
+    {
+      projectId: 'project-1',
+      uid: 'u2',
+      name: 'Katherine Johnson',
+      data: { note: 'keep' },
+      submittedAt: 3502,
+    },
+    'new gather submissions should persist the normalized uid',
+  );
+});
+
+test('gather submission summary ignores invalid uid values and uses one response per participant', () => {
+  const fields = [
+    { id: 'note', label: 'Note', type: 'text' },
+    { id: 'count', label: 'Count', type: 'number' },
+  ];
+  const submissions = [
+    { id: 'blank', projectId: 'project-1', uid: ' ', name: 'Blank', data: { note: 'skip', count: '9' }, submittedAt: 40 },
+    { id: 'old-u2', projectId: 'project-1', uid: ' u2 ', name: 'Old Katherine', data: { note: 'old', count: 'bad' }, submittedAt: 41 },
+    { id: 'u1', projectId: 'project-1', uid: 'u1', name: 'Ada', data: { note: ' keep ', count: '3' }, submittedAt: 42 },
+    { id: 'new-u2', projectId: 'project-1', uid: 'u2', name: 'Katherine', data: { note: 'new', count: '5' }, submittedAt: 43 },
+  ];
+
+  assert.equal(typeof projectDomain.createGatherSubmissionSummary, 'function');
+  const submissionSummary = projectDomain.createGatherSubmissionSummary(submissions, { uid: ' u2 ' }, fields);
+
+  assert.equal(submissionSummary.submissionCount, 2);
+  assert.deepEqual(
+    submissionSummary.submissions.map((submission) => submission.uid).sort(),
+    ['u1', 'u2'],
+  );
+  assert.deepEqual(submissionSummary.mySubmission, {
+    id: 'new-u2',
+    projectId: 'project-1',
+    uid: 'u2',
+    name: 'Katherine',
+    data: { note: 'new', count: '5' },
+    submittedAt: 43,
+    isCurrentUser: true,
+  });
+  assert.deepEqual(
+    submissionSummary.submissions.find((submission) => submission.uid === 'u1'),
+    {
+      id: 'u1',
+      projectId: 'project-1',
+      uid: 'u1',
+      name: 'Ada',
+      data: { note: 'keep', count: '3' },
+      submittedAt: 42,
+      isCurrentUser: false,
+    },
+  );
+});
+
 test('gather field data normalizes supported field types and option lists', () => {
   const user = { uid: 'u2', displayName: 'Katherine' };
 

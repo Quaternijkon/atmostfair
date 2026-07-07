@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Plus, Download, ClipboardList, CheckCircle, FileText, X } from './Icons';
 import { formatDate, formatDateTime } from '../lib/locale';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH, normalizeGatherSubmissionData } from '../lib/projectDomain';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH, createGatherSubmissionSummary } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function GatherView({ user, isAdmin, project, fields = [], submissions = [], isStopped, isOwner, actions, t }) {
@@ -20,11 +20,13 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   const [pendingGatherFieldIds, setPendingGatherFieldIds] = useState([]);
   const pendingGatherFieldIdsRef = useRef(new Set());
 
-  const readableSubmissions = submissions.map((submission) => ({
-    ...submission,
-    data: normalizeGatherSubmissionData(submission.data, fields),
-  }));
-  const mySubmission = readableSubmissions.find(s => s.uid === user?.uid);
+  const submissionSummary = useMemo(
+    () => createGatherSubmissionSummary(submissions, user, fields),
+    [submissions, user, fields],
+  );
+  const readableSubmissions = submissionSummary.submissions;
+  const mySubmission = submissionSummary.mySubmission;
+  const responseCount = submissionSummary.submissionCount;
   const hasSubmitted = !!mySubmission;
   const canShowSubmissionCard = !isStopped || hasSubmitted;
   const fieldTypeOptions = [
@@ -262,8 +264,8 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-normal flex items-center gap-2">
                     <FileText className="w-6 h-6 text-m3-secondary" />
-                    {t('responses')} 
-                    <span className="bg-m3-secondary-container text-m3-on-secondary-container text-sm px-2 py-0.5 rounded-full">{submissions.length}</span>
+                    {t('responses')}
+                    <span className="bg-m3-secondary-container text-m3-on-secondary-container text-sm px-2 py-0.5 rounded-full">{responseCount}</span>
                 </h3>
                 <button onClick={handleExport} className="app-button-quiet text-google-blue hover:bg-google-blue/10">
                     <Download className="w-5 h-5" /> {t('exportCSV')}
@@ -281,7 +283,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                       </thead>
                       <tbody>
                           {readableSubmissions.map(s => (
-                              <tr key={s.id} className="border-t border-m3-outline/10 hover:bg-m3-surface-container/50">
+                              <tr key={s.id || s.uid} className="border-t border-m3-outline/10 hover:bg-m3-surface-container/50">
                                   <td className="px-4 py-3 font-medium">{s.name}</td>
                                   {fields.map(f => (
                                       <td key={f.id} className="px-4 py-3 max-w-[200px] truncate" title={s.data[f.id]}>
@@ -291,7 +293,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                                   <td className="px-4 py-3 text-xs opacity-70">{formatDate(s.submittedAt, t)}</td>
                               </tr>
                           ))}
-                          {submissions.length === 0 && (
+                          {responseCount === 0 && (
                               <tr><td colSpan={fields.length + 2} className="px-4 py-8 text-center opacity-50">{t('dbEmpty')}</td></tr>
                           )}
                       </tbody>

@@ -436,15 +436,33 @@ export function normalizeBookingDataInput(data) {
 }
 
 export function createGatherSubmissionData(existingSubmissions, projectId, user, userName, data, submittedAt, fields = []) {
-  if (!projectId || !user?.uid) return null;
-  const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
-  if (submissions.some((submission) => submission.projectId === projectId && submission.uid === user.uid)) return null;
+  const uid = normalizeIdentityValue(user?.uid);
+  if (!projectId || !uid) return null;
+  const submissions = normalizeGatherSubmissions(
+    (Array.isArray(existingSubmissions) ? existingSubmissions : [])
+      .filter((submission) => submission?.projectId === projectId),
+    fields,
+  );
+  if (submissions.some((submission) => submission.uid === uid)) return null;
   return {
     projectId,
-    uid: user.uid,
+    uid,
     name: cleanName(userName, user),
     data: normalizeGatherSubmissionData(data, fields),
     submittedAt,
+  };
+}
+
+export function createGatherSubmissionSummary(submissions, user, fields = []) {
+  const uid = normalizeIdentityValue(user?.uid);
+  const normalizedSubmissions = normalizeGatherSubmissions(submissions, fields).map((submission) => ({
+    ...submission,
+    isCurrentUser: Boolean(uid) && submission.uid === uid,
+  }));
+  return {
+    submissions: normalizedSubmissions,
+    submissionCount: normalizedSubmissions.length,
+    mySubmission: normalizedSubmissions.find((submission) => submission.isCurrentUser) || null,
   };
 }
 
@@ -1784,6 +1802,29 @@ export function normalizeGatherSubmissionData(data, fields) {
   }, {});
 }
 
+export function normalizeGatherSubmissions(submissions, fields = []) {
+  if (!Array.isArray(submissions)) return [];
+
+  const byUid = new Map();
+  submissions.forEach((submission, index) => {
+    if (!submission || typeof submission !== 'object' || Array.isArray(submission)) return;
+    const uid = normalizeIdentityValue(submission.uid);
+    if (!uid) return;
+
+    const normalized = {
+      ...clonePlainValue(submission),
+      uid,
+      data: normalizeGatherSubmissionData(submission.data, fields),
+    };
+    const current = byUid.get(uid);
+    if (!current || shouldReplaceGatherSubmission(current, { submission: normalized, index })) {
+      byUid.set(uid, { submission: normalized, index });
+    }
+  });
+
+  return [...byUid.values()].map((entry) => entry.submission);
+}
+
 function normalizeGatherSubmissionValue(field, value) {
   const text = String(value ?? '').trim();
   const fieldType = normalizeGatherFieldType(field.type);
@@ -1791,6 +1832,17 @@ function normalizeGatherSubmissionValue(field, value) {
   if (fieldType === 'date') return isValidDateOnly(text) ? text : '';
   if (fieldType === 'option') return normalizeGatherOptions(field.options).includes(text) ? text : '';
   return text;
+}
+
+function shouldReplaceGatherSubmission(current, candidate) {
+  const currentSubmittedAt = Number(current.submission.submittedAt);
+  const candidateSubmittedAt = Number(candidate.submission.submittedAt);
+  const currentHasSubmittedAt = Number.isFinite(currentSubmittedAt);
+  const candidateHasSubmittedAt = Number.isFinite(candidateSubmittedAt);
+
+  if (currentHasSubmittedAt && candidateHasSubmittedAt) return candidateSubmittedAt >= currentSubmittedAt;
+  if (candidateHasSubmittedAt !== currentHasSubmittedAt) return candidateHasSubmittedAt;
+  return candidate.index >= current.index;
 }
 
 function createDateRangeConfigData(config, mode) {

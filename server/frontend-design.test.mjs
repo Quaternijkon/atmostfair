@@ -724,11 +724,17 @@ test('gather workspace supports localized typed fields', async () => {
 test('gather workspace displays submissions normalized against current fields', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 
-  assert.match(gather, /normalizeGatherSubmissionData/, 'Gather workspace should use the shared submission normalizer');
-  assert.match(gather, /const readableSubmissions = submissions\.map/, 'Gather workspace should derive a readable submission list');
-  assert.match(gather, /readableSubmissions\.find\(s => s\.uid === user\?\.uid\)/, 'Current-user receipt should use normalized submissions');
+  assert.match(gather, /createGatherSubmissionSummary/, 'Gather workspace should use the shared submission summary');
+  assert.match(gather, /const submissionSummary = useMemo\(/, 'Gather workspace should memoize normalized submission state');
+  assert.match(gather, /createGatherSubmissionSummary\(submissions, user, fields\)/, 'Gather workspace should normalize submissions against current fields and user');
+  assert.match(gather, /const readableSubmissions = submissionSummary\.submissions/, 'Gather workspace should derive a readable submission list from the summary');
+  assert.match(gather, /const mySubmission = submissionSummary\.mySubmission/, 'Current-user receipt should use the normalized summary');
+  assert.match(gather, /const responseCount = submissionSummary\.submissionCount/, 'Owner response count should use the deduped summary');
+  assert.match(gather, /\{responseCount\}/, 'Owner response badge should render the deduped response count');
   assert.match(gather, /readableSubmissions\.map\(s =>/, 'Owner response table and CSV should iterate normalized submissions');
   assert.doesNotMatch(gather, /const mySubmission = submissions\.find/, 'Current-user receipt should not read raw submissions directly');
+  assert.doesNotMatch(gather, /readableSubmissions\.find\(s => s\.uid === user\?\.uid\)/, 'Current-user receipt should not compare raw uid strings in the component');
+  assert.doesNotMatch(gather, /\{submissions\.length\}/, 'Owner response badge should not count raw submissions');
   assert.doesNotMatch(gather, /const rows = submissions\.map/, 'Gather local CSV export should not serialize raw submissions directly');
 });
 
