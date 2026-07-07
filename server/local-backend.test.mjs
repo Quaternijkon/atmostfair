@@ -1947,7 +1947,7 @@ test('HTTP data API rejects child writes against stopped, finished, and archived
 
       const auditActivity = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
-        token: member.token,
+        token: owner.token,
         body: {
           collection: 'project_activities',
           data: {
@@ -1959,6 +1959,7 @@ test('HTTP data API rejects child writes against stopped, finished, and archived
         },
       });
       assert.equal(auditActivity.doc.projectId, stoppedProject.doc.id);
+      assert.equal(auditActivity.doc.actorId, owner.user.uid);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
@@ -2175,6 +2176,25 @@ test('HTTP data API normalizes project activity records and keeps them append-on
       assert.equal(unknownType.body.error.code, 'data/invalid-activity');
       assert.equal((await store.list('project_activities')).length, 1);
 
+      const forgedManagedActivity = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'project_activities',
+          data: {
+            projectId: project.doc.id,
+            type: PROJECT_ACTIVITY_TYPES.projectPaused,
+            actorId: alice.user.uid,
+            actorName: 'Alice Actual',
+            subject: 'Fake pause',
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(forgedManagedActivity.status, 403);
+      assert.equal(forgedManagedActivity.body.error.code, 'data/forbidden');
+      assert.equal((await store.list('project_activities')).length, 1);
+
       const aliceEdit = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: alice.token,
@@ -2202,9 +2222,27 @@ test('HTTP data API normalizes project activity records and keeps them append-on
         token: owner.token,
         body: { collection: 'projects', data: { title: 'Paused', type: 'queue', status: 'stopped', createdAt: 4 } },
       });
-      const lockedActivity = await fetchJson(`${baseUrl}/api/data/add`, {
+      const lockedParticipantActivity = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
+        body: {
+          collection: 'project_activities',
+          data: {
+            projectId: stoppedProject.doc.id,
+            type: PROJECT_ACTIVITY_TYPES.queueJoined,
+            actorId: alice.user.uid,
+            actorName: 'Alice Actual',
+            subject: 'Queued after stop',
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(lockedParticipantActivity.status, 409);
+      assert.equal(lockedParticipantActivity.body.error.code, 'data/project-locked');
+
+      const lockedActivity = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
         body: {
           collection: 'project_activities',
           data: {
@@ -2213,12 +2251,12 @@ test('HTTP data API normalizes project activity records and keeps them append-on
             actorId: bob.user.uid,
             actorName: 'Bob Actual',
             subject: ' Paused ',
-            createdAt: 5,
+            createdAt: 6,
           },
         },
       });
       assert.equal(lockedActivity.doc.projectId, stoppedProject.doc.id);
-      assert.equal(lockedActivity.doc.actorId, alice.user.uid);
+      assert.equal(lockedActivity.doc.actorId, owner.user.uid);
 
       const ownerDeletesAlice = await fetchJson(`${baseUrl}/api/data/delete`, {
         method: 'POST',

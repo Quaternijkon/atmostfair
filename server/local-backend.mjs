@@ -74,6 +74,22 @@ const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
 const VOTING_MODES = new Set(['multiple', 'single']);
 const PROJECT_NOTIFICATION_TYPES = new Set(['kicked', 'booking_promoted']);
 const PROJECT_ACTIVITY_TYPE_VALUES = new Set(Object.values(PROJECT_ACTIVITY_TYPES));
+const PROJECT_MANAGED_ACTIVITY_TYPES = new Set([
+  PROJECT_ACTIVITY_TYPES.projectCreated,
+  PROJECT_ACTIVITY_TYPES.projectDuplicated,
+  PROJECT_ACTIVITY_TYPES.projectArchived,
+  PROJECT_ACTIVITY_TYPES.projectRestored,
+  PROJECT_ACTIVITY_TYPES.projectPaused,
+  PROJECT_ACTIVITY_TYPES.projectResumed,
+  PROJECT_ACTIVITY_TYPES.projectBriefUpdated,
+  PROJECT_ACTIVITY_TYPES.queueGenerated,
+  PROJECT_ACTIVITY_TYPES.rouletteDrawn,
+  PROJECT_ACTIVITY_TYPES.winnerRecorded,
+  PROJECT_ACTIVITY_TYPES.gatherFieldCreated,
+  PROJECT_ACTIVITY_TYPES.bookingSlotCreated,
+  PROJECT_ACTIVITY_TYPES.bookingCancelled,
+  PROJECT_ACTIVITY_TYPES.claimCreated,
+]);
 const RPS_MOVES = new Set(['rock', 'paper', 'scissors']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const BOOKING_RUNTIME_FIELDS = new Set(['bookedBy', 'bookerName', 'bookingData', 'bookedAt', 'waitlist']);
@@ -1116,7 +1132,15 @@ function samePlayerExcept(before, after, exceptFields) {
 
 function authorizeProjectActivityOperation({ user, type, data, project }) {
   if (type === 'add') {
-    return normalizeProjectActivityCreateData(data, user);
+    const activity = normalizeProjectActivityCreateData(data, user);
+    if (PROJECT_MANAGED_ACTIVITY_TYPES.has(activity.type)) {
+      if (!canWriteProject(project, user)) forbidden();
+      return activity;
+    }
+    if (isProjectLocked(project)) {
+      throwDataError(409, 'data/project-locked', 'Project is paused, finished, or archived.');
+    }
+    return activity;
   }
 
   if (type === 'delete') {
