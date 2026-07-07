@@ -21,6 +21,7 @@ import {
   PROJECT_PASSWORD_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
+  createGatherFieldData,
   createGameRoomCreateData,
   createGameRoomJoinPatch,
   createMineRoomProgressPatch,
@@ -609,6 +610,10 @@ function getVotingMode(project) {
 }
 
 function authorizeManagedProjectChildOperation({ user, type, collection, data, existing, project }) {
+  if (collection === 'gather_fields') {
+    return authorizeGatherFieldOperation({ user, type, data, existing, project });
+  }
+
   if (!existing) {
     if (!canWriteProject(project, user)) forbidden();
     return normalizeManagedProjectChildCreateData({ user, collection, data });
@@ -631,12 +636,6 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
 
 function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   const normalized = normalizeProjectChildDisplayText(data, collection, true);
-  if (collection === 'gather_fields') {
-    return {
-      ...normalized,
-      creatorId: user.uid,
-    };
-  }
 
   if (collection === 'booking_slots') {
     return {
@@ -660,6 +659,84 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
   }
 
   return normalized;
+}
+
+function authorizeGatherFieldOperation({ user, type, data, existing, project }) {
+  if (!existing) {
+    if (!canWriteProject(project, user)) forbidden();
+    return normalizeGatherFieldCreateData({ user, data });
+  }
+
+  if (!canWriteProject(project, user)) forbidden();
+
+  const protectedData = preserveImmutableField(data, existing, 'projectId', type);
+  assertImmutableField(protectedData, existing, 'creatorId');
+
+  if (type === 'set') {
+    return normalizeGatherFieldReplaceData({ user, data: protectedData, existing });
+  }
+
+  return normalizeGatherFieldPatchData({ user, data: protectedData, existing });
+}
+
+function normalizeGatherFieldCreateData({ user, data }) {
+  const normalized = normalizeProjectChildDisplayText(data, 'gather_fields', true);
+  const field = createGatherFieldData(
+    normalized.projectId,
+    user,
+    normalized.label,
+    normalized.type,
+    normalized.options,
+    normalized.createdAt,
+  );
+  if (!field) throwInvalidGatherField();
+  return field;
+}
+
+function normalizeGatherFieldReplaceData({ user, data, existing }) {
+  const normalized = normalizeProjectChildDisplayText(data, 'gather_fields', true);
+  const field = createGatherFieldData(
+    existing.projectId,
+    { uid: existing.creatorId || user.uid },
+    normalized.label,
+    normalized.type,
+    normalized.options,
+    normalized.createdAt,
+  );
+  if (!field) throwInvalidGatherField();
+  return field;
+}
+
+function normalizeGatherFieldPatchData({ user, data, existing }) {
+  const normalizedPatch = normalizeProjectChildDisplayText(data, 'gather_fields', false);
+  const candidate = {
+    ...existing,
+    ...normalizedPatch,
+    projectId: existing.projectId,
+    creatorId: existing.creatorId || user.uid,
+  };
+  const field = createGatherFieldData(
+    candidate.projectId,
+    { uid: candidate.creatorId },
+    candidate.label,
+    candidate.type,
+    candidate.options,
+    candidate.createdAt,
+  );
+  if (!field) throwInvalidGatherField();
+
+  const patch = {};
+  if (Object.hasOwn(normalizedPatch, 'label')) patch.label = field.label;
+  if (Object.hasOwn(normalizedPatch, 'type')) patch.type = field.type;
+  if (Object.hasOwn(normalizedPatch, 'createdAt')) patch.createdAt = field.createdAt;
+  if (Object.hasOwn(normalizedPatch, 'type') || Object.hasOwn(normalizedPatch, 'options')) {
+    patch.options = Object.hasOwn(field, 'options') ? field.options : undefined;
+  }
+  return patch;
+}
+
+function throwInvalidGatherField() {
+  throwDataError(400, 'data/invalid-gather-field', 'Gather field definition is invalid.');
 }
 
 function normalizeProjectChildDisplayText(data, collection, required = false) {

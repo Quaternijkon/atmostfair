@@ -3298,6 +3298,174 @@ test('HTTP data API restricts managed child creation to project owners and norma
   });
 });
 
+test('HTTP data API normalizes gather field definitions on create and update', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Gather fields', type: 'gather', status: 'active', createdAt: 1 } },
+      });
+
+      const optionField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: {
+            projectId: project.doc.id,
+            label: '  RSVP  ',
+            type: 'option',
+            options: ' Yes, No, Yes,  ',
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(optionField.doc.label, 'RSVP');
+      assert.equal(optionField.doc.type, 'option');
+      assert.deepEqual(optionField.doc.options, ['Yes', 'No']);
+
+      const fallbackField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: {
+            projectId: project.doc.id,
+            label: 'Budget',
+            type: 'currency',
+            options: ['Ignored'],
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(fallbackField.doc.type, 'text');
+      assert.equal(Object.hasOwn(fallbackField.doc, 'options'), false);
+
+      const invalidOptionField = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Choice', type: 'option', options: ' , ', createdAt: 4 },
+        },
+      });
+      assert.equal(invalidOptionField.status, 400);
+      assert.equal(invalidOptionField.body.error.code, 'data/invalid-gather-field');
+      assert.equal((await store.list('gather_fields')).length, 2);
+
+      const updatedOptionField = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          id: optionField.doc.id,
+          data: { label: '  Meal  ', type: 'option', options: [' Veg ', 'Veg', 'Meat', ''] },
+        },
+      });
+      assert.equal(updatedOptionField.doc.label, 'Meal');
+      assert.equal(updatedOptionField.doc.type, 'option');
+      assert.deepEqual(updatedOptionField.doc.options, ['Veg', 'Meat']);
+
+      const textField = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          id: optionField.doc.id,
+          data: { type: 'text', options: ['stale'] },
+        },
+      });
+      assert.equal(textField.doc.type, 'text');
+      assert.equal(Object.hasOwn(textField.doc, 'options'), false);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+test('HTTP data API restricts gather field updates to project managers', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const member = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'member@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Gather fields', type: 'gather', status: 'active', createdAt: 1 } },
+      });
+      const field = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Owner field', type: 'text', createdAt: 2 },
+        },
+      });
+
+      const memberUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'gather_fields',
+          id: field.doc.id,
+          data: { label: 'Member edit', type: 'option', options: ['Yes'], creatorId: member.user.uid },
+        },
+      });
+      assert.equal(memberUpdate.status, 403);
+      assert.equal(memberUpdate.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.get('gather_fields', field.doc.id), field.doc);
+
+      const memberSet = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: member.token,
+        body: {
+          collection: 'gather_fields',
+          id: field.doc.id,
+          data: { projectId: project.doc.id, label: 'Member replace', type: 'text', creatorId: member.user.uid },
+        },
+      });
+      assert.equal(memberSet.status, 403);
+      assert.equal(memberSet.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.get('gather_fields', field.doc.id), field.doc);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects invalid project child display text without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
