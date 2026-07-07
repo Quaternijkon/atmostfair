@@ -83,6 +83,57 @@ test('dashboard filters support status, search, and stable sorting', () => {
   );
 });
 
+test('dashboard project lists normalize malformed project shells before display', () => {
+  const projects = [
+    null,
+    { id: '', title: 'No id', type: 'vote', status: 'active', createdAt: 9999 },
+    { id: '   ', title: 'Blank id', type: 'vote', status: 'active', createdAt: 9998 },
+    { id: ' trimmed-vote ', title: '  Trimmed Vote  ', type: 'vote', status: 'active', createdAt: 'bad-date' },
+    { id: 'book-ok', title: null, type: 'book', status: 'finished', createdAt: 5000 },
+    { id: 'archived-ok', title: 'Archived', type: 'book', status: 'active', archived: true, archivedAt: 'bad-date', createdAt: 3000 },
+    { id: 'unknown-ok', title: 'Unknown', type: 'unknown', status: 'active', createdAt: 8000 },
+  ];
+
+  assert.doesNotThrow(() => filterAndSortDashboardProjects(projects, {
+    categoryTypes: ['vote', 'book'],
+    statusFilter: 'all',
+    sortKey: 'recent',
+  }));
+
+  assert.deepEqual(
+    filterAndSortDashboardProjects(projects, {
+      categoryTypes: ['vote', 'book'],
+      searchTerm: 'trimmed',
+      statusFilter: 'all',
+      sortKey: 'recent',
+    }).map((project) => project.id),
+    ['trimmed-vote'],
+  );
+
+  assert.deepEqual(
+    filterAndSortDashboardProjects(projects, {
+      categoryTypes: ['vote', 'book'],
+      statusFilter: 'all',
+      sortKey: 'recent',
+    }).map((project) => project.id),
+    ['book-ok', 'trimmed-vote'],
+  );
+
+  assert.deepEqual(
+    filterAndSortDashboardProjects(projects, {
+      categoryTypes: ['vote', 'book'],
+      statusFilter: 'archived',
+      sortKey: 'recent',
+    }).map((project) => project.id),
+    ['archived-ok'],
+  );
+
+  assert.deepEqual(
+    createRecentDashboardProjects(projects, ['trimmed-vote', 'book-ok', 'missing'], 4).map((project) => project.id),
+    ['trimmed-vote', 'book-ok'],
+  );
+});
+
 test('dashboard filter activity ignores default and whitespace-only controls', () => {
   assert.equal(hasActiveDashboardFilters({ searchTerm: '', statusFilter: 'all', sortKey: 'recent' }), false);
   assert.equal(hasActiveDashboardFilters({ searchTerm: '   ', statusFilter: 'all', sortKey: 'recent' }), false);

@@ -240,7 +240,16 @@ export function createProjectArchivePatch(project, archived, archivedAt) {
 }
 
 function normalizedProjects(projects) {
-  return Array.isArray(projects) ? [...projects] : [];
+  if (!Array.isArray(projects)) return [];
+  return projects
+    .filter((project) => project && typeof project === 'object' && !Array.isArray(project))
+    .map((project) => ({
+      ...project,
+      id: typeof project.id === 'string' ? project.id.trim() : '',
+      title: String(project.title || '').trim(),
+      creatorName: String(project.creatorName || '').trim(),
+    }))
+    .filter((project) => project.id);
 }
 
 export function normalizePinnedProjectIds(projectIds) {
@@ -350,5 +359,9 @@ function projectStatus(project) {
 }
 
 function projectTimestamp(project) {
-  return Number(project.archivedAt || project.createdAt || 0);
+  const archivedAt = Number(project.archivedAt);
+  if (project.archived && Number.isFinite(archivedAt)) return archivedAt;
+  const createdAt = Number(project.createdAt);
+  if (Number.isFinite(createdAt)) return createdAt;
+  return 0;
 }
