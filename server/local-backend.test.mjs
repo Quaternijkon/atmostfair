@@ -5288,6 +5288,79 @@ test('HTTP data API revokes stale private project grants when set creates a proj
   });
 });
 
+test('HTTP data API removes batch-deleted project ids from user dashboard preferences', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123', displayName: 'Viewer' },
+      });
+      const untouched = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'untouched@example.com', password: 'secret123', displayName: 'Untouched' },
+      });
+      const deletedProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Deleted Project', type: 'vote', status: 'active', createdAt: 1 } },
+      });
+      const keptProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Kept Project', type: 'team', status: 'active', createdAt: 2 } },
+      });
+
+      await store.update('users', owner.user.uid, {
+        pinnedProjectIds: [deletedProject.doc.id, keptProject.doc.id],
+        recentProjectIds: [keptProject.doc.id, deletedProject.doc.id],
+      });
+      await store.update('users', viewer.user.uid, {
+        pinnedProjectIds: [deletedProject.doc.id],
+        recentProjectIds: [deletedProject.doc.id, keptProject.doc.id],
+      });
+      await store.update('users', untouched.user.uid, {
+        pinnedProjectIds: [keptProject.doc.id],
+        recentProjectIds: [keptProject.doc.id],
+      });
+
+      const deletion = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'projects', id: deletedProject.doc.id },
+          ],
+        },
+      });
+      assert.deepEqual(deletion.results, [{ id: deletedProject.doc.id, deleted: true }]);
+
+      assert.deepEqual((await store.get('users', owner.user.uid)).pinnedProjectIds, [keptProject.doc.id]);
+      assert.deepEqual((await store.get('users', owner.user.uid)).recentProjectIds, [keptProject.doc.id]);
+      assert.deepEqual((await store.get('users', viewer.user.uid)).pinnedProjectIds, []);
+      assert.deepEqual((await store.get('users', viewer.user.uid)).recentProjectIds, [keptProject.doc.id]);
+      assert.deepEqual((await store.get('users', untouched.user.uid)).pinnedProjectIds, [keptProject.doc.id]);
+      assert.deepEqual((await store.get('users', untouched.user.uid)).recentProjectIds, [keptProject.doc.id]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API preserves private project passwords during authorized duplication', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

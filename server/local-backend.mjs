@@ -256,7 +256,9 @@ async function handleDataApi({ request, response, url, store, body, user, now })
     const collection = validateDataCollection(body.collection);
     const id = validateDataId(body.id);
     await authorizeDataOperation({ store, user, type: 'delete', collection, id, now });
-    const accessLifecycle = collection === 'projects' ? { projectId: id, revoke: true } : null;
+    const accessLifecycle = collection === 'projects'
+      ? { projectId: id, revoke: true, removeDashboardReferences: true }
+      : null;
     await store.delete(collection, id);
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
     return sendJson(response, 200, { ok: true });
@@ -1904,7 +1906,7 @@ async function getProjectAccessLifecycleChange({ store, context, type, id, data,
   const existing = await getProjectedDoc({ store, context, collection: 'projects', id });
   if (!existing && type === 'set') return { projectId: id, revoke: true };
   if (!existing) return null;
-  if (type === 'delete') return { projectId: id, revoke: true };
+  if (type === 'delete') return { projectId: id, revoke: true, removeDashboardReferences: true };
   if (type !== 'set' && type !== 'update') return null;
 
   const beforePassword = normalizeProjectPassword(existing.password, { rejectOverlong: false });
@@ -1939,9 +1941,15 @@ async function applyProjectAccessLifecycleChanges({ store, changes }) {
   const projectIds = new Set((changes || [])
     .filter((change) => change?.revoke && typeof change.projectId === 'string' && change.projectId.trim())
     .map((change) => change.projectId));
+  const dashboardReferenceProjectIds = new Set((changes || [])
+    .filter((change) => change?.removeDashboardReferences && typeof change.projectId === 'string' && change.projectId.trim())
+    .map((change) => change.projectId));
 
   for (const projectId of projectIds) {
     await revokeProjectAccessGrants({ store, projectId });
+  }
+  for (const projectId of dashboardReferenceProjectIds) {
+    await removeProjectDashboardReferences({ store, projectId });
   }
 }
 
@@ -1956,6 +1964,37 @@ async function revokeProjectAccessGrants({ store, projectId }) {
   for (const grant of grants) {
     await store.delete('project_access', grant.id);
   }
+}
+
+async function removeProjectDashboardReferences({ store, projectId }) {
+  const cleanProjectId = String(projectId || '').trim();
+  if (!cleanProjectId) return;
+
+  const users = await store.list('users');
+  for (const user of users) {
+    const pinnedProjectIds = normalizePinnedProjectIds(user.pinnedProjectIds).slice(0, 100);
+    const recentProjectIds = normalizeRecentProjectIds(user.recentProjectIds, 100);
+    const nextPinnedProjectIds = pinnedProjectIds.filter((entry) => entry !== cleanProjectId);
+    const nextRecentProjectIds = recentProjectIds.filter((entry) => entry !== cleanProjectId);
+    const patch = {};
+
+    if (!sameStringArray(pinnedProjectIds, nextPinnedProjectIds)) {
+      patch.pinnedProjectIds = nextPinnedProjectIds;
+    }
+    if (!sameStringArray(recentProjectIds, nextRecentProjectIds)) {
+      patch.recentProjectIds = nextRecentProjectIds;
+    }
+    if (Object.keys(patch).length > 0) {
+      await store.update('users', user.id, patch);
+    }
+  }
+}
+
+function sameStringArray(left, right) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((entry, index) => entry === right[index]);
 }
 
 function projectAccessGrantId(projectId, uid) {
