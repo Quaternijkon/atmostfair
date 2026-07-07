@@ -92,6 +92,44 @@ test('apiRequest retries transient gateway failures with short backoff', async (
   assert.deepEqual(retryDelays, [250, 750]);
 });
 
+test('apiRequest keeps retrying through short backend restart windows', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+  let calls = 0;
+  const retryDelays = [];
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls < 4) {
+      return new Response('<html>bad gateway</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  globalThis.setTimeout = (callback, delay) => {
+    retryDelays.push(delay);
+    callback();
+    return 0;
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
+  const result = await apiRequest('/api/auth/email/register', {
+    body: { email: 'user@example.com', password: 'secret123' },
+    token: null,
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls, 4);
+  assert.deepEqual(retryDelays, [250, 750, 1500]);
+});
+
 test('apiRequest hides raw status text for non-json client failures', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('<html>not found</html>', {

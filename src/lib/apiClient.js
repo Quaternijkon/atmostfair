@@ -6,7 +6,7 @@ const API_BASE_URL = resolveApiBaseUrl({
   configuredBaseUrl: import.meta.env?.VITE_API_BASE_URL || '',
 });
 const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
-const RETRY_DELAYS_MS = [250, 750];
+const RETRY_DELAYS_MS = [250, 750, 1500, 3000];
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
 
 export function getAuthToken() {
