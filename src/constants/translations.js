@@ -95,7 +95,6 @@ export const TRANSLATIONS = {
     // Create
     createTitle: "Create New {type} Project",
     selectTool: "Select Tool Type",
-    moreComing: "More tools coming soon...",
     projTitle: "Project Title",
     projTitlePlaceholder: "e.g., Weekly Team Lunch",
     projectTitleRequired: "Enter a project title",
@@ -782,7 +781,6 @@ export const TRANSLATIONS = {
     // Create
     createTitle: "创建新的 {type} 项目",
     selectTool: "选择工具类型",
-    moreComing: "更多工具敬请期待...",
     projTitle: "项目标题",
     projTitlePlaceholder: "例如：周五组队午餐",
     projectTitleRequired: "请输入项目标题",
@@ -835,7 +833,7 @@ export const TRANSLATIONS = {
     privateInfo: "设置访问密码可将项目设为私有，只有知晓密码的用户才能进入。",
     // Project Module
     projects: "项目管理",
-    projectsDesc: "管理和组织通用项目（WIP）。",
+    projectsDesc: "管理和组织你的项目空间。",
     projectCreateTitle: "创建新项目",
     // Cards
     finished: "已结束",

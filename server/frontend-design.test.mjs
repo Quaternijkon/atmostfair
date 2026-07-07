@@ -86,6 +86,14 @@ test('core pages use the shared app interaction primitives', async () => {
   }
 });
 
+test('dashboard creation surfaces avoid unfinished placeholder copy', async () => {
+  const dashboard = await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8');
+
+  assert.doesNotMatch(dashboard, /t\('moreComing'\)/, 'Tool picker should not render a future-module placeholder tile');
+  assert.doesNotMatch(TRANSLATIONS.en.projectsDesc, /wip|coming soon/i, 'English project copy should not read like an unfinished placeholder');
+  assert.doesNotMatch(TRANSLATIONS.zh.projectsDesc, /wip|敬请期待|即将/i, 'Chinese project copy should not read like an unfinished placeholder');
+});
+
 test('global confirm dialog awaits async actions and exposes pending state', async () => {
   const ui = await readFile(path.join(root, 'src/components/UIComponents.jsx'), 'utf8');
 

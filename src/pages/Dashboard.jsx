@@ -488,10 +488,6 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
                     </div>
                   </button>
                 ))}
-                {/* Placeholder for future modules */}
-                <div className="flex min-h-[104px] items-center justify-center rounded-2xl border border-dashed border-m3-outline-variant/50 p-4 text-sm italic text-m3-on-surface-variant/60">
-                  {t('moreComing')}
-                </div>
               </div>
             </div>
 
