@@ -27,6 +27,7 @@ import {
   createScheduleConfigData,
   normalizeClaimCapacityInput,
   normalizeParticipantValueInput,
+  normalizeRpsCurrentRoundInput,
   normalizeTeamRoomCapacityInput,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
@@ -834,7 +835,7 @@ function authorizeRpsShowdownPatch({ user, data, existing, existingPlayers, next
   if (!userChanged || !movedPlayers.every((player) => RPS_MOVES.has(player.move))) forbidden();
 
   const history = Array.isArray(existing.history) ? cloneDataValue(existing.history) : [];
-  const round = Number.parseInt(existing.currentRound, 10) || history.length + 1;
+  const round = normalizeRpsCurrentRoundInput(existing.currentRound, history.length + 1);
   const p1 = { ...movedPlayers[0] };
   const p2 = { ...movedPlayers[1] };
   const winnerId = getRpsRoundWinnerId(p1.move, p2.move, p1.uid, p2.uid);

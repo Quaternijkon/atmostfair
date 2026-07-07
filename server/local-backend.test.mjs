@@ -2566,6 +2566,30 @@ test('HTTP data API restricts game room writes to current-player transitions', a
       assert.equal(overlongRoomName.status, 400);
       assert.equal(overlongRoomName.body.error.code, 'data/invalid-game-room');
 
+      const spoofedPracticeRoom = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          data: {
+            projectId: project.doc.id,
+            name: 'Practice round',
+            game: 'rps',
+            players: [
+              { uid: alice.user.uid, name: 'Alice' },
+              { uid: 'computer', name: 'Bot' },
+            ],
+            config: { bestOf: 99, timeout: 7 },
+            currentRound: -7,
+            roundStartTime: 12,
+            createdAt: 12,
+          },
+        },
+      });
+      assert.equal(spoofedPracticeRoom.doc.status, 'playing');
+      assert.equal(spoofedPracticeRoom.doc.currentRound, 1);
+      assert.deepEqual(spoofedPracticeRoom.doc.config, { bestOf: 3, timeout: 30 });
+
       const rpsRoom = await store.add('game_rooms', {
         projectId: project.doc.id,
         name: 'RPS',
@@ -2690,6 +2714,40 @@ test('HTTP data API restricts game room writes to current-player transitions', a
       });
       assert.equal(aliceNextRound.doc.currentRound, 2);
       assert.equal(aliceNextRound.doc.players[0].move, null);
+
+      const legacyRoundRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Legacy round',
+        game: 'rps',
+        status: 'playing',
+        createdBy: alice.user.uid,
+        currentRound: -5,
+        players: [
+          { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+          { uid: 'computer', name: 'Bot', score: 0, move: null },
+        ],
+        config: { bestOf: 3, timeout: 30 },
+        createdAt: 5,
+      });
+      const aliceShowdownFromLegacyRound = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'game_rooms',
+          id: legacyRoundRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 1, move: 'rock' },
+              { uid: 'computer', name: 'Bot', score: 0, move: 'scissors' },
+            ],
+            history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: alice.user.uid, timestamp: 12 }],
+            status: 'showdown',
+            showdownEndTime: 13,
+          },
+        },
+      });
+      assert.equal(aliceShowdownFromLegacyRound.doc.status, 'showdown');
+      assert.equal(aliceShowdownFromLegacyRound.doc.history[0].round, 1);
 
       const mineRoom = await store.add('game_rooms', {
         projectId: project.doc.id,

@@ -649,6 +649,61 @@ test('RPS room transition persists a reusable match result summary', () => {
   });
 });
 
+test('RPS room transition normalizes legacy match config before deciding winners', () => {
+  const createRpsNextRoundPatch = projectDomain.createRpsNextRoundPatch;
+  assert.equal(typeof createRpsNextRoundPatch, 'function');
+
+  const legacyRoom = {
+    id: 'game-legacy-best-of',
+    game: 'rps',
+    status: 'showdown',
+    currentRound: 3,
+    config: { bestOf: 999, timeout: 7 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 2, move: 'rock' },
+      { uid: 'u2', name: 'Bo', score: 1, move: 'scissors' },
+    ],
+    history: [
+      { round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 1000 },
+      { round: 2, p1Move: 'paper', p2Move: 'scissors', winnerId: 'u2', timestamp: 2000 },
+      { round: 3, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 3000 },
+    ],
+  };
+
+  const patch = createRpsNextRoundPatch(legacyRoom, 8000);
+  assert.equal(patch.status, 'finished');
+  assert.equal(patch.winnerId, 'u1');
+  assert.equal(patch.resultSummary.scoreLine, '2 - 1');
+});
+
+test('RPS room transition normalizes legacy current round before continuing', () => {
+  const createRpsNextRoundPatch = projectDomain.createRpsNextRoundPatch;
+  assert.equal(typeof createRpsNextRoundPatch, 'function');
+
+  const patch = createRpsNextRoundPatch({
+    id: 'game-legacy-round',
+    game: 'rps',
+    status: 'showdown',
+    currentRound: -4,
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 0, move: 'rock' },
+      { uid: 'u2', name: 'Bo', score: 0, move: 'rock' },
+    ],
+    history: [{ round: 1, p1Move: 'rock', p2Move: 'rock', winnerId: null, timestamp: 1000 }],
+  }, 9000);
+
+  assert.deepEqual(patch, {
+    status: 'playing',
+    currentRound: 2,
+    roundStartTime: 9000,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 0, lastMove: 'rock', move: null },
+      { uid: 'u2', name: 'Bo', score: 0, lastMove: 'rock', move: null },
+    ],
+  });
+});
+
 test('user game result history summarizes finished rooms for one player', () => {
   assert.equal(typeof createUserGameResultHistory, 'function');
 

@@ -503,7 +503,8 @@ export function createRpsNextRoundPatch(room, transitionAt) {
     lastMove: player.move || player.lastMove || null,
     move: null,
   }));
-  const winThreshold = Math.floor((Number.parseInt(room.config?.bestOf, 10) || 1) / 2) + 1;
+  const { bestOf } = normalizeRpsRoomConfig(room.config);
+  const winThreshold = Math.floor(bestOf / 2) + 1;
   const winner = players.find((player) => (Number.parseInt(player.score, 10) || 0) >= winThreshold);
 
   if (winner) {
@@ -523,7 +524,10 @@ export function createRpsNextRoundPatch(room, transitionAt) {
 
   return {
     status: 'playing',
-    currentRound: (Number.parseInt(room.currentRound, 10) || 1) + 1,
+    currentRound: normalizeRpsCurrentRoundInput(
+      room.currentRound,
+      Array.isArray(room.history) && room.history.length > 0 ? room.history.length : 1,
+    ) + 1,
     roundStartTime: transitionAt,
     players: resetPlayers,
   };
@@ -717,7 +721,7 @@ export function createGameRoomCreateData(projectId, user, roomName, game, option
       { uid: user.uid, name: cleanName(options.userName, user), score: 0, move: null },
       { uid: 'computer', name: String(options.botName || 'Bot').trim() || 'Bot', score: 0, move: null },
     ],
-    currentRound: Number.parseInt(options.currentRound, 10) || 1,
+    currentRound: normalizeRpsCurrentRoundInput(options.currentRound),
     roundStartTime: options.roundStartTime ?? createdAt,
   };
 }
@@ -763,6 +767,12 @@ function normalizeRpsRoomConfig(config) {
     ? Number.parseInt(config.timeout, 10)
     : 30;
   return { bestOf, timeout };
+}
+
+export function normalizeRpsCurrentRoundInput(value, fallback = 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) return fallback;
+  return parsed;
 }
 
 function normalizeMineRoomConfig(config) {
