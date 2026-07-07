@@ -25,6 +25,7 @@ import {
   createGameRoomJoinPatch,
   createMineRoomProgressPatch,
   createScheduleConfigData,
+  normalizeClaimCapacityInput,
   normalizeTeamRoomCapacityInput,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
@@ -645,6 +646,7 @@ function normalizeManagedProjectChildCreateData({ user, collection, data }) {
       ...normalized,
       creatorId: user.uid,
       creatorName: cleanUserProvidedName('', user),
+      maxClaims: normalizeClaimMaxClaims(normalized.maxClaims),
       claimants: [],
     };
   }
@@ -1302,16 +1304,33 @@ function authorizeClaimItemOperation({ user, type, data, existing, project }) {
   const metadataData = normalizeProjectChildDisplayText(protectedData, 'claim_items', type === 'set');
   assertImmutableField(metadataData, existing, 'creatorId');
   assertImmutableField(metadataData, existing, 'creatorName');
+  const metadataPatch = normalizeClaimMetadataPatch(metadataData, existing);
   if (type === 'set') {
     return {
-      ...(metadataData || {}),
+      ...(metadataPatch || {}),
       projectId: existing.projectId,
       creatorId: existing.creatorId,
       creatorName: existing.creatorName,
       claimants: Array.isArray(existing.claimants) ? existing.claimants : [],
     };
   }
-  return metadataData || {};
+  return metadataPatch || {};
+}
+
+function normalizeClaimMetadataPatch(data, existing) {
+  const patch = data || {};
+  if (!Object.hasOwn(patch, 'maxClaims')) return patch;
+
+  const maxClaims = normalizeClaimMaxClaims(patch.maxClaims);
+  const currentClaimants = Array.isArray(existing.claimants) ? existing.claimants : [];
+  if (maxClaims < currentClaimants.length) {
+    throwDataError(409, 'data/claim-capacity', 'Claim capacity cannot be less than current claimants.');
+  }
+
+  return {
+    ...patch,
+    maxClaims,
+  };
 }
 
 function authorizeClaimantsPatch({ user, type, data, existing }) {
@@ -1343,7 +1362,7 @@ function authorizeClaimantAdd({ user, data, existing, claimant }) {
     throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
   }
 
-  const maxClaims = Number.parseInt(existing.maxClaims, 10) || 1;
+  const maxClaims = normalizeClaimMaxClaims(existing.maxClaims);
   if (claimants.length >= maxClaims) {
     throwDataError(409, 'data/claim-full', 'Claim item is full.');
   }
@@ -1359,6 +1378,10 @@ function authorizeClaimantAdd({ user, data, existing, claimant }) {
       }],
     },
   };
+}
+
+function normalizeClaimMaxClaims(value) {
+  return normalizeClaimCapacityInput(value);
 }
 
 function authorizeClaimantRemove({ user, data, existing, claimant }) {

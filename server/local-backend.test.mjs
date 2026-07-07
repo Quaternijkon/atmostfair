@@ -3356,6 +3356,21 @@ test('HTTP data API restricts claim item updates to current-user claim toggles',
       assert.equal(claim.doc.creatorId, owner.user.uid);
       assert.deepEqual(claim.doc.claimants, []);
 
+      const oversizedClaim = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'claim_items',
+          data: {
+            projectId: project.doc.id,
+            title: 'Legacy oversized',
+            maxClaims: 1000,
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(oversizedClaim.doc.maxClaims, 99);
+
       const memberMetadataUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: alice.token,
@@ -3418,6 +3433,58 @@ test('HTTP data API restricts claim item updates to current-user claim toggles',
       assert.equal(overCapacityClaim.body.error.code, 'data/claim-full');
       assert.deepEqual((await store.get('claim_items', claim.doc.id)).claimants, [aliceClaimant]);
 
+      const legacyClaimants = Array.from({ length: 99 }, (_, index) => ({
+        uid: `legacy-${index}`,
+        name: `Legacy ${index}`,
+        at: index,
+      }));
+      await store.set('claim_items', 'legacy-oversized-claim', {
+        projectId: project.doc.id,
+        title: 'Legacy full',
+        maxClaims: 1000,
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        claimants: legacyClaimants,
+        createdAt: 7,
+      });
+      const legacyOverCapacityClaim = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'claim_items',
+          id: 'legacy-oversized-claim',
+          data: { claimants: arrayUnion({ uid: bob.user.uid, name: 'Bob', at: 8 }) },
+        },
+      });
+      assert.equal(legacyOverCapacityClaim.status, 409);
+      assert.equal(legacyOverCapacityClaim.body.error.code, 'data/claim-full');
+      assert.deepEqual((await store.get('claim_items', 'legacy-oversized-claim')).claimants, legacyClaimants);
+
+      await store.set('claim_items', 'legacy-claimed-capacity', {
+        projectId: project.doc.id,
+        title: 'Legacy claimed capacity',
+        maxClaims: 1000,
+        creatorId: owner.user.uid,
+        creatorName: 'Owner',
+        claimants: [
+          { uid: alice.user.uid, name: 'Alice', at: 9 },
+          { uid: bob.user.uid, name: 'Bob', at: 10 },
+        ],
+        createdAt: 9,
+      });
+      const undersizedCapacityUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'claim_items',
+          id: 'legacy-claimed-capacity',
+          data: { maxClaims: 1 },
+        },
+      });
+      assert.equal(undersizedCapacityUpdate.status, 409);
+      assert.equal(undersizedCapacityUpdate.body.error.code, 'data/claim-capacity');
+      assert.equal((await store.get('claim_items', 'legacy-claimed-capacity')).maxClaims, 1000);
+
       const forgedRemoval = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: bob.token,
@@ -3448,11 +3515,11 @@ test('HTTP data API restricts claim item updates to current-user claim toggles',
         body: {
           collection: 'claim_items',
           id: claim.doc.id,
-          data: { title: 'Updated snacks', maxClaims: 2 },
+          data: { title: 'Updated snacks', maxClaims: 1000 },
         },
       });
       assert.equal(ownerMetadataUpdate.doc.title, 'Updated snacks');
-      assert.equal(ownerMetadataUpdate.doc.maxClaims, 2);
+      assert.equal(ownerMetadataUpdate.doc.maxClaims, 99);
       assert.deepEqual(ownerMetadataUpdate.doc.claimants, []);
     } finally {
       await new Promise((resolve) => server.close(resolve));

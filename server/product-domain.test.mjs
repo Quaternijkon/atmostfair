@@ -1085,6 +1085,11 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
   const openItem = { id: 'claim-1', maxClaims: 2, claimants: [{ uid: 'u1', name: 'Owner', at: 1 }] };
   const fullItem = { id: 'claim-2', maxClaims: 1, claimants: [{ uid: 'u1', name: 'Owner', at: 1 }] };
   const claimedItem = { id: 'claim-3', maxClaims: 1, claimants: [{ uid: 'u2', name: 'Dorothy', at: 2 }] };
+  const legacyOversizedItem = {
+    id: 'claim-4',
+    maxClaims: 1000,
+    claimants: Array.from({ length: 99 }, (_, index) => ({ uid: `legacy-${index}`, name: `User ${index}`, at: index })),
+  };
 
   assert.deepEqual(createClaimToggleData(openItem, user, 'Dorothy Vaughan', 3800), {
     type: 'add',
@@ -1095,6 +1100,11 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
     type: 'remove',
     claimant: { uid: 'u2', name: 'Dorothy', at: 2 },
   });
+  assert.equal(
+    createClaimToggleData(legacyOversizedItem, user, 'Dorothy Vaughan', 3803),
+    null,
+    'legacy oversized claim items should still cap at the product maximum',
+  );
 });
 
 test('claim capacity input normalizes empty and bounded numeric values', () => {
@@ -1309,7 +1319,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
       voting_items: [{ id: 'vote-1', title: 'Option A', votes: ['u1'], creatorName: 'Someone' }],
       gather_fields: [{ id: 'field-1', label: 'Diet', type: 'text', creatorId: 'owner-1' }],
       booking_slots: [{ id: 'slot-1', start: '2026-07-06', end: '2026-07-06', label: 'Monday', bookedBy: 'u1' }],
-      claim_items: [{ id: 'claim-1', title: 'Bring snacks', maxClaims: 2, claimants: [{ uid: 'u1' }] }],
+      claim_items: [{ id: 'claim-1', title: 'Bring snacks', maxClaims: 1000, claimants: [{ uid: 'u1' }] }],
       rooms: [{ id: 'room-1', name: 'Team Blue', maxMembers: 4, members: [{ uid: 'u1' }] }],
     },
     user,
@@ -1341,7 +1351,7 @@ test('project duplication keeps reusable configuration and resets runtime state'
     {
       type: 'add',
       collection: 'claim_items',
-      data: { projectId: 'project-copy', title: 'Bring snacks', maxClaims: 2, claimants: [], creatorId: 'owner-2', creatorName: 'Ada Lovelace', createdAt: 5100 },
+      data: { projectId: 'project-copy', title: 'Bring snacks', maxClaims: 99, claimants: [], creatorId: 'owner-2', creatorName: 'Ada Lovelace', createdAt: 5100 },
     },
   ]);
 });

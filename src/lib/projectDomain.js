@@ -912,7 +912,7 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
     };
   }
 
-  const maxClaims = Number.parseInt(item.maxClaims, 10) || 1;
+  const maxClaims = normalizeClaimCapacityInput(item.maxClaims);
   if (claimants.length >= maxClaims) return null;
   return {
     type: 'add',
@@ -1179,7 +1179,7 @@ function createProjectTemplateChildOperations(seedConfig, projectId, user, creat
         data: {
           projectId,
           title,
-          maxClaims: Number.parseInt(item.maxClaims, 10) || 1,
+          maxClaims: normalizeClaimCapacityInput(item.maxClaims),
           claimants: [],
           creatorId: user.uid,
           creatorName: ownerName,
@@ -1311,7 +1311,7 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
       data: {
         projectId: newProjectId,
         title: item.title || '',
-        maxClaims: Number.parseInt(item.maxClaims, 10) || 1,
+        maxClaims: normalizeClaimCapacityInput(item.maxClaims),
         claimants: [],
         creatorId: user.uid,
         creatorName: ownerName,
