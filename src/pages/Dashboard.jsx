@@ -49,7 +49,7 @@ function downloadDashboardExport(exportData) {
   URL.revokeObjectURL(url);
 }
 
-export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], isUserProfileAvailable = true, onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onCreateProject, defaultName, t }) {
+export default function Dashboard({ projects, pinnedProjectIds = [], recentProjectIds = [], isUserProfileAvailable = true, onToggleProjectPin = () => {}, onRecordProjectOpen = () => {}, onProjectAccessUnlocked = () => {}, onCreateProject, defaultName, t }) {
   const navigate = useNavigate();
   const { showToast } = useUI();
   // Navigation State: 'collect' | 'connect' | 'select' | 'play'
@@ -235,7 +235,8 @@ export default function Dashboard({ projects, pinnedProjectIds = [], recentProje
     try {
       const project = passwordPromptProject;
       await unlockProjectAccess(project.id, inputPassword);
-      navigateToProject(project, { state: { unlockedProjectId: project.id } });
+      onProjectAccessUnlocked();
+      navigateToProject(project);
       setPasswordPromptProject(null);
       setPasswordError(false);
     } catch {

@@ -427,6 +427,7 @@ test('project detail exposes localized project insights', async () => {
 
 test('password-protected project unlocks use server access grants', async () => {
   const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
     dashboard: await readFile(path.join(root, 'src/pages/Dashboard.jsx'), 'utf8'),
     detail: await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8'),
     apiClient: await readFile(path.join(root, 'src/lib/apiClient.js'), 'utf8'),
@@ -440,8 +441,38 @@ test('password-protected project unlocks use server access grants', async () => 
   assert.match(files.detail, /hasProjectPassword/, 'Project detail should use lock metadata instead of raw project passwords');
   assert.match(
     files.dashboard,
-    /state:\s*\{\s*unlockedProjectId:\s*project\.id\s*\}/,
-    'Dashboard should pass a project-scoped unlock state after a successful grant',
+    /onProjectAccessUnlocked\(\)/,
+    'Dashboard should refresh server-backed project access state after a successful grant',
+  );
+  assert.match(
+    files.detail,
+    /onProjectAccessUnlocked\(\)/,
+    'Project detail should refresh server-backed project access state after a successful grant',
+  );
+  assert.match(
+    files.detail,
+    /const isProjectLocked = hasProjectPassword\(project\) && !project\.accessGranted;/,
+    'Project detail password guard should trust server-confirmed access instead of local route state',
+  );
+  assert.doesNotMatch(
+    files.dashboard,
+    /state:\s*\{\s*unlockedProjectId:/,
+    'Dashboard should not pass local unlock state that can outlive revoked server grants',
+  );
+  assert.doesNotMatch(
+    files.detail,
+    /!project\.accessGranted && !isLocallyUnlocked/,
+    'Project detail should not let local unlock state override a server-denied grant',
+  );
+  assert.match(
+    files.app,
+    /onProjectAccessUnlocked=\{handleProjectAccessUnlocked\}/,
+    'App should pass a shared project-access refresh handler into routed project surfaces',
+  );
+  assert.match(
+    files.app,
+    /setProjectsReloadKey\(\(current\) => current \+ 1\)[\s\S]{0,220}setWorkspaceDataReloadKey\(\(current\) => current \+ 1\)/,
+    'Project access refresh should reload project shells and protected child collections',
   );
   assert.doesNotMatch(
     files.dashboard,
@@ -2141,8 +2172,8 @@ test('React compiler hotspots stay derived and deterministic', async () => {
     gameHub: await readFile(path.join(root, 'src/components/GameHubView.jsx'), 'utf8'),
   };
 
-  assert.match(files.detail, /useState\(\(\) => \(location\.state\?\.unlockedProjectId === id \? id : null\)\)/, 'Project detail should initialize route unlock state only when it matches the current project id');
-  assert.match(files.detail, /unlockedProjectId === project\.id/, 'Project detail should scope local unlock state to the current project');
+  assert.doesNotMatch(files.detail, /useState\(\(\) => \(location\.state\?\.unlockedProjectId === id \? id : null\)\)/, 'Project detail should not initialize stale route unlock state');
+  assert.doesNotMatch(files.detail, /unlockedProjectId === project\.id/, 'Project detail should not keep local unlock state after server grants can be revoked');
   assert.doesNotMatch(files.detail, /Boolean\(location\.state\?\.unlocked\)/, 'Project detail should not trust a reusable boolean unlock state');
   assert.doesNotMatch(files.detail, /useEffect\([\s\S]{0,240}setUnlockedProjectId/, 'Project detail should not synchronously set unlock state inside an effect');
 

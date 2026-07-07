@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Activity, AlertTriangle, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText, X } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
@@ -229,13 +229,11 @@ function ProjectInsightsCard({ projectInsightSummary, t }) {
   );
 }
 
-export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, projectActivitiesLoadError = false, onRetryProjectActivities = () => {}, workspaceDataLoadErrors = {}, onRetryWorkspaceData = () => {}, actions, t }) {
+export default function ProjectDetail({ projects, projectsLoaded = false, user, isAdmin, items, rooms, rouletteData, queueData, gatherFields, gatherSubmissions, scheduleSubmissions, bookingSlots, claimItems, gameRooms = [], projectActivities, projectActivitiesLoadError = false, onRetryProjectActivities = () => {}, workspaceDataLoadErrors = {}, onRetryWorkspaceData = () => {}, onProjectAccessUnlocked = () => {}, actions, t }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const { confirm, showToast } = useUI();
   
-  const [unlockedProjectId, setUnlockedProjectId] = useState(() => (location.state?.unlockedProjectId === id ? id : null));
   const [inputPassword, setInputPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [isUnlockingProject, setIsUnlockingProject] = useState(false);
@@ -274,15 +272,14 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     );
   }
 
-  const isLocallyUnlocked = unlockedProjectId === project.id;
-  const isProjectLocked = hasProjectPassword(project) && !project.accessGranted && !isLocallyUnlocked;
+  const isProjectLocked = hasProjectPassword(project) && !project.accessGranted;
   const handleUnlockProject = async (e) => {
     e.preventDefault();
     if (isUnlockingProject) return;
     setIsUnlockingProject(true);
     try {
       await unlockProjectAccess(project.id, inputPassword);
-      setUnlockedProjectId(project.id);
+      onProjectAccessUnlocked();
       setPasswordError(false);
     } catch {
       setPasswordError(true);
