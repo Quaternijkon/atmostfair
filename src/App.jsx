@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, Link, us
 import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, signOut, auth } from './lib/localAuth';
 import { checkApiHealth } from './lib/apiClient';
+import { getBrowserStorageItem, setBrowserStorageItem } from './lib/browserStorage.js';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove, writeBatch, setDoc, getDocs, query, where, db } from './lib/localData';
 import { formatDate } from './lib/locale';
 import { nowMs } from './lib/time';
@@ -63,6 +64,7 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 
 const LOCKED_PROJECT_STATUSES = new Set(['stopped', 'finished']);
+const normalizeAppLanguage = (value) => (value === 'en' || value === 'zh' ? value : 'zh');
 
 const RouteLoadingFallback = ({ label }) => (
   <div className="flex min-h-[320px] w-full items-center justify-center px-4">
@@ -85,7 +87,7 @@ const PageTransition = ({ children }) => (
 
 function AppContent() {
   const location = useLocation();
-  const [lang, setLang] = useState(localStorage.getItem('app_lang') || 'zh');
+  const [lang, setLang] = useState(() => normalizeAppLanguage(getBrowserStorageItem('app_lang', 'zh')));
   const t = useCallback((key, params = {}) => {
     let str = TRANSLATIONS[lang]?.[key] || key;
     if (typeof str !== 'string') return str;
@@ -98,7 +100,7 @@ function AppContent() {
   const toggleLang = () => {
     const newLang = lang === 'zh' ? 'en' : 'zh';
     setLang(newLang);
-    localStorage.setItem('app_lang', newLang);
+    setBrowserStorageItem('app_lang', newLang);
   };
 
   // ADMIN CONFIGURATION

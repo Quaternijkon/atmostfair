@@ -1,4 +1,5 @@
 import { resolveApiBaseUrl } from './apiBase.js';
+import { getBrowserStorageItem, removeBrowserStorageItem, setBrowserStorageItem } from './browserStorage.js';
 
 const TOKEN_KEY = 'atmostfair.localAuthToken';
 const API_BASE_URL = resolveApiBaseUrl({
@@ -9,14 +10,12 @@ const RETRY_DELAYS_MS = [250, 750];
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
 
 export function getAuthToken() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return getBrowserStorageItem(TOKEN_KEY, null);
 }
 
 export function setAuthToken(token) {
-  if (typeof localStorage === 'undefined') return;
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (token) setBrowserStorageItem(TOKEN_KEY, token);
+  else removeBrowserStorageItem(TOKEN_KEY);
 }
 
 export async function apiRequest(path, { method = 'POST', body, token = getAuthToken() } = {}) {

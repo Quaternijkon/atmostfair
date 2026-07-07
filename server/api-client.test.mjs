@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { apiRequest, checkApiHealth } from '../src/lib/apiClient.js';
+import { apiRequest, checkApiHealth, getAuthToken, setAuthToken } from '../src/lib/apiClient.js';
 
 test('apiRequest hides raw status text for server outages', async (t) => {
   const originalFetch = globalThis.fetch;
@@ -162,4 +162,36 @@ test('checkApiHealth hides raw gateway health failures', async (t) => {
       return true;
     },
   );
+});
+
+test('auth token storage tolerates disabled browser storage', (t) => {
+  const originalStorage = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem() {
+        throw new Error('storage disabled');
+      },
+      setItem() {
+        throw new Error('storage disabled');
+      },
+      removeItem() {
+        throw new Error('storage disabled');
+      },
+    },
+  });
+  t.after(() => {
+    if (originalStorage === undefined) {
+      delete globalThis.localStorage;
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalStorage,
+      });
+    }
+  });
+
+  assert.equal(getAuthToken(), null);
+  assert.doesNotThrow(() => setAuthToken('token-123'));
+  assert.doesNotThrow(() => setAuthToken(null));
 });

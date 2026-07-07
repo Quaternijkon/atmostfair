@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot, limit, db } from '../lib/localData';
 import { isAnnouncementVisible } from '../lib/announcementDomain';
 import { formatDate } from '../lib/locale';
+import { getJsonBrowserStorageItem, setJsonBrowserStorageItem } from '../lib/browserStorage.js';
 import { Flag, X, Info, AlertTriangle, RotateCcw } from './Icons';
 
 export default function AnnouncementSystem({ t = (k) => k }) {
@@ -9,11 +10,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
   const [announcementsLoadError, setAnnouncementsLoadError] = useState(false);
   const [announcementsReloadKey, setAnnouncementsReloadKey] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [readIds, setReadIds] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('readAnnouncements') || '[]');
-    } catch { return []; }
-  });
+  const [readIds, setReadIds] = useState(() => getJsonBrowserStorageItem('readAnnouncements', []));
 
   useEffect(() => {
     try {
@@ -51,7 +48,7 @@ export default function AnnouncementSystem({ t = (k) => k }) {
 
     const newReadIds = [...readIds, ...unreadIds];
     setReadIds(newReadIds);
-    localStorage.setItem('readAnnouncements', JSON.stringify(newReadIds));
+    setJsonBrowserStorageItem('readAnnouncements', newReadIds);
   };
 
   const handleOpen = () => {

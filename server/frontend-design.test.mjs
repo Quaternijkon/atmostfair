@@ -1648,7 +1648,7 @@ test('announcement read tracking happens from explicit open actions instead of r
 
   assert.match(
     announcements,
-    /const markVisibleAnnouncementsAsRead = \(\) => \{[\s\S]{0,700}localStorage\.setItem\('readAnnouncements'/,
+    /const markVisibleAnnouncementsAsRead = \(\) => \{[\s\S]{0,700}setJsonBrowserStorageItem\('readAnnouncements', newReadIds\)/,
     'Announcements should batch read-state persistence in an explicit action helper',
   );
   assert.match(
@@ -1820,6 +1820,32 @@ test('auth and user fallbacks avoid visible English fragments', async () => {
   assert.doesNotMatch(files.gather, /submitError'\)\s*\+\s*['"]:/, 'Gather errors should use the localized error template');
   assert.doesNotMatch(files.gather, /project\.title\s*\|\|\s*['"]export['"]/, 'CSV export fallback filename should be localized');
   assert.match(files.admin, /activeStatus/, 'Admin project status should localize active status copy');
+});
+
+test('browser storage access is guarded behind safe helpers', async () => {
+  const files = {
+    app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
+    apiClient: await readFile(path.join(root, 'src/lib/apiClient.js'), 'utf8'),
+    announcements: await readFile(path.join(root, 'src/components/AnnouncementSystem.jsx'), 'utf8'),
+  };
+
+  const helper = await readFile(path.join(root, 'src/lib/browserStorage.js'), 'utf8');
+
+  assert.match(helper, /try[\s\S]{0,220}localStorage\.getItem/, 'Storage helper should catch getItem failures');
+  assert.match(helper, /try[\s\S]{0,220}localStorage\.setItem/, 'Storage helper should catch setItem failures');
+  assert.match(helper, /try[\s\S]{0,220}localStorage\.removeItem/, 'Storage helper should catch removeItem failures');
+
+  assert.match(files.app, /getBrowserStorageItem\('app_lang', 'zh'\)/, 'App language bootstrap should read storage through the safe helper');
+  assert.match(files.app, /setBrowserStorageItem\('app_lang', newLang\)/, 'Language toggles should write storage through the safe helper');
+  assert.match(files.apiClient, /getBrowserStorageItem\(TOKEN_KEY, null\)/, 'Auth token reads should tolerate disabled browser storage');
+  assert.match(files.apiClient, /setBrowserStorageItem\(TOKEN_KEY, token\)/, 'Auth token writes should tolerate disabled browser storage');
+  assert.match(files.apiClient, /removeBrowserStorageItem\(TOKEN_KEY\)/, 'Auth token clears should tolerate disabled browser storage');
+  assert.match(files.announcements, /getJsonBrowserStorageItem\('readAnnouncements', \[\]\)/, 'Announcement read state should tolerate disabled browser storage');
+  assert.match(files.announcements, /setJsonBrowserStorageItem\('readAnnouncements', newReadIds\)/, 'Announcement read writes should tolerate disabled browser storage');
+
+  assert.doesNotMatch(files.app, /(?<!getBrowserStorageItem\()localStorage\.(getItem|setItem|removeItem)/, 'App should not access localStorage directly');
+  assert.doesNotMatch(files.apiClient, /(?<!getBrowserStorageItem\()localStorage\.(getItem|setItem|removeItem)/, 'API client should not access localStorage directly');
+  assert.doesNotMatch(files.announcements, /(?<!getJsonBrowserStorageItem\()localStorage\.(getItem|setItem|removeItem)/, 'Announcement system should not access localStorage directly');
 });
 
 test('auth submit actions prevent duplicate submits and expose pending state', async () => {
