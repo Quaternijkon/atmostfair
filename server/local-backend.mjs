@@ -28,6 +28,7 @@ import {
   normalizeClaimCapacityInput,
   normalizeMineProgressInput,
   normalizeParticipantValueInput,
+  normalizeBookingDataInput,
   normalizeRpsCurrentRoundInput,
   normalizeRpsScoreInput,
   normalizeTeamRoomCapacityInput,
@@ -1289,8 +1290,7 @@ function normalizeBookingWaitlistData(waitlist) {
 }
 
 function normalizeBookingData(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
-  return data;
+  return normalizeBookingDataInput(data);
 }
 
 function normalizePlainObject(data) {

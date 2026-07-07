@@ -271,7 +271,7 @@ export function createBookingPatch(slot, user, userName, bookingData, bookedAt) 
   return {
     bookedBy: user.uid,
     bookerName: cleanName(userName, user),
-    bookingData: bookingData || {},
+    bookingData: normalizeBookingDataInput(bookingData),
     bookedAt,
   };
 }
@@ -294,7 +294,7 @@ export function createBookingWaitlistPatch(slot, user, userName, bookingData, jo
       {
         uid: user.uid,
         name: cleanName(userName, user),
-        bookingData: bookingData || {},
+        bookingData: normalizeBookingDataInput(bookingData),
         joinedAt,
       },
     ],
@@ -322,12 +322,17 @@ export function createBookingReleasePatch(slot, releasedAt) {
     patch: {
       bookedBy: promoted.uid,
       bookerName: promoted.name,
-      bookingData: promoted.bookingData || {},
+      bookingData: normalizeBookingDataInput(promoted.bookingData),
       bookedAt: releasedAt,
       waitlist: remainingWaitlist,
     },
     promoted,
   };
+}
+
+export function normalizeBookingDataInput(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  return clonePlainValue(data);
 }
 
 export function createGatherSubmissionData(existingSubmissions, projectId, user, userName, data, submittedAt, fields = []) {
@@ -1552,7 +1557,7 @@ function normalizeBookingWaitlist(waitlist) {
     .map((entry) => ({
       uid: entry.uid,
       name: entry.name || '',
-      bookingData: entry.bookingData || {},
+      bookingData: normalizeBookingDataInput(entry.bookingData),
       joinedAt: entry.joinedAt,
     }));
 }

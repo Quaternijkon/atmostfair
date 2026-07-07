@@ -319,6 +319,52 @@ test('booking release patch promotes the first waitlisted participant without dr
   assert.equal(createBookingReleasePatch(null, 3012), null);
 });
 
+test('booking runtime helpers normalize malformed booking data consistently', () => {
+  assert.equal(typeof projectDomain.normalizeBookingDataInput, 'function');
+
+  const user = { uid: 'u2', displayName: 'Lin' };
+  const emptySlot = { id: 'slot-1', projectId: 'project-1', bookedBy: null };
+  assert.deepEqual(createBookingPatch(emptySlot, user, 'Lin', ['legacy'], 3020), {
+    bookedBy: 'u2',
+    bookerName: 'Lin',
+    bookingData: {},
+    bookedAt: 3020,
+  });
+
+  const fullSlot = {
+    id: 'slot-2',
+    projectId: 'project-1',
+    bookedBy: 'u1',
+    waitlist: [{ uid: 'u3', name: 'Grace', bookingData: null, joinedAt: 3021 }],
+  };
+  assert.deepEqual(createBookingWaitlistPatch(fullSlot, user, 'Lin', 'legacy', 3022), {
+    type: 'add',
+    waitlist: [
+      { uid: 'u3', name: 'Grace', bookingData: {}, joinedAt: 3021 },
+      { uid: 'u2', name: 'Lin', bookingData: {}, joinedAt: 3022 },
+    ],
+  });
+
+  const release = createBookingReleasePatch({
+    ...fullSlot,
+    bookedBy: 'u0',
+    waitlist: [
+      { uid: 'u2', name: 'Lin', bookingData: ['legacy'], joinedAt: 3022 },
+      { uid: 'u3', name: 'Grace', bookingData: null, joinedAt: 3023 },
+    ],
+  }, 3024);
+  assert.deepEqual(release, {
+    patch: {
+      bookedBy: 'u2',
+      bookerName: 'Lin',
+      bookingData: {},
+      bookedAt: 3024,
+      waitlist: [{ uid: 'u3', name: 'Grace', bookingData: {}, joinedAt: 3023 }],
+    },
+    promoted: { uid: 'u2', name: 'Lin', bookingData: {}, joinedAt: 3022 },
+  });
+});
+
 test('gather submission guard creates one response per project and user', () => {
   const createGatherSubmissionData = projectDomain.createGatherSubmissionData;
   assert.equal(typeof createGatherSubmissionData, 'function');

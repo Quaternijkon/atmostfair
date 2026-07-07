@@ -13,6 +13,7 @@ import {
   PROJECT_CASCADE_COLLECTIONS,
   PROJECT_CREATOR_NAME_MAX_LENGTH,
   PROJECT_PASSWORD_MAX_LENGTH,
+  createBookingReleasePatch,
   createProjectCascadeDeleteOperations,
 } from '../src/lib/projectDomain.js';
 import { USER_DISPLAY_NAME_MAX_LENGTH } from '../src/lib/userDomain.js';
@@ -3442,6 +3443,39 @@ test('HTTP data API restricts booking slot updates to booking and waitlist guard
       });
       assert.equal(ownerMetadataUpdate.doc.label, 'Updated morning');
       assert.equal(ownerMetadataUpdate.doc.bookedBy, bob.user.uid);
+
+      const legacyWaitlistSlot = await store.add('booking_slots', {
+        projectId: project.doc.id,
+        start: '2026-07-06',
+        end: '2026-07-06',
+        label: 'Legacy waitlist',
+        bookedBy: alice.user.uid,
+        bookerName: 'Alice',
+        bookingData: { phone: '111' },
+        bookedAt: 11,
+        waitlist: [
+          { uid: bob.user.uid, name: 'Bob', bookingData: ['legacy'], joinedAt: 12 },
+          { uid: carol.user.uid, name: 'Carol', bookingData: null, joinedAt: 13 },
+        ],
+        createdAt: 11,
+      });
+      const legacyRelease = createBookingReleasePatch(legacyWaitlistSlot, 14);
+      assert.ok(legacyRelease);
+      const ownerLegacyRelease = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          id: legacyWaitlistSlot.id,
+          data: legacyRelease.patch,
+        },
+      });
+      assert.equal(ownerLegacyRelease.doc.bookedBy, bob.user.uid);
+      assert.equal(ownerLegacyRelease.doc.bookerName, 'Bob');
+      assert.deepEqual(ownerLegacyRelease.doc.bookingData, {});
+      assert.deepEqual(ownerLegacyRelease.doc.waitlist, [
+        { uid: carol.user.uid, name: 'Carol', bookingData: {}, joinedAt: 13 },
+      ]);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
