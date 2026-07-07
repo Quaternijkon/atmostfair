@@ -21,6 +21,7 @@ import {
   PROJECT_PASSWORD_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createBookingConfigData,
+  createBookingSlotData,
   createGatherFieldData,
   createGameRoomCreateData,
   createGameRoomJoinPatch,
@@ -616,7 +617,7 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
 
   if (!existing) {
     if (!canWriteProject(project, user)) forbidden();
-    return normalizeManagedProjectChildCreateData({ user, collection, data });
+    return normalizeManagedProjectChildCreateData({ user, collection, data, project });
   }
 
   if (collection === 'booking_slots') {
@@ -634,18 +635,20 @@ function authorizeManagedProjectChildOperation({ user, type, collection, data, e
   );
 }
 
-function normalizeManagedProjectChildCreateData({ user, collection, data }) {
+function normalizeManagedProjectChildCreateData({ user, collection, data, project }) {
   const normalized = normalizeProjectChildDisplayText(data, collection, true);
 
   if (collection === 'booking_slots') {
-    return {
-      ...normalized,
-      bookedBy: null,
-      bookerName: null,
-      bookingData: null,
-      bookedAt: null,
-      waitlist: [],
-    };
+    const slotData = createBookingSlotData(
+      normalized.projectId,
+      normalized.start,
+      normalized.end,
+      normalized.label,
+      normalized.createdAt,
+      project?.bookingConfig,
+    );
+    if (!slotData) throwInvalidBookingSlot();
+    return slotData;
   }
 
   if (collection === 'claim_items') {
@@ -1233,7 +1236,7 @@ function authorizeBookingSlotOperation({ user, type, data, existing, project }) 
   }
 
   if (!canWriteProject(project, user)) forbidden();
-  const metadataData = normalizeProjectChildDisplayText(protectedData, 'booking_slots', type === 'set');
+  const metadataData = normalizeBookingSlotMetadataPatch(protectedData, existing, project, type);
   if (type === 'set') {
     return {
       ...(metadataData || {}),
@@ -1246,6 +1249,43 @@ function authorizeBookingSlotOperation({ user, type, data, existing, project }) 
     };
   }
   return metadataData || {};
+}
+
+function normalizeBookingSlotMetadataPatch(data, existing, project, type) {
+  const source = normalizeProjectChildDisplayText(data, 'booking_slots', type === 'set');
+  const hasOwn = (field) => Object.hasOwn(source, field);
+  const nextStart = hasOwn('start') ? source.start : existing?.start;
+  const nextEnd = hasOwn('end') ? source.end : existing?.end;
+  const nextLabel = hasOwn('label') ? source.label : existing?.label;
+  const nextCreatedAt = hasOwn('createdAt') ? source.createdAt : existing?.createdAt;
+  const normalized = createBookingSlotData(
+    existing?.projectId ?? source.projectId,
+    nextStart,
+    nextEnd,
+    nextLabel,
+    nextCreatedAt,
+    project?.bookingConfig,
+  );
+  if (!normalized) throwInvalidBookingSlot();
+
+  if (type === 'set') {
+    return {
+      start: normalized.start,
+      end: normalized.end,
+      label: normalized.label,
+      createdAt: normalized.createdAt,
+    };
+  }
+
+  const patch = {};
+  for (const field of ['start', 'end', 'label', 'createdAt']) {
+    if (hasOwn(field)) patch[field] = normalized[field];
+  }
+  return patch;
+}
+
+function throwInvalidBookingSlot() {
+  throwDataError(400, 'data/invalid-booking-slot', 'Booking slot metadata is invalid.');
 }
 
 function hasBookingRuntimeField(data) {

@@ -365,6 +365,85 @@ test('booking runtime helpers normalize malformed booking data consistently', ()
   });
 });
 
+test('booking slot metadata guard normalizes configured slots and rejects stale grid escapes', () => {
+  assert.equal(typeof projectDomain.createBookingSlotData, 'function');
+
+  const dateConfig = {
+    mode: 'date',
+    start: '2026-07-05',
+    end: '2026-07-07',
+    requiredFields: 'Phone',
+  };
+  assert.deepEqual(
+    projectDomain.createBookingSlotData(
+      'project-1',
+      ' 2026-07-06 ',
+      '2026-07-06',
+      '  Office hour  ',
+      3030,
+      dateConfig,
+    ),
+    {
+      projectId: 'project-1',
+      start: '2026-07-06',
+      end: '2026-07-06',
+      label: 'Office hour',
+      bookedBy: null,
+      bookerName: null,
+      bookingData: null,
+      bookedAt: null,
+      waitlist: [],
+      createdAt: 3030,
+    },
+  );
+
+  const halfConfig = {
+    mode: 'half',
+    start: '2026-07-05',
+    end: '2026-07-06',
+    requiredFields: '',
+  };
+  assert.deepEqual(
+    projectDomain.createBookingSlotData(
+      'project-1',
+      '2026-07-05_Morning',
+      ' 2026-07-05_Morning ',
+      ' Morning ',
+      3031,
+      halfConfig,
+    ),
+    {
+      projectId: 'project-1',
+      start: '2026-07-05_Morning',
+      end: '2026-07-05_Morning',
+      label: 'Morning',
+      bookedBy: null,
+      bookerName: null,
+      bookingData: null,
+      bookedAt: null,
+      waitlist: [],
+      createdAt: 3031,
+    },
+  );
+
+  assert.equal(
+    projectDomain.createBookingSlotData('project-1', '2026-07-08', '2026-07-08', 'Late', 3032, dateConfig),
+    null,
+  );
+  assert.equal(
+    projectDomain.createBookingSlotData('project-1', '2026-07-05_Night', '2026-07-05_Night', 'Night', 3033, halfConfig),
+    null,
+  );
+  assert.equal(
+    projectDomain.createBookingSlotData('project-1', '2026-02-30', '2026-02-30', 'Ghost', 3034, dateConfig),
+    null,
+  );
+  assert.equal(
+    projectDomain.createBookingSlotData('', '2026-07-06', '2026-07-06', 'Office hour', 3035, dateConfig),
+    null,
+  );
+});
+
 test('gather submission guard creates one response per project and user', () => {
   const createGatherSubmissionData = projectDomain.createGatherSubmissionData;
   assert.equal(typeof createGatherSubmissionData, 'function');
@@ -2097,6 +2176,7 @@ test('app action handlers use domain guards for high-risk writes', async () => {
     'createQueueJoinData',
     'createQueueResultData',
     'createBookingPatch',
+    'createBookingSlotData',
     'createBookingWaitlistPatch',
     'createBookingReleasePatch',
     'createGatherFieldData',

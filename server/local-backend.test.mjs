@@ -3591,6 +3591,112 @@ test('HTTP data API rejects invalid project child display text without partial w
   });
 });
 
+test('HTTP data API normalizes booking slot metadata against booking config', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Booking metadata',
+            type: 'book',
+            status: 'active',
+            bookingConfig: {
+              mode: 'date',
+              start: '2026-07-05',
+              end: '2026-07-07',
+              requiredFields: 'Phone',
+            },
+            createdAt: 1,
+          },
+        },
+      });
+
+      for (const data of [
+        { projectId: project.doc.id, start: '2026-02-30', end: '2026-02-30', label: 'Ghost', createdAt: 2 },
+        { projectId: project.doc.id, start: '2026-07-08', end: '2026-07-08', label: 'Late', createdAt: 3 },
+        { projectId: project.doc.id, start: '2026-07-06_Morning', end: '2026-07-06_Morning', label: 'Wrong mode', createdAt: 4 },
+      ]) {
+        const response = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+          method: 'POST',
+          token: owner.token,
+          body: { collection: 'booking_slots', data },
+        });
+        assert.equal(response.status, 400);
+        assert.equal(response.body.error.code, 'data/invalid-booking-slot');
+      }
+
+      const slot = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          data: {
+            projectId: project.doc.id,
+            start: ' 2026-07-06 ',
+            end: '2026-07-06',
+            label: '  Office hour  ',
+            createdAt: 5,
+          },
+        },
+      });
+      assert.equal(slot.doc.start, '2026-07-06');
+      assert.equal(slot.doc.end, '2026-07-06');
+      assert.equal(slot.doc.label, 'Office hour');
+      assert.equal(slot.doc.bookedBy, null);
+      assert.equal(slot.doc.bookerName, null);
+      assert.equal(slot.doc.bookingData, null);
+      assert.equal(slot.doc.bookedAt, null);
+      assert.deepEqual(slot.doc.waitlist, []);
+
+      const invalidUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { start: '2026-07-09', end: '2026-07-09' },
+        },
+      });
+      assert.equal(invalidUpdate.status, 400);
+      assert.equal(invalidUpdate.body.error.code, 'data/invalid-booking-slot');
+      assert.equal((await store.get('booking_slots', slot.doc.id)).start, '2026-07-06');
+
+      const validUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'booking_slots',
+          id: slot.doc.id,
+          data: { start: ' 2026-07-07 ', end: '2026-07-07', label: ' Later ' },
+        },
+      });
+      assert.equal(validUpdate.doc.start, '2026-07-07');
+      assert.equal(validUpdate.doc.end, '2026-07-07');
+      assert.equal(validUpdate.doc.label, 'Later');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts booking slot updates to booking and waitlist guards', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

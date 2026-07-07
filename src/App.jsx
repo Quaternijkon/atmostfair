@@ -21,6 +21,7 @@ import {
   createBookingPatch,
   createBookingConfigData,
   createBookingReleasePatch,
+  createBookingSlotData,
   createBookingWaitlistPatch,
   createGatherFieldData,
   createGatherSubmissionData,
@@ -561,13 +562,14 @@ function AppContent() {
          await updateDoc(doc(db, 'projects', projectId), { bookingConfig });
       },
       handleCreateBookingSlot: async (projectId, start, end, label) => {
-         const cleanLabel = normalizeProjectChildText(label);
-         if (!cleanLabel) return;
+         const project = projects.find((entry) => entry.id === projectId);
+         const slotData = createBookingSlotData(projectId, start, end, label, nowMs(), project?.bookingConfig);
+         if (!slotData) return;
          if (!requireProjectWritable(projectId, showToast)) return;
          // Create a slot doc. If already exists (somehow), ignore or valid. Ideally use unique combination as ID or random.
          // Let's use random ID for slots to allow multiple same-time slots if needed (abstractions).
-         await addDoc(collection(db, 'booking_slots'), { projectId, start, end, label: cleanLabel, bookedBy: null, waitlist: [], createdAt: nowMs() });
-         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: cleanLabel });
+         await addDoc(collection(db, 'booking_slots'), slotData);
+         void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.bookingSlotCreated, subject: slotData.label });
       },
       handleDeleteBookingSlot: async (slotId) => {
          const slot = bookingSlots.find((entry) => entry.id === slotId);

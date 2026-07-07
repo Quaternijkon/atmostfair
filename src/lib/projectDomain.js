@@ -46,6 +46,7 @@ const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const SCHEDULE_MODES = new Set(['date', 'half', 'time']);
 const BOOKING_MODES = new Set(['date', 'half']);
 const HALF_DAY_SLOTS = new Set(['morning', 'afternoon', 'evening']);
+const BOOKING_HALF_DAY_PERIODS = new Set(['Morning', 'Afternoon', 'Evening']);
 const MINE_PLAYER_STATUSES = new Set(['playing', 'dead', 'won']);
 const MINE_TERMINAL_STATUSES = new Set(['dead', 'won']);
 const GAME_ROOM_INVITE_PARAM = 'room';
@@ -868,6 +869,25 @@ export function createBookingConfigData(config) {
   };
 }
 
+export function createBookingSlotData(projectId, start, end, label, createdAt, config) {
+  const cleanProjectId = String(projectId || '').trim();
+  const cleanLabel = normalizeProjectChildText(label);
+  const slotRange = normalizeBookingSlotRange(start, end, config);
+  if (!cleanProjectId || !cleanLabel || !slotRange) return null;
+
+  return {
+    projectId: cleanProjectId,
+    ...slotRange,
+    label: cleanLabel,
+    bookedBy: null,
+    bookerName: null,
+    bookingData: null,
+    bookedAt: null,
+    waitlist: [],
+    createdAt,
+  };
+}
+
 export function createDateRangeDays(config) {
   if (!config?.mode) return [];
   const data = SCHEDULE_MODES.has(config.mode)
@@ -1554,6 +1574,44 @@ function normalizeRequiredFields(value) {
     .map((field) => field.trim())
     .filter(Boolean))
     .join(', ');
+}
+
+function normalizeBookingSlotRange(start, end, config) {
+  const cleanStart = String(start || '').trim();
+  const cleanEnd = String(end || '').trim();
+  if (!cleanStart || cleanEnd !== cleanStart) return null;
+
+  const bookingConfig = createBookingConfigData(config);
+  if (bookingConfig?.mode === 'date') {
+    return normalizeDateBookingSlotRange(cleanStart, cleanEnd, bookingConfig);
+  }
+  if (bookingConfig?.mode === 'half') {
+    return normalizeHalfDayBookingSlotRange(cleanStart, cleanEnd, bookingConfig);
+  }
+
+  return normalizeDateBookingSlotRange(cleanStart, cleanEnd, null)
+    || normalizeHalfDayBookingSlotRange(cleanStart, cleanEnd, null);
+}
+
+function normalizeDateBookingSlotRange(start, end, config) {
+  if (!isValidDateOnly(start) || end !== start) return null;
+  if (config && !isDateInConfigRange(start, config)) return null;
+  return { start, end };
+}
+
+function normalizeHalfDayBookingSlotRange(start, end, config) {
+  const slot = parseBookingHalfDaySlot(start);
+  if (!slot || end !== start) return null;
+  if (config && !isDateInConfigRange(slot.date, config)) return null;
+  return { start, end };
+}
+
+function parseBookingHalfDaySlot(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})_([^_]+)$/.exec(String(value || '').trim());
+  if (!match) return null;
+  const [, date, period] = match;
+  if (!isValidDateOnly(date) || !BOOKING_HALF_DAY_PERIODS.has(period)) return null;
+  return { date, period };
 }
 
 function uniqueValues(values) {
