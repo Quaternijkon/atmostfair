@@ -2484,3 +2484,151 @@ test('project insight summary scopes metrics and guides next actions', () => {
     'insightRestoreToEdit',
   );
 });
+
+test('project insight summary normalizes malformed participant metrics', () => {
+  const voteSummary = createProjectInsightSummary(
+    { id: 'vote-dirty', type: 'vote', status: 'active' },
+    {
+      votingItems: [
+        { id: 'v1', projectId: 'vote-dirty', votes: ['u1', 'u1', '', null, 'u2'] },
+        { id: 'v2', projectId: 'vote-dirty', votes: 'not-a-list' },
+        { id: 'v3', projectId: 'other', votes: ['leak'] },
+      ],
+    },
+  );
+  assert.deepEqual(voteSummary.metrics, [
+    { key: 'items', labelKey: 'insightItems', value: 2 },
+    { key: 'votes', labelKey: 'insightVotes', value: 2 },
+  ]);
+
+  const gatherSummary = createProjectInsightSummary(
+    { id: 'gather-dirty', type: 'gather', status: 'active' },
+    {
+      gatherFields: [{ id: 'field-1', projectId: 'gather-dirty' }],
+      gatherSubmissions: [
+        { id: 'g1', projectId: 'gather-dirty', uid: 'u1' },
+        { id: 'g2', projectId: 'gather-dirty', uid: 'u1' },
+        { id: 'g3', projectId: 'gather-dirty', uid: 'u2' },
+        { projectId: 'gather-dirty', uid: '' },
+        { id: 'g4', projectId: 'other', uid: 'leak' },
+      ],
+    },
+  );
+  assert.deepEqual(gatherSummary.metrics, [
+    { key: 'fields', labelKey: 'insightFields', value: 1 },
+    { key: 'responses', labelKey: 'insightResponses', value: 2 },
+  ]);
+
+  const scheduleSummary = createProjectInsightSummary(
+    { id: 'schedule-dirty', type: 'schedule', status: 'active', scheduleConfig: { mode: 'date' } },
+    {
+      scheduleSubmissions: [
+        { id: 's1', projectId: 'schedule-dirty', uid: 'u1' },
+        { id: 's2', projectId: 'schedule-dirty', uid: 'u1' },
+        { id: 's3', projectId: 'schedule-dirty', uid: 'u2' },
+        { projectId: 'schedule-dirty', uid: '' },
+        { id: 's4', projectId: 'other', uid: 'leak' },
+      ],
+    },
+  );
+  assert.deepEqual(scheduleSummary.metrics, [
+    { key: 'responses', labelKey: 'insightResponses', value: 2 },
+  ]);
+
+  const bookingSummary = createProjectInsightSummary(
+    { id: 'book-dirty', type: 'book', status: 'active', bookingConfig: { mode: 'date' } },
+    {
+      bookingSlots: [
+        {
+          id: 'b1',
+          projectId: 'book-dirty',
+          bookedBy: 'u1',
+          waitlist: [{ uid: 'u2' }, { uid: 'u2' }, null, { uid: '' }, { uid: 'u3' }],
+        },
+        { id: 'b2', projectId: 'book-dirty', bookedBy: '', waitlist: 'not-a-list' },
+        { id: 'b3', projectId: 'other', bookedBy: 'leak', waitlist: [{ uid: 'leak' }] },
+      ],
+    },
+  );
+  assert.deepEqual(bookingSummary.metrics, [
+    { key: 'slots', labelKey: 'insightSlots', value: 2 },
+    { key: 'booked', labelKey: 'insightBooked', value: 1 },
+    { key: 'waitlist', labelKey: 'insightWaitlist', value: 2 },
+  ]);
+
+  const teamSummary = createProjectInsightSummary(
+    { id: 'team-dirty', type: 'team', status: 'active' },
+    {
+      rooms: [
+        {
+          id: 't1',
+          projectId: 'team-dirty',
+          members: [{ uid: 'u1' }, { uid: 'u1' }, null, { uid: 'u2' }, { name: 'No uid' }],
+        },
+        { id: 't2', projectId: 'team-dirty', members: 'not-a-list' },
+        { id: 't3', projectId: 'other', members: [{ uid: 'leak' }] },
+      ],
+    },
+  );
+  assert.deepEqual(teamSummary.metrics, [
+    { key: 'items', labelKey: 'insightItems', value: 2 },
+    { key: 'participants', labelKey: 'insightParticipants', value: 2 },
+  ]);
+
+  const queueSummary = createProjectInsightSummary(
+    { id: 'queue-dirty', type: 'queue', status: 'active' },
+    {
+      queueParticipants: [
+        { id: 'q1', projectId: 'queue-dirty', uid: 'u1' },
+        { id: 'q2', projectId: 'queue-dirty', uid: 'u1' },
+        { id: 'q3', projectId: 'queue-dirty', uid: 'u2' },
+        { projectId: 'queue-dirty', uid: '' },
+        { id: 'q4', projectId: 'other', uid: 'leak' },
+      ],
+    },
+  );
+  assert.deepEqual(queueSummary.metrics, [
+    { key: 'participants', labelKey: 'insightParticipants', value: 2 },
+  ]);
+
+  const rouletteSummary = createProjectInsightSummary(
+    { id: 'roulette-dirty', type: 'roulette', status: 'active' },
+    {
+      rouletteParticipants: [
+        { id: 'r1', projectId: 'roulette-dirty', uid: 'u1' },
+        { id: 'r2', projectId: 'roulette-dirty', uid: 'u1' },
+        { id: 'r3', projectId: 'roulette-dirty', uid: 'u2' },
+        { projectId: 'roulette-dirty', uid: '' },
+        { id: 'r4', projectId: 'other', uid: 'leak' },
+      ],
+    },
+  );
+  assert.deepEqual(rouletteSummary.metrics, [
+    { key: 'participants', labelKey: 'insightParticipants', value: 2 },
+  ]);
+
+  const gameSummary = createProjectInsightSummary(
+    { id: 'game-dirty', type: 'game_hub', status: 'active' },
+    {
+      gameRooms: [
+        {
+          id: 'game-rps',
+          projectId: 'game-dirty',
+          game: 'rps',
+          players: [{ uid: 'u1' }, { uid: 'u1' }, { uid: 'u2' }, null],
+        },
+        {
+          id: 'game-mine',
+          projectId: 'game-dirty',
+          game: 'mine',
+          players: [{ uid: 'u3' }, { uid: 'u3' }, { uid: 'u4' }, { uid: '' }, null],
+        },
+        { id: 'game-other', projectId: 'other', players: [{ uid: 'leak' }] },
+      ],
+    },
+  );
+  assert.deepEqual(gameSummary.metrics, [
+    { key: 'items', labelKey: 'insightItems', value: 2 },
+    { key: 'participants', labelKey: 'insightParticipants', value: 4 },
+  ]);
+});

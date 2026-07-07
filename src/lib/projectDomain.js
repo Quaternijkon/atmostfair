@@ -89,7 +89,7 @@ export function createProjectInsightSummary(project, datasets = {}) {
     switch (project.type) {
       case 'vote': {
         const votingItems = scoped(datasets.votingItems);
-        const votes = votingItems.reduce((sum, item) => sum + (Array.isArray(item.votes) ? item.votes.length : 0), 0);
+        const votes = votingItems.reduce((sum, item) => sum + countUniquePrimitiveIdentities(item.votes), 0);
         metrics = [
           { key: 'items', labelKey: 'insightItems', value: votingItems.length },
           { key: 'votes', labelKey: 'insightVotes', value: votes },
@@ -104,31 +104,33 @@ export function createProjectInsightSummary(project, datasets = {}) {
       case 'gather': {
         const gatherFields = scoped(datasets.gatherFields);
         const gatherSubmissions = scoped(datasets.gatherSubmissions);
+        const responses = countUniqueRecordIdentities(gatherSubmissions);
         metrics = [
           { key: 'fields', labelKey: 'insightFields', value: gatherFields.length },
-          { key: 'responses', labelKey: 'insightResponses', value: gatherSubmissions.length },
+          { key: 'responses', labelKey: 'insightResponses', value: responses },
         ];
         nextActionKey = gatherFields.length === 0
           ? 'insightFinishSetup'
-          : gatherSubmissions.length === 0
+          : responses === 0
             ? 'insightInviteParticipants'
             : 'insightReviewProgress';
         break;
       }
       case 'schedule': {
         const scheduleSubmissions = scoped(datasets.scheduleSubmissions);
-        metrics = [{ key: 'responses', labelKey: 'insightResponses', value: scheduleSubmissions.length }];
+        const responses = countUniqueRecordIdentities(scheduleSubmissions);
+        metrics = [{ key: 'responses', labelKey: 'insightResponses', value: responses }];
         nextActionKey = !project.scheduleConfig
           ? 'insightFinishSetup'
-          : scheduleSubmissions.length === 0
+          : responses === 0
             ? 'insightInviteParticipants'
             : 'insightReviewProgress';
         break;
       }
       case 'book': {
         const bookingSlots = scoped(datasets.bookingSlots);
-        const booked = bookingSlots.filter((slot) => slot.bookedBy).length;
-        const waitlist = bookingSlots.reduce((sum, slot) => sum + (Array.isArray(slot.waitlist) ? slot.waitlist.length : 0), 0);
+        const booked = bookingSlots.filter((slot) => normalizeIdentityValue(slot?.bookedBy)).length;
+        const waitlist = bookingSlots.reduce((sum, slot) => sum + countUniqueRecordIdentities(slot?.waitlist, { fallbackToId: false }), 0);
         metrics = [
           { key: 'slots', labelKey: 'insightSlots', value: bookingSlots.length },
           { key: 'booked', labelKey: 'insightBooked', value: booked },
@@ -145,7 +147,7 @@ export function createProjectInsightSummary(project, datasets = {}) {
       }
       case 'team': {
         const rooms = scoped(datasets.rooms);
-        const participants = rooms.reduce((sum, room) => sum + (Array.isArray(room.members) ? room.members.length : 0), 0);
+        const participants = rooms.reduce((sum, room) => sum + countUniqueRecordIdentities(room?.members, { fallbackToId: false }), 0);
         metrics = [
           { key: 'items', labelKey: 'insightItems', value: rooms.length },
           { key: 'participants', labelKey: 'insightParticipants', value: participants },
@@ -173,19 +175,21 @@ export function createProjectInsightSummary(project, datasets = {}) {
       }
       case 'roulette': {
         const rouletteParticipants = scoped(datasets.rouletteParticipants);
-        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: rouletteParticipants.length }];
-        nextActionKey = rouletteParticipants.length === 0 ? 'insightInviteParticipants' : 'insightRunResult';
+        const participants = countUniqueRecordIdentities(rouletteParticipants);
+        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: participants }];
+        nextActionKey = participants === 0 ? 'insightInviteParticipants' : 'insightRunResult';
         break;
       }
       case 'queue': {
         const queueParticipants = scoped(datasets.queueParticipants);
-        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: queueParticipants.length }];
-        nextActionKey = queueParticipants.length === 0 ? 'insightInviteParticipants' : 'insightRunResult';
+        const participants = countUniqueRecordIdentities(queueParticipants);
+        metrics = [{ key: 'participants', labelKey: 'insightParticipants', value: participants }];
+        nextActionKey = participants === 0 ? 'insightInviteParticipants' : 'insightRunResult';
         break;
       }
       case 'game_hub': {
         const gameRooms = scoped(datasets.gameRooms);
-        const participants = gameRooms.reduce((sum, room) => sum + (Array.isArray(room.players) ? room.players.length : 0), 0);
+        const participants = gameRooms.reduce((sum, room) => sum + countGameRoomInsightPlayers(room), 0);
         metrics = [
           { key: 'items', labelKey: 'insightItems', value: gameRooms.length },
           { key: 'participants', labelKey: 'insightParticipants', value: participants },
@@ -203,6 +207,35 @@ export function createProjectInsightSummary(project, datasets = {}) {
   }
 
   return { statusKey, nextActionKey, metrics: withActivity(metrics) };
+}
+
+function countUniquePrimitiveIdentities(values) {
+  if (!Array.isArray(values)) return 0;
+  return new Set(values.map(normalizeIdentityValue).filter(Boolean)).size;
+}
+
+function countUniqueRecordIdentities(records, options = {}) {
+  if (!Array.isArray(records)) return 0;
+  const { fallbackToId = true } = options;
+  const identities = records.map((record) => {
+    const uid = normalizeIdentityValue(record?.uid);
+    if (uid) return `uid:${uid}`;
+    if (!fallbackToId) return '';
+    const id = normalizeIdentityValue(record?.id);
+    return id ? `id:${id}` : '';
+  });
+  return new Set(identities.filter(Boolean)).size;
+}
+
+function countGameRoomInsightPlayers(room) {
+  const playerCount = countUniqueRecordIdentities(room?.players, { fallbackToId: false });
+  if (room?.game === 'rps') return Math.min(2, playerCount);
+  if (room?.game === 'mine') return Math.min(8, playerCount);
+  return playerCount;
+}
+
+function normalizeIdentityValue(value) {
+  return String(value ?? '').trim();
 }
 
 export function createTeamJoinMember(room, user, userName, joinedAt) {
