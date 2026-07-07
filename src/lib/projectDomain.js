@@ -839,7 +839,7 @@ export function createGameRoomCreateData(projectId, user, roomName, game, option
 
 export function createGameRoomJoinPatch(room, user, userName, joinedAt) {
   if (!room?.id || !user?.uid || room.status === 'finished') return null;
-  const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];
+  const players = normalizeGameRoomPlayers(room.players);
   if (players.some((player) => player.uid === user.uid)) return null;
 
   if (room.game === 'rps') {

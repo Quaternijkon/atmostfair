@@ -1399,6 +1399,62 @@ test('game room join guard is idempotent and enforces capacity', () => {
   );
 });
 
+test('game room join guard normalizes dirty player membership before capacity checks', () => {
+  assert.deepEqual(projectDomain.createGameRoomJoinPatch({
+    id: 'game-dirty-join-rps',
+    game: 'rps',
+    status: 'waiting',
+    config: { bestOf: 3 },
+    players: [
+      { uid: 'u1', name: 'Owner', score: 0, move: null },
+      { uid: 'u1', name: 'Duplicate Owner', score: 2, move: 'rock' },
+      { uid: ' ', name: 'Blank', score: 1, move: null },
+    ],
+  }, { uid: 'u2', displayName: 'Ada' }, 'Ada Lovelace', 9200), {
+    players: [
+      { uid: 'u1', name: 'Owner', score: 0, move: null },
+      { uid: 'u2', name: 'Ada Lovelace', score: 0, move: null },
+    ],
+    status: 'playing',
+    roundStartTime: 9200,
+    currentRound: 1,
+  });
+
+  const dirtyMinePlayers = [
+    ...Array.from({ length: 7 }, (_, index) => ({
+      uid: `u${index + 1}`,
+      name: `Player ${index + 1}`,
+      progress: 0,
+      status: 'playing',
+    })),
+    { uid: 'u7', name: 'Duplicate Player 7', progress: 90, status: 'playing' },
+    { uid: '', name: 'Blank', progress: 0, status: 'playing' },
+  ];
+
+  assert.deepEqual(projectDomain.createGameRoomJoinPatch({
+    id: 'game-dirty-join-mine',
+    game: 'mine',
+    status: 'playing',
+    players: dirtyMinePlayers,
+  }, { uid: 'u8', displayName: 'Lin' }, 'Lin', 9300), {
+    players: [
+      ...dirtyMinePlayers.slice(0, 7),
+      { uid: 'u8', name: 'Lin', progress: 0, status: 'playing' },
+    ],
+  });
+
+  assert.equal(projectDomain.createGameRoomJoinPatch({
+    id: 'game-dirty-join-mine-full',
+    game: 'mine',
+    status: 'playing',
+    players: [
+      ...dirtyMinePlayers.slice(0, 7),
+      { uid: 'u8', name: 'Lin', progress: 0, status: 'playing' },
+      { uid: 'u8', name: 'Duplicate Lin', progress: 100, status: 'won' },
+    ],
+  }, { uid: 'u9', displayName: 'Max' }, 'Max', 9301), null);
+});
+
 test('schedule submission guard updates an existing response instead of duplicating it', () => {
   const createScheduleSubmissionWrite = projectDomain.createScheduleSubmissionWrite;
   assert.equal(typeof createScheduleSubmissionWrite, 'function');
