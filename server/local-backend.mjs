@@ -367,7 +367,7 @@ async function authorizeDataOperation({ store, user, context, type, collection, 
   }
 
   if (collection === 'friend_messages') {
-    return authorizeFriendMessageOperation({ store, user, type, id, data });
+    return authorizeFriendMessageOperation({ store, user, context, type, id, data });
   }
 
   const projectField = PROJECT_CHILD_COLLECTION_FIELDS.get(collection);
@@ -2247,12 +2247,12 @@ async function authorizeFriendshipOperation({ store, user, context, type, id, da
   forbidden();
 }
 
-async function authorizeFriendMessageOperation({ store, user, type, id, data }) {
-  if (type === 'add') return normalizeFriendMessageCreateData(store, data, user);
+async function authorizeFriendMessageOperation({ store, user, context, type, id, data }) {
+  if (type === 'add') return normalizeFriendMessageCreateData({ store, context, data, user });
 
-  const existing = await store.get('friend_messages', id);
+  const existing = await getProjectedDoc({ store, context, collection: 'friend_messages', id });
   if (!existing) {
-    if (type === 'set') return normalizeFriendMessageCreateData(store, data, user);
+    if (type === 'set') return normalizeFriendMessageCreateData({ store, context, data, user });
     throwDataError(404, 'data/not-found', 'Friend message not found.');
   }
 
@@ -2280,10 +2280,10 @@ async function normalizeFriendshipCreateData({ store, context, data, user }) {
   };
 }
 
-async function normalizeFriendMessageCreateData(store, data, user) {
+async function normalizeFriendMessageCreateData({ store, context, data, user }) {
   const text = normalizeMessageText(data?.text);
   if (!text) throwInvalidMessageText();
-  const relationship = await store.get('friendships', data?.chatId);
+  const relationship = await getProjectedDoc({ store, context, collection: 'friendships', id: data?.chatId });
   if (relationship?.status !== 'confirmed' || !hasMember(relationship, user.uid)) forbidden();
   return {
     ...(data || {}),

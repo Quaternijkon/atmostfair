@@ -6308,6 +6308,26 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       assert.equal(editMessage.body.error.code, 'data/forbidden');
       assert.equal((await store.get('friend_messages', sentMessage.doc.id)).text, 'hello Bob');
 
+      const messageCountBeforeStaleBatch = (await store.list('friend_messages')).length;
+      const staleBatchMessage = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'friendships', id: request.doc.id },
+            {
+              type: 'add',
+              collection: 'friend_messages',
+              data: { chatId: request.doc.id, senderId: alice.user.uid, text: 'after batch delete', createdAt: 9 },
+            },
+          ],
+        },
+      });
+      assert.equal(staleBatchMessage.status, 403);
+      assert.equal(staleBatchMessage.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('friendships', request.doc.id)).status, 'confirmed');
+      assert.equal((await store.list('friend_messages')).length, messageCountBeforeStaleBatch);
+
       await fetchJson(`${baseUrl}/api/data/delete`, {
         method: 'POST',
         token: alice.token,
