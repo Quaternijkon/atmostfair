@@ -28,6 +28,7 @@ import {
   normalizeClaimCapacityInput,
   normalizeMineProgressInput,
   normalizeParticipantValueInput,
+  normalizeGatherSubmissionData,
   normalizeScheduleAvailabilityInput,
   normalizeBookingDataInput,
   normalizeRpsCurrentRoundInput,
@@ -516,6 +517,7 @@ async function authorizeProjectChildOperation({ store, user, context, type, coll
     return authorizeProjectUserEntryOperation({
       store,
       user,
+      context,
       type,
       collection,
       data,
@@ -1408,6 +1410,7 @@ function authorizeClaimantRemove({ user, data, existing, claimant }) {
 async function authorizeProjectUserEntryOperation({
   store,
   user,
+  context,
   type,
   collection,
   data,
@@ -1416,7 +1419,7 @@ async function authorizeProjectUserEntryOperation({
   projectId,
 }) {
   if (!existing) {
-    return normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data, project });
+    return normalizeProjectUserEntryCreateData({ store, context, user, collection, projectId, data, project });
   }
 
   if (collection === 'queue_participants') {
@@ -1436,13 +1439,14 @@ async function authorizeProjectUserEntryOperation({
 
   if (collection === 'gather_submissions') {
     if (!isAdminUser(user)) forbidden();
-    return type === 'delete' ? undefined : allowOnlyFields(data, ['data', 'submittedAt']);
+    if (type === 'delete') return undefined;
+    return normalizeGatherSubmissionPatchData({ store, context, projectId, data });
   }
 
   return data || {};
 }
 
-async function normalizeProjectUserEntryCreateData({ store, user, collection, projectId, data, project }) {
+async function normalizeProjectUserEntryCreateData({ store, context, user, collection, projectId, data, project }) {
   await assertNoDuplicateProjectUserEntry(store, collection, projectId, user.uid);
 
   const base = {
@@ -1472,7 +1476,28 @@ async function normalizeProjectUserEntryCreateData({ store, user, collection, pr
     return normalizeScheduleSubmissionData(base, project);
   }
 
+  if (collection === 'gather_submissions') {
+    return {
+      ...base,
+      data: normalizeGatherSubmissionData(
+        data?.data,
+        await listProjectedGatherFields({ store, context, projectId }),
+      ),
+    };
+  }
+
   return base;
+}
+
+async function normalizeGatherSubmissionPatchData({ store, context, projectId, data }) {
+  const patch = allowOnlyFields(data, ['data', 'submittedAt']);
+  if (Object.hasOwn(patch, 'data')) {
+    patch.data = normalizeGatherSubmissionData(
+      patch.data,
+      await listProjectedGatherFields({ store, context, projectId }),
+    );
+  }
+  return patch;
 }
 
 function normalizeScheduleSubmissionData(data, project) {
@@ -2048,6 +2073,28 @@ async function listProjectedVotingItems({ store, context, projectId }) {
       const collection = key.slice(0, separator);
       const id = key.slice(separator + 1);
       if (collection !== 'voting_items') continue;
+      if (!doc) {
+        docs.delete(id);
+      } else if (doc.projectId === projectId) {
+        docs.set(id, cloneDataValue(doc));
+      }
+    }
+  }
+
+  return [...docs.values()];
+}
+
+async function listProjectedGatherFields({ store, context, projectId }) {
+  const docs = new Map((await store.list('gather_fields', {
+    filters: [{ field: 'projectId', op: '==', value: projectId }],
+  })).map((doc) => [doc.id, doc]));
+
+  if (context) {
+    for (const [key, doc] of context.projectedDocs.entries()) {
+      const separator = key.indexOf('\0');
+      const collection = key.slice(0, separator);
+      const id = key.slice(separator + 1);
+      if (collection !== 'gather_fields') continue;
       if (!doc) {
         docs.delete(id);
       } else if (doc.projectId === projectId) {

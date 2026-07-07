@@ -2110,6 +2110,132 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
   });
 });
 
+test('HTTP data API normalizes gather submission values against current fields', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123' },
+      });
+      const admin = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'quaternijkon@mail.ustc.edu.cn', password: 'secret123' },
+      });
+
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Gather', type: 'gather', status: 'active', createdAt: 1 } },
+      });
+      const noteField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'gather_fields', data: { projectId: project.doc.id, label: 'Note', type: 'text', createdAt: 2 } },
+      });
+      const countField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'gather_fields', data: { projectId: project.doc.id, label: 'Count', type: 'number', createdAt: 3 } },
+      });
+      const dateField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'gather_fields', data: { projectId: project.doc.id, label: 'Date', type: 'date', createdAt: 4 } },
+      });
+      const choiceField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Choice', type: 'option', options: ['Yes', 'No'], createdAt: 5 },
+        },
+      });
+      const badChoiceField = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'gather_fields',
+          data: { projectId: project.doc.id, label: 'Bad Choice', type: 'option', options: ['Yes', 'No'], createdAt: 6 },
+        },
+      });
+
+      const submission = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'gather_submissions',
+          data: {
+            projectId: project.doc.id,
+            uid: owner.user.uid,
+            name: 'Alice Alias',
+            data: {
+              [noteField.doc.id]: '  hello  ',
+              [countField.doc.id]: ' 7.5 ',
+              [dateField.doc.id]: '2026-07-05',
+              [choiceField.doc.id]: 'Yes',
+              [badChoiceField.doc.id]: 'Maybe',
+              extra: 'drop me',
+            },
+            submittedAt: 20,
+          },
+        },
+      });
+      assert.deepEqual(submission.doc.data, {
+        [noteField.doc.id]: 'hello',
+        [countField.doc.id]: '7.5',
+        [dateField.doc.id]: '2026-07-05',
+        [choiceField.doc.id]: 'Yes',
+        [badChoiceField.doc.id]: '',
+      });
+
+      const adminUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: admin.token,
+        body: {
+          collection: 'gather_submissions',
+          id: submission.doc.id,
+          data: {
+            data: {
+              [noteField.doc.id]: '  updated  ',
+              [countField.doc.id]: 'not a number',
+              [dateField.doc.id]: '2026-02-30',
+              [choiceField.doc.id]: 'No',
+              [badChoiceField.doc.id]: 'Yes',
+              extra: 'still drop me',
+            },
+            submittedAt: 21,
+          },
+        },
+      });
+      assert.equal(adminUpdate.doc.submittedAt, 21);
+      assert.deepEqual(adminUpdate.doc.data, {
+        [noteField.doc.id]: 'updated',
+        [countField.doc.id]: '',
+        [dateField.doc.id]: '',
+        [choiceField.doc.id]: 'No',
+        [badChoiceField.doc.id]: 'Yes',
+      });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects unauthorized active project child deletes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

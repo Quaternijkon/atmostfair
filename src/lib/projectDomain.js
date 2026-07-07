@@ -1426,7 +1426,7 @@ function normalizedCollection(docsByCollection, collectionName) {
   return Array.isArray(docsByCollection?.[collectionName]) ? docsByCollection[collectionName] : [];
 }
 
-function normalizeGatherSubmissionData(data, fields) {
+export function normalizeGatherSubmissionData(data, fields) {
   if (!Array.isArray(fields) || fields.length === 0) return data || {};
   const source = data && typeof data === 'object' ? data : {};
   return fields.reduce((result, field) => {
