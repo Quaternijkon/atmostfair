@@ -45,6 +45,7 @@ import {
   normalizeClaimCapacityInput,
   normalizeProjectChildText,
   normalizeRouletteConfigInput,
+  normalizeTeamRoomCapacityInput,
   PROJECT_CASCADE_COLLECTIONS,
 } from './lib/projectDomain';
 import {
@@ -357,7 +358,7 @@ function AppContent() {
       handleCreateRoom: async (name, maxMembers, projectId, creatorName) => {
          const cleanName = normalizeProjectChildText(name);
          if (!user || !cleanName || !requireProjectWritable(projectId, showToast)) return;
-         await addDoc(collection(db, 'rooms'), { name: cleanName, projectId, ownerId: user.uid, maxMembers: parseInt(maxMembers)||4, members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
+         await addDoc(collection(db, 'rooms'), { name: cleanName, projectId, ownerId: user.uid, maxMembers: normalizeTeamRoomCapacityInput(maxMembers), members: [{ uid: user.uid, name: creatorName || currentUserName(), joinedAt: nowMs() }], createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.teamCreated, subject: cleanName, actorName: creatorName });
       },
       handleJoinRoom: async (roomId, userName) => {

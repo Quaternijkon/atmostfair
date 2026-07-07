@@ -2340,6 +2340,21 @@ test('HTTP data API restricts room member writes to self-join and managed remova
       assert.equal(room.doc.ownerId, alice.user.uid);
       assert.deepEqual(room.doc.members, [{ uid: alice.user.uid, name: 'alice', joinedAt: 2 }]);
 
+      const oversizedRoom = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'rooms',
+          data: {
+            projectId: project.doc.id,
+            name: 'Oversized team',
+            maxMembers: 1000,
+            createdAt: 3,
+          },
+        },
+      });
+      assert.equal(oversizedRoom.doc.maxMembers, 99);
+
       const memberMetadataUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: bob.token,
@@ -2458,11 +2473,11 @@ test('HTTP data API restricts room member writes to self-join and managed remova
         body: {
           collection: 'rooms',
           id: room.doc.id,
-          data: { name: 'Blue team', maxMembers: 3 },
+          data: { name: 'Blue team', maxMembers: 1000 },
         },
       });
       assert.equal(projectOwnerMetadata.doc.name, 'Blue team');
-      assert.equal(projectOwnerMetadata.doc.maxMembers, 3);
+      assert.equal(projectOwnerMetadata.doc.maxMembers, 99);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

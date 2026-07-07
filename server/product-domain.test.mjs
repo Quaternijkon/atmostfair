@@ -19,6 +19,7 @@ import {
   createQueueJoinData,
   createQueueResultData,
   createTeamJoinMember,
+  normalizeTeamRoomCapacityInput,
   createScheduleRecommendationSummary,
   createVoteToggleOperations,
   PROJECT_CASCADE_COLLECTIONS,
@@ -51,6 +52,29 @@ test('team join guard is idempotent and enforces room capacity', () => {
     createTeamJoinMember({ ...room, members: [...room.members, { uid: 'u3' }] }, user, 'Ada Lovelace', 1002),
     null,
     'full room should reject additional members',
+  );
+});
+
+test('team room capacity input normalizes empty and bounded numeric values', () => {
+  assert.equal(typeof normalizeTeamRoomCapacityInput, 'function');
+
+  assert.equal(normalizeTeamRoomCapacityInput(''), 4);
+  assert.equal(normalizeTeamRoomCapacityInput('0'), 1);
+  assert.equal(normalizeTeamRoomCapacityInput('-4'), 1);
+  assert.equal(normalizeTeamRoomCapacityInput('12'), 12);
+  assert.equal(normalizeTeamRoomCapacityInput('100'), 99);
+
+  const user = { uid: 'u100', displayName: 'Ada' };
+  const manyMembers = Array.from({ length: 99 }, (_, index) => ({ uid: `u${index}`, name: `User ${index}` }));
+  assert.equal(
+    createTeamJoinMember({ id: 'huge', maxMembers: 1000, members: manyMembers }, user, 'Ada', 2000),
+    null,
+    'legacy oversized rooms should still cap at the product maximum',
+  );
+  assert.deepEqual(
+    createTeamJoinMember({ id: 'negative', maxMembers: -5, members: [] }, user, 'Ada', 2001),
+    { uid: 'u100', name: 'Ada', joinedAt: 2001 },
+    'legacy negative capacity should normalize to one joinable slot',
   );
 });
 

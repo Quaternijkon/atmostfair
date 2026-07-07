@@ -1379,6 +1379,8 @@ test('paused and finished team workspaces hide membership mutation controls', as
 
 test('team workspace actions prevent duplicate submits and expose pending state', async () => {
   const team = await readFile(path.join(root, 'src/components/TeamView.jsx'), 'utf8');
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+  const domain = await readFile(path.join(root, 'src/lib/projectDomain.js'), 'utf8');
 
   assert.ok(TRANSLATIONS.en.processing, 'missing English processing translation');
   assert.ok(TRANSLATIONS.zh.processing, 'missing Chinese processing translation');
@@ -1407,6 +1409,12 @@ test('team workspace actions prevent duplicate submits and expose pending state'
   assert.match(team, /disabled=\{isDisbandPending\}/, 'Team disband button should be disabled while deleting');
   assert.match(team, /disabled=\{isLeavePending\}/, 'Team leave button should be disabled while leaving');
   assert.match(team, /disabled=\{isKickPending\}/, 'Team kick button should be disabled while removing a member');
+
+  assert.match(domain, /export function normalizeTeamRoomCapacityInput/, 'Project domain should expose a reusable team room capacity normalizer');
+  assert.match(app, /normalizeTeamRoomCapacityInput/, 'App room creation should use the shared team capacity normalizer');
+  assert.match(app, /maxMembers: normalizeTeamRoomCapacityInput\(maxMembers\)/, 'Room creation should persist normalized team capacity');
+  assert.doesNotMatch(app, /maxMembers:\s*parseInt\(maxMembers\)\|\|4/, 'Room creation should not persist ad hoc parsed team capacity');
+  assert.match(team, /normalizeTeamRoomCapacityInput/, 'Team view should normalize legacy room capacity before display and join checks');
 });
 
 test('paused and finished gather workspaces keep submissions read-only', async () => {

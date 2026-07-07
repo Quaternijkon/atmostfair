@@ -24,6 +24,9 @@ export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
 export const CLAIM_CAPACITY_MIN = 1;
 export const CLAIM_CAPACITY_MAX = 99;
+export const TEAM_ROOM_CAPACITY_MIN = 1;
+export const TEAM_ROOM_CAPACITY_MAX = 99;
+export const TEAM_ROOM_CAPACITY_DEFAULT = 4;
 export const ROULETTE_PRIZE_COUNT_MIN = 0;
 export const ROULETTE_PRIZE_COUNT_MAX = 99;
 export const ROULETTE_SURVIVOR_COUNT_MIN = 1;
@@ -202,7 +205,7 @@ export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
   const members = Array.isArray(room.members) ? room.members : [];
   if (members.some((member) => member.uid === user.uid)) return null;
-  const maxMembers = Number.parseInt(room.maxMembers, 10) || 0;
+  const maxMembers = normalizeTeamRoomCapacityInput(room.maxMembers);
   if (maxMembers > 0 && members.length >= maxMembers) return null;
   return {
     uid: user.uid,
@@ -927,6 +930,12 @@ export function normalizeClaimCapacityInput(value) {
   return Math.min(CLAIM_CAPACITY_MAX, Math.max(CLAIM_CAPACITY_MIN, parsed));
 }
 
+export function normalizeTeamRoomCapacityInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return TEAM_ROOM_CAPACITY_DEFAULT;
+  return Math.min(TEAM_ROOM_CAPACITY_MAX, Math.max(TEAM_ROOM_CAPACITY_MIN, parsed));
+}
+
 export function normalizeRoulettePrizeCountInput(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return ROULETTE_PRIZE_COUNT_MIN;
@@ -1152,7 +1161,7 @@ function createProjectTemplateChildOperations(seedConfig, projectId, user, creat
           projectId,
           name,
           ownerId: user.uid,
-          maxMembers: Number.parseInt(room.maxMembers, 10) || 4,
+          maxMembers: normalizeTeamRoomCapacityInput(room.maxMembers),
           members: [],
           createdAt,
         },
@@ -1257,7 +1266,7 @@ export function createProjectDuplicateChildOperations(newProjectId, docsByCollec
         projectId: newProjectId,
         name: room.name || '',
         ownerId: user.uid,
-        maxMembers: Number.parseInt(room.maxMembers, 10) || 4,
+        maxMembers: normalizeTeamRoomCapacityInput(room.maxMembers),
         members: [],
         createdAt,
       },

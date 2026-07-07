@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { X } from './Icons';
 import { InfoCard } from './InfoCard';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH, normalizeTeamRoomCapacityInput } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, onJoin, onKick, onDelete, projectId, t }) {
@@ -96,14 +96,15 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
       )}
       <div className="workspace-grid">
         {sortedRooms.map((room) => {
+          const roomCapacity = normalizeTeamRoomCapacityInput(room.maxMembers);
           const isJoinPending = pendingTeamActionKeys.includes(`join:${room.id}`);
           return (
             <div key={room.id} className="app-card p-6">
               <div className="flex justify-between items-start mb-4">
                 <h4 className="font-medium text-lg text-m3-on-surface">{room.name}</h4>
-                <div className="bg-m3-surface text-xs font-medium px-2 py-1 rounded-md text-m3-on-surface-variant border border-m3-outline-variant/50">{room.members.length} / {room.maxMembers}</div>
+                <div className="bg-m3-surface text-xs font-medium px-2 py-1 rounded-md text-m3-on-surface-variant border border-m3-outline-variant/50">{room.members.length} / {roomCapacity}</div>
               </div>
-              {!isStopped && room.members.length < room.maxMembers ? (
+              {!isStopped && room.members.length < roomCapacity ? (
                 <button onClick={() => runTeamAction(`join:${room.id}`, () => onJoin(room.id, user.displayName))} disabled={isJoinPending} aria-busy={isJoinPending} className="app-button w-full border border-m3-outline-variant text-google-red hover:bg-google-red/5">{isJoinPending ? t('processing') : t('joinTeam')}</button>
               ) : (
                 <button disabled className="app-button w-full bg-m3-surface-container text-m3-on-surface-variant">{t('fullOrClosed')}</button>

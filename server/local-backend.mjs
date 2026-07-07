@@ -25,6 +25,7 @@ import {
   createGameRoomJoinPatch,
   createMineRoomProgressPatch,
   createScheduleConfigData,
+  normalizeTeamRoomCapacityInput,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
 } from '../src/lib/projectDomain.js';
@@ -1135,8 +1136,7 @@ function normalizeRoomMembers(members) {
 }
 
 function normalizeRoomMaxMembers(value) {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 4;
+  return normalizeTeamRoomCapacityInput(value);
 }
 
 function authorizeBookingSlotOperation({ user, type, data, existing, project }) {
