@@ -1245,9 +1245,14 @@ test('claim workspace actions prevent duplicate submits and expose pending state
   assert.ok(TRANSLATIONS.zh.claimActionFailed, 'missing Chinese claim action failure translation');
 
   assert.match(claim, /isCreatingClaimItemRef\s*=\s*useRef\(false\)/, 'Claim item creation should use a synchronous submit lock');
+  assert.match(claim, /normalizeClaimCapacityInput/, 'Claim item creation should use the shared capacity normalizer');
+  assert.match(claim, /\[maxClaims,\s*setMaxClaims\]\s*=\s*useState\('1'\)/, 'Claim capacity input should stay string-backed so it can be cleared while editing');
+  assert.match(claim, /const normalizedMaxClaims = normalizeClaimCapacityInput\(maxClaims\)/, 'Claim item creation should normalize capacity at submit time');
   assert.match(claim, /if \(isCreatingClaimItemRef\.current\) return;/, 'Claim item creation should ignore duplicate submits before state rerenders');
   assert.match(claim, /setIsCreatingClaimItem\(true\)[\s\S]{0,760}finally[\s\S]{0,220}setIsCreatingClaimItem\(false\)/, 'Claim item creation should expose pending state for the whole write');
-  assert.match(claim, /await actions\.handleCreateClaimItem\(project\.id, newItem\.trim\(\), maxClaims\)/, 'Claim item creation should await the write while pending');
+  assert.match(claim, /await actions\.handleCreateClaimItem\(project\.id, newItem\.trim\(\), normalizedMaxClaims\)/, 'Claim item creation should await the write with normalized capacity while pending');
+  assert.match(claim, /setMaxClaims\('1'\)/, 'Claim item creation should reset capacity input to the default editable string');
+  assert.match(claim, /onChange=\{\(e\) => setMaxClaims\(e\.target\.value\)\}/, 'Claim capacity input should not parse partial edits into NaN while typing');
   assert.match(claim, /showToast\(t\('claimActionFailed'\), 'error'\)/, 'Claim item creation failures should use localized app feedback');
   assert.match(claim, /aria-busy=\{isCreatingClaimItem\}/, 'Claim creation form should expose pending state to assistive technology');
   assert.match(claim, /disabled=\{isCreatingClaimItem\}/, 'Claim creation controls should be disabled while creating');
@@ -1284,6 +1289,16 @@ test('claim item deletion prevents duplicate submits and exposes pending state',
   assert.match(claim, /disabled=\{isDeletePending\}/, 'Claim delete buttons should be disabled while deleting');
   assert.match(claim, /aria-busy=\{isDeletePending\}/, 'Claim delete buttons should expose busy state');
   assert.match(claim, /title=\{isDeletePending \? t\('processing'\) : t\('delete'\)\}/, 'Claim delete buttons should expose localized pending copy');
+});
+
+test('claim capacity writes are normalized before persistence', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+  const domain = await readFile(path.join(root, 'src/lib/projectDomain.js'), 'utf8');
+
+  assert.match(domain, /export function normalizeClaimCapacityInput/, 'Project domain should expose a reusable claim capacity normalizer');
+  assert.match(app, /normalizeClaimCapacityInput/, 'App claim writes should use the shared capacity normalizer');
+  assert.match(app, /maxClaims: normalizeClaimCapacityInput\(maxClaims\)/, 'Claim item creation should persist normalized capacity');
+  assert.doesNotMatch(app, /maxClaims:\s*parseInt\(maxClaims\)\|\|1/, 'Claim item creation should not persist ad hoc parsed capacity');
 });
 
 test('paused and finished collaboration workspaces hide item deletion controls', async () => {

@@ -1010,6 +1010,22 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
   });
 });
 
+test('claim capacity input normalizes empty and bounded numeric values', () => {
+  const normalizeClaimCapacityInput = projectDomain.normalizeClaimCapacityInput;
+  assert.equal(typeof normalizeClaimCapacityInput, 'function');
+
+  assert.equal(normalizeClaimCapacityInput(''), 1);
+  assert.equal(normalizeClaimCapacityInput('  '), 1);
+  assert.equal(normalizeClaimCapacityInput('abc'), 1);
+  assert.equal(normalizeClaimCapacityInput('0'), 1);
+  assert.equal(normalizeClaimCapacityInput('-5'), 1);
+  assert.equal(normalizeClaimCapacityInput('1'), 1);
+  assert.equal(normalizeClaimCapacityInput('42'), 42);
+  assert.equal(normalizeClaimCapacityInput('99'), 99);
+  assert.equal(normalizeClaimCapacityInput('100'), 99);
+  assert.equal(normalizeClaimCapacityInput(250), 99);
+});
+
 test('vote toggle operations preserve multiple mode and toggle the selected option', () => {
   const user = { uid: 'u2', displayName: 'Dorothy' };
   const items = [

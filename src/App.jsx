@@ -42,6 +42,7 @@ import {
   createVoteToggleOperations,
   createClaimToggleData,
   createProjectStatusPatch,
+  normalizeClaimCapacityInput,
   normalizeProjectChildText,
   PROJECT_CASCADE_COLLECTIONS,
 } from './lib/projectDomain';
@@ -655,7 +656,7 @@ function AppContent() {
       handleCreateClaimItem: async (projectId, title, maxClaims) => {
          const cleanTitle = normalizeProjectChildText(title);
          if (!user || !cleanTitle || !requireProjectWritable(projectId, showToast)) return;
-         await addDoc(collection(db, 'claim_items'), { projectId, title: cleanTitle, maxClaims: parseInt(maxClaims)||1, claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
+         await addDoc(collection(db, 'claim_items'), { projectId, title: cleanTitle, maxClaims: normalizeClaimCapacityInput(maxClaims), claimants: [], creatorId: user.uid, creatorName: currentUserName(), createdAt: nowMs() });
          void recordProjectActivity({ projectId, type: PROJECT_ACTIVITY_TYPES.claimCreated, subject: cleanTitle });
       },
       handleDeleteClaimItem: async (itemId) => {

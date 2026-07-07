@@ -1,13 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { Plus, CheckSquare, MinusCircle, UserCheck, Trash2 } from './Icons';
 import { formatDateTime } from '../lib/locale';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { normalizeClaimCapacityInput, PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function ClaimView({ user, isAdmin, project, items = [], isStopped, isOwner, actions, t }) {
   const { showToast, confirm } = useUI();
   const [newItem, setNewItem] = useState('');
-  const [maxClaims, setMaxClaims] = useState(1);
+  const [maxClaims, setMaxClaims] = useState('1');
   const [filterMyTasks, setFilterMyTasks] = useState(false);
   const [isCreatingClaimItem, setIsCreatingClaimItem] = useState(false);
   const isCreatingClaimItemRef = useRef(false);
@@ -24,9 +24,10 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
     isCreatingClaimItemRef.current = true;
     setIsCreatingClaimItem(true);
     try {
-      await actions.handleCreateClaimItem(project.id, newItem.trim(), maxClaims);
+      const normalizedMaxClaims = normalizeClaimCapacityInput(maxClaims);
+      await actions.handleCreateClaimItem(project.id, newItem.trim(), normalizedMaxClaims);
       setNewItem('');
-      setMaxClaims(1);
+      setMaxClaims('1');
     } catch (error) {
       console.error(error);
       showToast(t('claimActionFailed'), 'error');
@@ -73,7 +74,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
 
   const myClaimsCount = items.reduce((acc, item) => acc + (item.claimants.some(c => c.uid === user.uid) ? 1 : 0), 0);
   const totalClaimsCount = items.reduce((acc, item) => acc + item.claimants.length, 0);
-  const totalSlots = items.reduce((acc, item) => acc + item.maxClaims, 0);
+  const totalSlots = items.reduce((acc, item) => acc + normalizeClaimCapacityInput(item.maxClaims), 0);
   
   // Sorting: My tasks first, then open tasks, then full tasks
   const sortedItems = [...items].sort((a, b) => {
@@ -114,7 +115,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                     min="1" 
                     max="99"
                     value={maxClaims} 
-                    onChange={(e) => setMaxClaims(parseInt(e.target.value))}
+                    onChange={(e) => setMaxClaims(e.target.value)}
                     className="app-input w-24"
                     disabled={isCreatingClaimItem}
                 />
@@ -157,8 +158,9 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
       <div className="space-y-3 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
           {filteredItems.map(item => {
               const isMine = item.claimants.some(c => c.uid === user.uid);
-              const isFull = item.claimants.length >= item.maxClaims;
-              const slotsLeft = item.maxClaims - item.claimants.length;
+              const itemCapacity = normalizeClaimCapacityInput(item.maxClaims);
+              const isFull = item.claimants.length >= itemCapacity;
+              const slotsLeft = itemCapacity - item.claimants.length;
               const isClaimTogglePending = pendingClaimItemIds.includes(item.id);
               const isDeletePending = pendingDeleteClaimItemIds.includes(item.id);
               

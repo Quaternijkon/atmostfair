@@ -22,6 +22,8 @@ export const PROJECT_CREATOR_NAME_MAX_LENGTH = 60;
 export const PROJECT_PASSWORD_MAX_LENGTH = 128;
 export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
+export const CLAIM_CAPACITY_MIN = 1;
+export const CLAIM_CAPACITY_MAX = 99;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
 const GAME_ROOM_TYPES = new Set(['rps', 'mine']);
@@ -908,6 +910,12 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
       at: claimedAt,
     },
   };
+}
+
+export function normalizeClaimCapacityInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return CLAIM_CAPACITY_MIN;
+  return Math.min(CLAIM_CAPACITY_MAX, Math.max(CLAIM_CAPACITY_MIN, parsed));
 }
 
 export function normalizeVotingMode(votingConfig) {
