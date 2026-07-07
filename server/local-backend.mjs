@@ -1902,6 +1902,7 @@ async function getProjectAccessLifecycleChanges({ store, operations }) {
 
 async function getProjectAccessLifecycleChange({ store, context, type, id, data, options }) {
   const existing = await getProjectedDoc({ store, context, collection: 'projects', id });
+  if (!existing && type === 'set') return { projectId: id, revoke: true };
   if (!existing) return null;
   if (type === 'delete') return { projectId: id, revoke: true };
   if (type !== 'set' && type !== 'update') return null;

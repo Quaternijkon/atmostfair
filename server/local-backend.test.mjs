@@ -5221,6 +5221,73 @@ test('HTTP data API revokes private project unlock grants when password changes'
   });
 });
 
+test('HTTP data API revokes stale private project grants when set creates a project shell', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123', displayName: 'Owner' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer@example.com', password: 'secret123', displayName: 'Viewer' },
+      });
+
+      const projectId = 'reused-private-project';
+      const staleGrantId = `${projectId}:${viewer.user.uid}`;
+      await store.set('project_access', staleGrantId, {
+        projectId,
+        uid: viewer.user.uid,
+        grantedAt: 1,
+      });
+
+      const created = await fetchJson(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: projectId,
+          data: {
+            title: 'Reused Private Plan',
+            type: 'vote',
+            creatorName: 'Owner',
+            password: 'new-secret',
+            brief: 'Fresh private content',
+            votingConfig: { mode: 'single' },
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(created.doc.hasPassword, true);
+      assert.equal(created.doc.accessGranted, true);
+
+      const viewerProject = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: { collection: 'projects', id: projectId },
+      });
+      assert.equal(viewerProject.doc.hasPassword, true);
+      assert.equal(viewerProject.doc.accessGranted, false);
+      assert.equal(Object.hasOwn(viewerProject.doc, 'brief'), false);
+      assert.equal(Object.hasOwn(viewerProject.doc, 'votingConfig'), false);
+      assert.equal(await store.get('project_access', staleGrantId), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API preserves private project passwords during authorized duplication', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
