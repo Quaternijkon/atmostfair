@@ -1455,6 +1455,101 @@ test('HTTP data API restricts notification creation to verified app events', asy
   });
 });
 
+test('HTTP data API limits notification updates to read acknowledgements', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const alice = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'alice@example.com', password: 'secret123', displayName: 'Alice' },
+      });
+      const bob = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'bob@example.com', password: 'secret123', displayName: 'Bob' },
+      });
+
+      const notification = await store.add('notifications', {
+        recipientId: bob.user.uid,
+        senderId: alice.user.uid,
+        type: 'friend_req',
+        title: 'New friend request',
+        message: 'Alice wants to connect.',
+        read: false,
+        createdAt: 1,
+      });
+
+      const pollutedUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'notifications',
+          id: notification.id,
+          data: {
+            read: true,
+            type: 'friend_message',
+            projectId: 'forged-project',
+            chatId: 'forged-chat',
+            title: 'Polluted title',
+            message: 'Mutated payload',
+          },
+        },
+      });
+      assert.equal(pollutedUpdate.status, 403);
+      assert.equal(pollutedUpdate.body.error.code, 'data/forbidden');
+      assert.deepEqual(await store.get('notifications', notification.id), {
+        id: notification.id,
+        recipientId: bob.user.uid,
+        senderId: alice.user.uid,
+        type: 'friend_req',
+        title: 'New friend request',
+        message: 'Alice wants to connect.',
+        read: false,
+        createdAt: 1,
+      });
+
+      const readUpdate = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'notifications', id: notification.id, data: { read: true } },
+      });
+      assert.equal(readUpdate.doc.read, true);
+      assert.equal(readUpdate.doc.title, 'New friend request');
+      assert.equal(readUpdate.doc.type, 'friend_req');
+
+      const replacement = await fetchJsonResponse(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'notifications',
+          id: notification.id,
+          data: {
+            recipientId: bob.user.uid,
+            type: 'system',
+            title: 'Replacement',
+            read: true,
+            createdAt: 2,
+          },
+        },
+      });
+      assert.equal(replacement.status, 403);
+      assert.equal(replacement.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('notifications', notification.id)).title, 'New friend request');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects child writes against stopped, finished, and archived projects without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

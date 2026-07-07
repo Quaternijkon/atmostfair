@@ -2042,7 +2042,16 @@ async function authorizeNotificationOperation({ store, user, type, id, data }) {
   }
 
   if (type === 'delete') return undefined;
-  return preserveImmutableField(data, existing, 'recipientId', type);
+  return authorizeNotificationReadAcknowledgement({ type, data });
+}
+
+function authorizeNotificationReadAcknowledgement({ type, data }) {
+  if (type !== 'update') forbidden();
+
+  const keys = Object.keys(data || {});
+  if (keys.length !== 1 || keys[0] !== 'read' || data.read !== true) forbidden();
+
+  return { read: true };
 }
 
 async function normalizeNotificationCreateData({ store, user, data }) {
