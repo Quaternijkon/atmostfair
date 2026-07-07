@@ -2567,16 +2567,29 @@ function assertValidProjectArchivedAt(archivedAt) {
 }
 
 function preserveProjectOwner(data, existing, type) {
-  if (Object.hasOwn(data || {}, 'creatorId') && data.creatorId !== existing.creatorId) {
+  const writeData = stripReadableProjectFields(data);
+  if (Object.hasOwn(writeData, 'creatorId') && writeData.creatorId !== existing.creatorId) {
     throwDataError(403, 'data/forbidden', 'Project ownership cannot be changed.');
   }
   if (type === 'set') {
+    const { id: _id, ...existingData } = existing || {};
     return {
-      ...(data || {}),
+      ...existingData,
+      ...writeData,
       creatorId: existing.creatorId,
     };
   }
-  return data || {};
+  return writeData;
+}
+
+function stripReadableProjectFields(data) {
+  const {
+    id: _id,
+    hasPassword: _hasPassword,
+    accessGranted: _accessGranted,
+    ...writeData
+  } = data || {};
+  return writeData;
 }
 
 function canWriteProject(project, user) {

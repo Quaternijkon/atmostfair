@@ -454,6 +454,116 @@ test('HTTP data API protects project documents from non-owner writes', async () 
   });
 });
 
+test('HTTP data API preserves project privacy and metadata on partial set writes', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner-private@example.com', password: 'secret123', displayName: 'Owner Name' },
+      });
+      const viewer = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'viewer-private@example.com', password: 'secret123' },
+      });
+
+      const created = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Private Schedule',
+            type: 'schedule',
+            creatorName: 'Owner Name',
+            status: 'active',
+            password: 'keep-secret',
+            brief: 'Hidden brief',
+            scheduleConfig: {
+              mode: 'date',
+              start: '2026-07-05',
+              end: '2026-07-07',
+              deadline: '',
+            },
+            createdAt: 42,
+          },
+        },
+      });
+
+      const unlocked = await fetchJson(`${baseUrl}/api/project-access/unlock`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          projectId: created.doc.id,
+          password: 'keep-secret',
+        },
+      });
+      assert.equal(unlocked.project.accessGranted, true);
+
+      const replaced = await fetchJson(`${baseUrl}/api/data/set`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          id: created.doc.id,
+          data: { title: 'Renamed Private Schedule' },
+        },
+      });
+      assert.equal(replaced.doc.title, 'Renamed Private Schedule');
+      assert.equal(replaced.doc.hasPassword, true);
+      assert.equal(replaced.doc.accessGranted, true);
+      assert.equal(replaced.doc.type, 'schedule');
+      assert.equal(replaced.doc.creatorId, owner.user.uid);
+      assert.equal(replaced.doc.creatorName, 'Owner Name');
+      assert.equal(replaced.doc.createdAt, 42);
+      assert.equal(replaced.doc.brief, 'Hidden brief');
+      assert.deepEqual(replaced.doc.scheduleConfig, {
+        mode: 'date',
+        start: '2026-07-05',
+        end: '2026-07-07',
+        deadline: '',
+      });
+
+      const stored = await store.get('projects', created.doc.id);
+      assert.equal(stored.password, 'keep-secret');
+      assert.equal(stored.type, 'schedule');
+      assert.equal(stored.creatorName, 'Owner Name');
+      assert.equal(stored.createdAt, 42);
+      assert.equal(stored.brief, 'Hidden brief');
+      assert.deepEqual(stored.scheduleConfig, {
+        mode: 'date',
+        start: '2026-07-05',
+        end: '2026-07-07',
+        deadline: '',
+      });
+
+      const viewerRead = await fetchJson(`${baseUrl}/api/data/get`, {
+        method: 'POST',
+        token: viewer.token,
+        body: {
+          collection: 'projects',
+          id: created.doc.id,
+        },
+      });
+      assert.equal(viewerRead.doc.accessGranted, true);
+      assert.equal(viewerRead.doc.hasPassword, true);
+      assert.equal(viewerRead.doc.brief, 'Hidden brief');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API rejects invalid project state metadata and config payloads without partial writes', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({
