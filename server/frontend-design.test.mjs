@@ -1461,7 +1461,7 @@ test('paused and finished team workspaces hide membership mutation controls', as
   );
   assert.match(
     team,
-    /canManage && m\.uid !== user\.uid && !isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, m\)/,
+    /canManage && m\.uid !== currentMember\?\.uid && !isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, m\)/,
     'Team member kick controls should be hidden when the project is stopped or finished',
   );
   assert.doesNotMatch(
@@ -1471,8 +1471,13 @@ test('paused and finished team workspaces hide membership mutation controls', as
   );
   assert.match(
     team,
-    /!isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, currentRoom\.members\.find/,
+    /!isStopped && <button[\s\S]{0,220}onKick\(currentRoom\.id, currentMember\)/,
     'Team leave control should be hidden when the project is stopped or finished',
+  );
+  assert.doesNotMatch(
+    team,
+    /currentRoom\.members/,
+    'Team view should read normalized current membership instead of raw stored members',
   );
 });
 
@@ -1510,10 +1515,12 @@ test('team workspace actions prevent duplicate submits and expose pending state'
   assert.match(team, /disabled=\{isKickPending\}/, 'Team kick button should be disabled while removing a member');
 
   assert.match(domain, /export function normalizeTeamRoomCapacityInput/, 'Project domain should expose a reusable team room capacity normalizer');
+  assert.match(domain, /export function createTeamRoomMembershipSummary/, 'Project domain should expose reusable normalized team room membership summaries');
   assert.match(app, /normalizeTeamRoomCapacityInput/, 'App room creation should use the shared team capacity normalizer');
   assert.match(app, /maxMembers: normalizeTeamRoomCapacityInput\(maxMembers\)/, 'Room creation should persist normalized team capacity');
   assert.doesNotMatch(app, /maxMembers:\s*parseInt\(maxMembers\)\|\|4/, 'Room creation should not persist ad hoc parsed team capacity');
-  assert.match(team, /normalizeTeamRoomCapacityInput/, 'Team view should normalize legacy room capacity before display and join checks');
+  assert.match(team, /createTeamRoomMembershipSummary/, 'Team view should use normalized membership summaries for display and join checks');
+  assert.doesNotMatch(team, /room\.members\.length/, 'Team view should not use raw stored member count for display or join checks');
 });
 
 test('paused and finished gather workspaces keep submissions read-only', async () => {

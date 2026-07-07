@@ -107,6 +107,37 @@ test('team join guard normalizes dirty membership before capacity checks', () =>
   );
 });
 
+test('team room membership summary normalizes dirty members before display checks', () => {
+  assert.equal(typeof projectDomain.createTeamRoomMembershipSummary, 'function');
+
+  const summary = projectDomain.createTeamRoomMembershipSummary({
+    id: 'dirty-team-display',
+    maxMembers: 2,
+    members: [
+      { uid: 'u1', name: 'Grace', joinedAt: 1000 },
+      { uid: ' u1 ', name: 'Duplicate Grace', joinedAt: 1001 },
+      { uid: ' ', name: 'Blank', joinedAt: 1002 },
+    ],
+  }, { uid: 'u2', displayName: 'Ada' });
+
+  assert.equal(summary.capacity, 2);
+  assert.equal(summary.memberCount, 1);
+  assert.equal(summary.isMember, false);
+  assert.equal(summary.canJoin, true);
+  assert.deepEqual(summary.members, [{ uid: 'u1', name: 'Grace', joinedAt: 1000 }]);
+  assert.equal(summary.currentMember, null);
+
+  const existingMemberSummary = projectDomain.createTeamRoomMembershipSummary({
+    id: 'dirty-current-member',
+    maxMembers: 4,
+    members: [{ uid: ' u2 ', name: 'Ada', joinedAt: 2000 }],
+  }, { uid: 'u2', displayName: 'Ada' });
+
+  assert.equal(existingMemberSummary.isMember, true);
+  assert.equal(existingMemberSummary.canJoin, false);
+  assert.deepEqual(existingMemberSummary.currentMember, { uid: 'u2', name: 'Ada', joinedAt: 2000 });
+});
+
 test('queue join guard creates one participant per project and user', () => {
   const existing = [
     { id: 'p1', projectId: 'project-1', uid: 'u1' },

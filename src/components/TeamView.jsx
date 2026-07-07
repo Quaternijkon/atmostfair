@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { X } from './Icons';
 import { InfoCard } from './InfoCard';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH, normalizeTeamRoomCapacityInput } from '../lib/projectDomain';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH, createTeamRoomMembershipSummary } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, onJoin, onKick, onDelete, projectId, t }) {
@@ -13,7 +13,13 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
   const [pendingTeamActionKeys, setPendingTeamActionKeys] = useState([]);
   const pendingTeamActionKeysRef = useRef(new Set());
   const sortedRooms = [...rooms].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const currentRoom = sortedRooms.find((r) => r.members?.some((m) => m.uid === user.uid));
+  const roomsWithMembership = sortedRooms.map((room) => ({
+    room,
+    membership: createTeamRoomMembershipSummary(room, user),
+  }));
+  const currentRoomEntry = roomsWithMembership.find(({ membership }) => membership.isMember);
+  const currentRoom = currentRoomEntry?.room;
+  const currentMembership = currentRoomEntry?.membership;
 
   const handleCreateTeam = async (event) => {
     event.preventDefault();
@@ -53,7 +59,8 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
   if (currentRoom) {
     const isRoomOwner = currentRoom.ownerId === user.uid;
     const canManage = isRoomOwner || isAdmin;
-    const currentMember = currentRoom.members.find((m) => m.uid === user.uid);
+    const currentMembers = currentMembership.members;
+    const currentMember = currentMembership.currentMember;
     const disbandActionKey = `delete:${currentRoom.id}`;
     const leaveActionKey = `leave:${currentRoom.id}:${currentMember?.uid || ''}`;
     const isDisbandPending = pendingTeamActionKeys.includes(disbandActionKey);
@@ -64,20 +71,20 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
           <div><div className="text-white/80 text-xs font-medium uppercase tracking-wider mb-1">{t('currentTeam')}</div><h2 className="text-2xl font-medium">{currentRoom.name}</h2></div>
           <div className="flex gap-2">
             {canManage && !isStopped ? <button onClick={() => runTeamAction(disbandActionKey, () => onDelete(currentRoom.id))} disabled={isDisbandPending} aria-busy={isDisbandPending} className="app-button bg-white/20 px-3 text-xs text-white hover:bg-white/30">{isDisbandPending ? t('processing') : t('disbandTeam')}</button> : null}
-            {!isStopped && <button onClick={() => runTeamAction(leaveActionKey, () => onKick(currentRoom.id, currentRoom.members.find((m) => m.uid === user.uid)))} disabled={isLeavePending} aria-busy={isLeavePending} className="app-button bg-white text-google-red hover:shadow-elevation-1">{isLeavePending ? t('processing') : t('leave')}</button>}
+            {!isStopped && <button onClick={() => runTeamAction(leaveActionKey, () => onKick(currentRoom.id, currentMember))} disabled={isLeavePending} aria-busy={isLeavePending} className="app-button bg-white text-google-red hover:shadow-elevation-1">{isLeavePending ? t('processing') : t('leave')}</button>}
           </div>
         </div>
         <div className="p-6 grid gap-4 sm:grid-cols-2">
-          {currentRoom.members.map((m) => {
+          {currentMembers.map((m) => {
             const kickActionKey = `kick:${currentRoom.id}:${m.uid}`;
             const isKickPending = pendingTeamActionKeys.includes(kickActionKey);
             return (
-              <div key={m.joinedAt} className="flex items-center justify-between rounded-2xl border border-m3-outline-variant/50 bg-m3-surface p-4">
+              <div key={m.uid} className="flex items-center justify-between rounded-2xl border border-m3-outline-variant/50 bg-m3-surface p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-google-red/20 text-google-red flex items-center justify-center font-bold text-xs">{m.name.charAt(0)}</div>
                   <div className="text-m3-on-surface font-medium">{m.name} {m.uid === currentRoom.ownerId && <span className="text-xs font-normal text-m3-on-surface-variant ml-1">({t('leader')})</span>}</div>
                 </div>
-                {canManage && m.uid !== user.uid && !isStopped && <button onClick={() => runTeamAction(kickActionKey, () => onKick(currentRoom.id, m))} disabled={isKickPending} aria-busy={isKickPending} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={isKickPending ? t('processing') : t('delete')}><X className="w-4 h-4" /></button>}
+                {canManage && m.uid !== currentMember?.uid && !isStopped && <button onClick={() => runTeamAction(kickActionKey, () => onKick(currentRoom.id, m))} disabled={isKickPending} aria-busy={isKickPending} className="app-icon-button hover:bg-google-red/10 hover:text-google-red" title={isKickPending ? t('processing') : t('delete')}><X className="w-4 h-4" /></button>}
               </div>
             );
           })}
@@ -95,16 +102,15 @@ export default function TeamView({ user, isAdmin, rooms, isStopped, onCreate, on
         </form>
       )}
       <div className="workspace-grid">
-        {sortedRooms.map((room) => {
-          const roomCapacity = normalizeTeamRoomCapacityInput(room.maxMembers);
+        {roomsWithMembership.map(({ room, membership }) => {
           const isJoinPending = pendingTeamActionKeys.includes(`join:${room.id}`);
           return (
             <div key={room.id} className="app-card p-6">
               <div className="flex justify-between items-start mb-4">
                 <h4 className="font-medium text-lg text-m3-on-surface">{room.name}</h4>
-                <div className="bg-m3-surface text-xs font-medium px-2 py-1 rounded-md text-m3-on-surface-variant border border-m3-outline-variant/50">{room.members.length} / {roomCapacity}</div>
+                <div className="bg-m3-surface text-xs font-medium px-2 py-1 rounded-md text-m3-on-surface-variant border border-m3-outline-variant/50">{membership.memberCount} / {membership.capacity}</div>
               </div>
-              {!isStopped && room.members.length < roomCapacity ? (
+              {!isStopped && membership.canJoin ? (
                 <button onClick={() => runTeamAction(`join:${room.id}`, () => onJoin(room.id, user.displayName))} disabled={isJoinPending} aria-busy={isJoinPending} className="app-button w-full border border-m3-outline-variant text-google-red hover:bg-google-red/5">{isJoinPending ? t('processing') : t('joinTeam')}</button>
               ) : (
                 <button disabled className="app-button w-full bg-m3-surface-container text-m3-on-surface-variant">{t('fullOrClosed')}</button>

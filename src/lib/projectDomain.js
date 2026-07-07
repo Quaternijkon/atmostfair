@@ -271,6 +271,22 @@ export function createTeamJoinMember(room, user, userName, joinedAt) {
   };
 }
 
+export function createTeamRoomMembershipSummary(room, user) {
+  const members = normalizeTeamRoomMembers(room?.members);
+  const capacity = normalizeTeamRoomCapacityInput(room?.maxMembers);
+  const uid = normalizeIdentityValue(user?.uid);
+  const currentMember = uid ? members.find((member) => member.uid === uid) || null : null;
+  const memberCount = members.length;
+  return {
+    members,
+    capacity,
+    memberCount,
+    currentMember,
+    isMember: Boolean(currentMember),
+    canJoin: Boolean(uid) && !currentMember && memberCount < capacity,
+  };
+}
+
 export function createQueueJoinData(existingParticipants, projectId, user, userName, value, joinedAt) {
   if (!projectId || !user?.uid) return null;
   const participants = Array.isArray(existingParticipants) ? existingParticipants : [];
