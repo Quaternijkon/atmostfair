@@ -1,5 +1,7 @@
 import {
   createGameRoomSummary,
+  normalizeClaimCapacityInput,
+  normalizeClaimItemClaimants,
   normalizeGatherSubmissionData,
   normalizeMineProgressInput,
   normalizeRpsScoreInput,
@@ -244,10 +246,10 @@ function createClaimExport({ claimItems = [] }, t) {
     suffix: 'claim_participants',
     headers: [t('taskTitle'), t('maxClaims'), t('exportClaimCount'), t('exportClaimants')],
     rows: claimItems.map((item) => {
-      const claimants = item.claimants || [];
+      const claimants = normalizeClaimItemClaimants(item);
       return [
         item.title,
-        item.maxClaims,
+        normalizeClaimCapacityInput(item.maxClaims),
         claimants.length,
         claimants.map((claimant) => claimant.name).filter(Boolean).join('; '),
       ];

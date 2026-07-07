@@ -1335,6 +1335,8 @@ test('claim workspace actions prevent duplicate submits and expose pending state
   assert.match(claim, /aria-busy=\{isCreatingClaimItem\}/, 'Claim creation form should expose pending state to assistive technology');
   assert.match(claim, /disabled=\{isCreatingClaimItem\}/, 'Claim creation controls should be disabled while creating');
   assert.match(claim, /isCreatingClaimItem \? t\('processing'\) : t\('create'\)/, 'Claim creation button should show localized progress copy');
+  assert.match(claim, /normalizeClaimItemClaimants/, 'Claim rows should use the shared claimant normalizer for stale data');
+  assert.doesNotMatch(claim, /item\.claimants\.(some|length|map)/, 'Claim rows should not read raw claimant arrays directly');
 
   assert.match(claim, /pendingClaimItemIdsRef\s*=\s*useRef\(new Set\(\)\)/, 'Claim toggles should track pending item ids in a ref');
   assert.match(claim, /if \(pendingClaimItemIdsRef\.current\.has\(itemId\)\) return;/, 'Claim toggles should ignore duplicate clicks for the same item');

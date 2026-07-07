@@ -1571,6 +1571,15 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
     maxClaims: 1000,
     claimants: Array.from({ length: 99 }, (_, index) => ({ uid: `legacy-${index}`, name: `User ${index}`, at: index })),
   };
+  const duplicatedLegacyItem = {
+    id: 'claim-5',
+    maxClaims: 2,
+    claimants: [
+      { uid: 'u1', name: 'Owner', at: 1 },
+      { uid: 'u1', name: 'Duplicate Owner', at: 2 },
+      null,
+    ],
+  };
 
   assert.deepEqual(createClaimToggleData(openItem, user, 'Dorothy Vaughan', 3800), {
     type: 'add',
@@ -1586,6 +1595,10 @@ test('claim toggle guard enforces capacity and supports releasing existing claim
     null,
     'legacy oversized claim items should still cap at the product maximum',
   );
+  assert.deepEqual(createClaimToggleData(duplicatedLegacyItem, user, 'Dorothy Vaughan', 3804), {
+    type: 'add',
+    claimant: { uid: 'u2', name: 'Dorothy Vaughan', at: 3804 },
+  });
 });
 
 test('claim capacity input normalizes empty and bounded numeric values', () => {
@@ -2436,6 +2449,34 @@ test('project insight summary scopes metrics and guides next actions', () => {
     { key: 'slots', labelKey: 'insightSlots', value: 2 },
     { key: 'booked', labelKey: 'insightBooked', value: 1 },
     { key: 'waitlist', labelKey: 'insightWaitlist', value: 2 },
+  ]);
+
+  const claimSummary = createProjectInsightSummary(
+    { id: 'claim-1', type: 'claim', status: 'active' },
+    {
+      claimItems: [
+        {
+          id: 'c1',
+          projectId: 'claim-1',
+          maxClaims: '2',
+          claimants: [
+            { uid: 'u1', name: 'Ana' },
+            { uid: 'u1', name: 'Duplicate Ana' },
+            { uid: 'u2', name: 'Bo' },
+            { uid: 'u3', name: 'Cy' },
+            null,
+          ],
+        },
+        { id: 'c2', projectId: 'claim-1', maxClaims: 'bad', claimants: 'not-a-list' },
+        { id: 'c3', projectId: 'other', maxClaims: 1, claimants: [{ uid: 'leak', name: 'Leak' }] },
+      ],
+    },
+  );
+
+  assert.equal(claimSummary.nextActionKey, 'insightReviewProgress');
+  assert.deepEqual(claimSummary.metrics, [
+    { key: 'tasks', labelKey: 'insightTasks', value: 2 },
+    { key: 'claimed', labelKey: 'insightClaimed', value: 2 },
   ]);
 
   assert.equal(

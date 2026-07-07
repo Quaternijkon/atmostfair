@@ -302,6 +302,35 @@ test('participant export builds localized CSV for each participant workflow', ()
   assert.match(claimExport.csv, /^Task \/ Item,Max People,Claim Count,Claimants\n/);
   assert.match(claimExport.csv, /Bring badges,3,2,Eli; Fay/);
 
+  const normalizedClaimExport = createProjectParticipantExport({
+    id: 'p6',
+    title: 'Dirty Claims',
+    type: 'claim',
+  }, {
+    claimItems: [
+      {
+        title: 'Legacy task',
+        maxClaims: '2',
+        claimants: [
+          { uid: 'u1', name: 'Ana' },
+          { uid: 'u1', name: 'Duplicate Ana' },
+          { uid: 'u2', name: 'Bo' },
+          { uid: 'u3', name: 'Cy' },
+          { uid: '', name: '' },
+          null,
+        ],
+      },
+      {
+        title: 'Malformed task',
+        maxClaims: 'bad',
+        claimants: 'not-a-list',
+      },
+    ],
+  }, t);
+  assert.match(normalizedClaimExport.csv, /Legacy task,2,2,Ana; Bo/);
+  assert.match(normalizedClaimExport.csv, /Malformed task,1,0,$/m);
+  assert.doesNotMatch(normalizedClaimExport.csv, /Duplicate Ana|Cy|not-a-list|undefined/);
+
   const gameExport = createProjectParticipantExport({
     id: 'p7',
     title: 'Game Night',

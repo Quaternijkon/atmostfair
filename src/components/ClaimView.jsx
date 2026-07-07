@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Plus, CheckSquare, MinusCircle, UserCheck, Trash2 } from './Icons';
 import { formatDateTime } from '../lib/locale';
-import { normalizeClaimCapacityInput, PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { normalizeClaimCapacityInput, normalizeClaimItemClaimants, PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function ClaimView({ user, isAdmin, project, items = [], isStopped, isOwner, actions, t }) {
@@ -72,20 +72,28 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
       }
   };
 
-  const myClaimsCount = items.reduce((acc, item) => acc + (item.claimants.some(c => c.uid === user.uid) ? 1 : 0), 0);
-  const totalClaimsCount = items.reduce((acc, item) => acc + item.claimants.length, 0);
-  const totalSlots = items.reduce((acc, item) => acc + normalizeClaimCapacityInput(item.maxClaims), 0);
+  const readableItems = items.map((item) => {
+      const claimants = normalizeClaimItemClaimants(item);
+      const capacity = normalizeClaimCapacityInput(item.maxClaims);
+      return {
+          item,
+          claimants,
+          capacity,
+          isMine: claimants.some(c => c.uid === user.uid),
+      };
+  });
+  const myClaimsCount = readableItems.reduce((acc, entry) => acc + (entry.isMine ? 1 : 0), 0);
+  const totalClaimsCount = readableItems.reduce((acc, entry) => acc + entry.claimants.length, 0);
+  const totalSlots = readableItems.reduce((acc, entry) => acc + entry.capacity, 0);
   
   // Sorting: My tasks first, then open tasks, then full tasks
-  const sortedItems = [...items].sort((a, b) => {
-      const aMy = a.claimants.some(c => c.uid === user.uid);
-      const bMy = b.claimants.some(c => c.uid === user.uid);
-      if (aMy && !bMy) return -1;
-      if (!aMy && bMy) return 1;
-      return a.createdAt - b.createdAt;
+  const sortedItems = [...readableItems].sort((a, b) => {
+      if (a.isMine && !b.isMine) return -1;
+      if (!a.isMine && b.isMine) return 1;
+      return a.item.createdAt - b.item.createdAt;
   });
 
-  const filteredItems = filterMyTasks ? sortedItems.filter(i => i.claimants.some(c => c.uid === user.uid)) : sortedItems;
+  const filteredItems = filterMyTasks ? sortedItems.filter(entry => entry.isMine) : sortedItems;
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -156,11 +164,9 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
 
       {/* List */}
       <div className="space-y-3 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-          {filteredItems.map(item => {
-              const isMine = item.claimants.some(c => c.uid === user.uid);
-              const itemCapacity = normalizeClaimCapacityInput(item.maxClaims);
-              const isFull = item.claimants.length >= itemCapacity;
-              const slotsLeft = itemCapacity - item.claimants.length;
+          {filteredItems.map(({ item, claimants, capacity: itemCapacity, isMine }) => {
+              const isFull = claimants.length >= itemCapacity;
+              const slotsLeft = Math.max(0, itemCapacity - claimants.length);
               const isClaimTogglePending = pendingClaimItemIds.includes(item.id);
               const isDeletePending = pendingDeleteClaimItemIds.includes(item.id);
               
@@ -171,9 +177,9 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                               <h4 className={`text-lg font-medium mb-1 ${isMine ? 'text-google-red' : 'text-m3-on-surface'}`}>{item.title}</h4>
                               
                               {/* Claimants Avatars */}
-                              {item.claimants.length > 0 && (
+                              {claimants.length > 0 && (
                                   <div className="flex flex-wrap items-center gap-2 mt-2">
-                                      {item.claimants.map((c, i) => (
+                                      {claimants.map((c, i) => (
                                           <div key={i} className="flex items-center gap-1.5 bg-m3-surface-container-high px-2 py-0.5 rounded-full text-xs text-m3-on-surface-variant" title={t('takenAt', { date: formatDateTime(c.at, t) })}>
                                               <div className="w-5 h-5 rounded-full bg-google-red/20 text-google-red flex items-center justify-center font-bold text-[10px] uppercase">
                                                   {c.name.charAt(0)}
@@ -188,7 +194,7 @@ export default function ClaimView({ user, isAdmin, project, items = [], isStoppe
                                       )}
                                   </div>
                               )}
-                              {item.claimants.length === 0 && (
+                              {claimants.length === 0 && (
                                   <div className="mt-1 text-xs text-google-green font-medium flex items-center gap-1">
                                       <span className="w-2 h-2 rounded-full bg-google-green"></span>
                                       {t('spotsLeft', { count: slotsLeft })} · {t('open')}

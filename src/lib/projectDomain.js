@@ -159,7 +159,7 @@ export function createProjectInsightSummary(project, datasets = {}) {
       }
       case 'claim': {
         const claimItems = scoped(datasets.claimItems);
-        const claimed = claimItems.reduce((sum, item) => sum + (Array.isArray(item.claimants) ? item.claimants.length : 0), 0);
+        const claimed = claimItems.reduce((sum, item) => sum + normalizeClaimItemClaimants(item).length, 0);
         metrics = [
           { key: 'tasks', labelKey: 'insightTasks', value: claimItems.length },
           { key: 'claimed', labelKey: 'insightClaimed', value: claimed },
@@ -980,8 +980,8 @@ export function createScheduleRecommendationSummary(submissions, config, limit =
 
 export function createClaimToggleData(item, user, userName, claimedAt) {
   if (!item?.id || !user?.uid) return null;
-  const claimants = Array.isArray(item.claimants) ? item.claimants : [];
-  const existingClaim = claimants.find((claimant) => claimant.uid === user.uid);
+  const rawClaimants = Array.isArray(item.claimants) ? item.claimants : [];
+  const existingClaim = rawClaimants.find((claimant) => claimant?.uid === user.uid);
   if (existingClaim) {
     return {
       type: 'remove',
@@ -990,6 +990,7 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
   }
 
   const maxClaims = normalizeClaimCapacityInput(item.maxClaims);
+  const claimants = normalizeClaimItemClaimants(item);
   if (claimants.length >= maxClaims) return null;
   return {
     type: 'add',
@@ -999,6 +1000,35 @@ export function createClaimToggleData(item, user, userName, claimedAt) {
       at: claimedAt,
     },
   };
+}
+
+export function normalizeClaimItemClaimants(item) {
+  const rawClaimants = Array.isArray(item?.claimants) ? item.claimants : [];
+  const maxClaims = normalizeClaimCapacityInput(item?.maxClaims);
+  const normalized = [];
+  const seen = new Set();
+
+  for (const claimant of rawClaimants) {
+    if (!claimant || typeof claimant !== 'object') continue;
+    const uid = String(claimant.uid ?? '').trim();
+    const name = String(claimant.name ?? '').trim().slice(0, PROJECT_CREATOR_NAME_MAX_LENGTH);
+    const displayName = name || uid;
+    if (!uid && !displayName) continue;
+
+    const key = uid ? `uid:${uid}` : `name:${displayName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    normalized.push({
+      ...(uid ? { uid } : {}),
+      name: displayName,
+      ...(claimant.at !== undefined ? { at: claimant.at } : {}),
+    });
+
+    if (normalized.length >= maxClaims) break;
+  }
+
+  return normalized;
 }
 
 export function normalizeClaimCapacityInput(value) {
