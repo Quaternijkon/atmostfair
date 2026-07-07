@@ -170,6 +170,47 @@ test('participant export builds localized CSV for each participant workflow', ()
   assert.match(gatherExport.csv, /^Name,Submitted At,Topic\n/);
   assert.match(gatherExport.csv, /Dora,2024-05-01T09:00:00.000Z,"CSV, edge"/);
 
+  const typedGatherExport = createProjectParticipantExport({
+    id: 'p4b',
+    title: 'Typed Gather',
+    type: 'gather',
+  }, {
+    gatherFields: [
+      { id: 'meal', label: 'Meal', type: 'option', options: ['Veg', 'Meat'] },
+      { id: 'seats', label: 'Seats', type: 'number' },
+      { id: 'day', label: 'Day', type: 'date' },
+      { id: 'note', label: 'Note', type: 'text' },
+    ],
+    gatherSubmissions: [
+      {
+        name: 'Rae',
+        data: {
+          meal: 'Pizza',
+          seats: 'NaN',
+          day: '2026-02-30',
+          note: '  needs trim  ',
+          stale: 'should not export',
+        },
+        submittedAt: 1714554000000,
+      },
+      {
+        name: 'Mia',
+        data: {
+          meal: 'Veg',
+          seats: '2',
+          day: '2026-07-05',
+          note: 'ok',
+          stale: 'ignored',
+        },
+        submittedAt: 1714557600000,
+      },
+    ],
+  }, t);
+  assert.match(typedGatherExport.csv, /^Name,Submitted At,Meal,Seats,Day,Note\n/);
+  assert.match(typedGatherExport.csv, /Rae,2024-05-01T09:00:00.000Z,,,,needs trim/);
+  assert.match(typedGatherExport.csv, /Mia,2024-05-01T10:00:00.000Z,Veg,2,2026-07-05,ok/);
+  assert.doesNotMatch(typedGatherExport.csv, /Pizza|NaN|2026-02-30|stale|ignored|should not export/);
+
   const claimExport = createProjectParticipantExport({
     id: 'p5',
     title: 'Setup',

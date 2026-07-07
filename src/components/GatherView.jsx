@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Plus, Download, ClipboardList, CheckCircle, FileText, X } from './Icons';
 import { formatDate, formatDateTime } from '../lib/locale';
-import { PROJECT_CHILD_TEXT_MAX_LENGTH } from '../lib/projectDomain';
+import { PROJECT_CHILD_TEXT_MAX_LENGTH, normalizeGatherSubmissionData } from '../lib/projectDomain';
 import { useUI } from './UIContext';
 
 export default function GatherView({ user, isAdmin, project, fields = [], submissions = [], isStopped, isOwner, actions, t }) {
@@ -20,7 +20,11 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   const [pendingGatherFieldIds, setPendingGatherFieldIds] = useState([]);
   const pendingGatherFieldIdsRef = useRef(new Set());
 
-  const mySubmission = submissions.find(s => s.uid === user?.uid);
+  const readableSubmissions = submissions.map((submission) => ({
+    ...submission,
+    data: normalizeGatherSubmissionData(submission.data, fields),
+  }));
+  const mySubmission = readableSubmissions.find(s => s.uid === user?.uid);
   const hasSubmitted = !!mySubmission;
   const canShowSubmissionCard = !isStopped || hasSubmitted;
   const fieldTypeOptions = [
@@ -165,7 +169,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
   const handleExport = () => {
     // Generate CSV
     const headers = [t('nameLabel'), t('submittedAtCsv'), ...fields.map(f => f.label)];
-    const rows = submissions.map(s => {
+    const rows = readableSubmissions.map(s => {
         const date = formatDateTime(s.submittedAt, t).replace(/,/g, '');
         const values = fields.map(f => `"${(s.data[f.id] || '').replace(/"/g, '""')}"`);
         return [`"${s.name}"`, `"${date}"`, ...values].join(',');
@@ -276,7 +280,7 @@ export default function GatherView({ user, isAdmin, project, fields = [], submis
                           </tr>
                       </thead>
                       <tbody>
-                          {submissions.map(s => (
+                          {readableSubmissions.map(s => (
                               <tr key={s.id} className="border-t border-m3-outline/10 hover:bg-m3-surface-container/50">
                                   <td className="px-4 py-3 font-medium">{s.name}</td>
                                   {fields.map(f => (

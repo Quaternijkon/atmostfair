@@ -1,4 +1,9 @@
-import { createGameRoomSummary, normalizeMineProgressInput, normalizeRpsScoreInput } from './projectDomain.js';
+import {
+  createGameRoomSummary,
+  normalizeGatherSubmissionData,
+  normalizeMineProgressInput,
+  normalizeRpsScoreInput,
+} from './projectDomain.js';
 import { getActivityMessageKey } from './activityDomain.js';
 
 const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim', 'game_hub']);
@@ -202,10 +207,15 @@ function createScheduleExport({ scheduleSubmissions = [] }, t) {
 }
 
 function createGatherExport({ gatherFields = [], gatherSubmissions = [] }, t) {
+  const readableSubmissions = gatherSubmissions.map((submission) => ({
+    ...submission,
+    data: normalizeGatherSubmissionData(submission.data, gatherFields),
+  }));
+
   return {
     suffix: 'gather_participants',
     headers: [t('nameLabel'), t('submittedAtCsv'), ...gatherFields.map((field) => field.label)],
-    rows: gatherSubmissions.map((submission) => [
+    rows: readableSubmissions.map((submission) => [
       submission.name,
       formatExportDate(submission.submittedAt),
       ...gatherFields.map((field) => submission.data?.[field.id]),

@@ -706,6 +706,17 @@ test('gather workspace supports localized typed fields', async () => {
   assert.doesNotMatch(gather, />Text<|>Number<|>Date<|>Option<|placeholder="Yes, No/, 'Gather typed field visible copy should be localized');
 });
 
+test('gather workspace displays submissions normalized against current fields', async () => {
+  const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
+
+  assert.match(gather, /normalizeGatherSubmissionData/, 'Gather workspace should use the shared submission normalizer');
+  assert.match(gather, /const readableSubmissions = submissions\.map/, 'Gather workspace should derive a readable submission list');
+  assert.match(gather, /readableSubmissions\.find\(s => s\.uid === user\?\.uid\)/, 'Current-user receipt should use normalized submissions');
+  assert.match(gather, /readableSubmissions\.map\(s =>/, 'Owner response table and CSV should iterate normalized submissions');
+  assert.doesNotMatch(gather, /const mySubmission = submissions\.find/, 'Current-user receipt should not read raw submissions directly');
+  assert.doesNotMatch(gather, /const rows = submissions\.map/, 'Gather local CSV export should not serialize raw submissions directly');
+});
+
 test('gather submission form prevents duplicate submits and exposes pending state', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 
