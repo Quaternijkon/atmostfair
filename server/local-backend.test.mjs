@@ -1302,6 +1302,46 @@ test('HTTP data API restricts notification creation to verified app events', asy
       assert.equal(validFriendNotification.doc.senderId, alice.user.uid);
       assert.equal(validFriendNotification.doc.read, false);
 
+      const staleRequestFriendship = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [alice.user.uid, charlie.user.uid],
+            names: { [alice.user.uid]: 'Alice', [charlie.user.uid]: 'Charlie' },
+            status: 'pending',
+            initiator: alice.user.uid,
+            createdAt: 4.5,
+          },
+        },
+      });
+      const notificationCountBeforeStaleRequestBatch = (await store.list('notifications')).length;
+      const staleBatchFriendRequestNotification = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'friendships', id: staleRequestFriendship.doc.id },
+            {
+              type: 'add',
+              collection: 'notifications',
+              data: {
+                recipientId: charlie.user.uid,
+                type: 'friend_req',
+                title: 'Stale request',
+                read: false,
+                createdAt: 4.6,
+              },
+            },
+          ],
+        },
+      });
+      assert.equal(staleBatchFriendRequestNotification.status, 403);
+      assert.equal(staleBatchFriendRequestNotification.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('friendships', staleRequestFriendship.doc.id)).status, 'pending');
+      assert.equal((await store.list('notifications')).length, notificationCountBeforeStaleRequestBatch);
+
       const unconfirmedMessageNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,

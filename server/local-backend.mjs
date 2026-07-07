@@ -2133,9 +2133,9 @@ async function normalizeNotificationCreateData({ store, user, context, data }) {
   if (!recipientId) forbidden();
 
   if (notification.type === 'friend_req') {
-    const friendship = await findPendingFriendRequest(store, user.uid, recipientId);
+    const friendship = await findPendingFriendRequest({ store, context, initiatorId: user.uid, recipientId });
     if (!friendship) forbidden();
-    if (await hasDuplicateFriendRequestNotification(store, user.uid, recipientId)) {
+    if (await hasDuplicateFriendRequestNotification({ store, context, senderId: user.uid, recipientId })) {
       throwDataError(409, 'data/duplicate-notification', 'Notification already exists.');
     }
     return {
@@ -2194,10 +2194,10 @@ async function normalizeFriendMessageNotificationData({ store, context, user, no
   };
 }
 
-async function hasDuplicateFriendRequestNotification(store, senderId, recipientId) {
+async function hasDuplicateFriendRequestNotification({ store, context, senderId, recipientId }) {
   const senderUid = normalizeNotificationRecipientId(senderId);
   const recipientUid = normalizeNotificationRecipientId(recipientId);
-  const notifications = await store.list('notifications');
+  const notifications = await listProjectedDocs({ store, context, collection: 'notifications' });
 
   return notifications.some((notification) => (
     notification.type === 'friend_req'
@@ -2206,10 +2206,10 @@ async function hasDuplicateFriendRequestNotification(store, senderId, recipientI
   ));
 }
 
-async function findPendingFriendRequest(store, initiatorId, recipientId) {
+async function findPendingFriendRequest({ store, context, initiatorId, recipientId }) {
   const initiatorUid = normalizeFriendMemberId(initiatorId);
   const recipientUid = normalizeFriendMemberId(recipientId);
-  const relationships = await store.list('friendships');
+  const relationships = await listProjectedDocs({ store, context, collection: 'friendships' });
 
   return relationships.find((relationship) => (
     relationship.status === 'pending'
@@ -2406,6 +2406,26 @@ async function stageAuthorizedDataOperation({ store, context, operation }) {
       : { id: operation.id, ...cloneDataValue(operation.data || {}) };
     setProjectedDoc(context, operation.collection, operation.id, nextDoc);
   }
+}
+
+async function listProjectedDocs({ store, context, collection }) {
+  const docs = new Map((await store.list(collection)).map((doc) => [doc.id, doc]));
+
+  if (context) {
+    for (const [key, doc] of context.projectedDocs.entries()) {
+      const separator = key.indexOf('\0');
+      const projectedCollection = key.slice(0, separator);
+      const id = key.slice(separator + 1);
+      if (projectedCollection !== collection) continue;
+      if (!doc) {
+        docs.delete(id);
+      } else {
+        docs.set(id, cloneDataValue(doc));
+      }
+    }
+  }
+
+  return [...docs.values()];
 }
 
 async function listProjectedVotingItems({ store, context, projectId }) {
