@@ -2591,6 +2591,33 @@ test('HTTP data API restricts room member writes to self-join and managed remova
       assert.equal(carolOverCapacity.status, 409);
       assert.equal(carolOverCapacity.body.error.code, 'data/room-full');
 
+      const dirtyRoom = await store.add('rooms', {
+        projectId: project.doc.id,
+        name: 'Dirty team',
+        ownerId: alice.user.uid,
+        maxMembers: 2,
+        members: [
+          { uid: alice.user.uid, name: 'alice', joinedAt: 2 },
+          { uid: ` ${alice.user.uid} `, name: 'Duplicate Alice', joinedAt: 3 },
+          { uid: ' ', name: 'Blank', joinedAt: 4 },
+        ],
+      });
+      const bobJoinsDirtyRoom = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'rooms',
+          id: dirtyRoom.id,
+          data: { members: arrayUnion({ uid: bob.user.uid, name: 'Bob', joinedAt: 5 }) },
+        },
+      });
+      assert.deepEqual(bobJoinsDirtyRoom.doc.members, [
+        { uid: alice.user.uid, name: 'alice', joinedAt: 2 },
+        { uid: ` ${alice.user.uid} `, name: 'Duplicate Alice', joinedAt: 3 },
+        { uid: ' ', name: 'Blank', joinedAt: 4 },
+        { uid: bob.user.uid, name: 'Bob', joinedAt: 5 },
+      ]);
+
       const directRewrite = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: carol.token,

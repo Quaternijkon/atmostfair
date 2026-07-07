@@ -81,6 +81,32 @@ test('team room capacity input normalizes empty and bounded numeric values', () 
   );
 });
 
+test('team join guard normalizes dirty membership before capacity checks', () => {
+  const user = { uid: 'u2', displayName: 'Ada' };
+
+  assert.deepEqual(
+    createTeamJoinMember({
+      id: 'dirty-team',
+      maxMembers: 2,
+      members: [
+        { uid: 'u1', name: 'Grace', joinedAt: 1000 },
+        { uid: ' u1 ', name: 'Duplicate Grace', joinedAt: 1001 },
+        { uid: ' ', name: 'Blank', joinedAt: 1002 },
+      ],
+    }, user, 'Ada Lovelace', 2002),
+    { uid: 'u2', name: 'Ada Lovelace', joinedAt: 2002 },
+  );
+
+  assert.equal(
+    createTeamJoinMember({
+      id: 'dirty-duplicate-team',
+      maxMembers: 3,
+      members: [{ uid: ' u2 ', name: 'Existing Ada', joinedAt: 1000 }],
+    }, user, 'Ada Lovelace', 2003),
+    null,
+  );
+});
+
 test('queue join guard creates one participant per project and user', () => {
   const existing = [
     { id: 'p1', projectId: 'project-1', uid: 'u1' },

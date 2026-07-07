@@ -243,14 +243,29 @@ function normalizeIdentityValue(value) {
   return String(value ?? '').trim();
 }
 
+function normalizeTeamRoomMembers(members) {
+  if (!Array.isArray(members)) return [];
+  const seen = new Set();
+  return members.reduce((normalized, member) => {
+    if (!member || typeof member !== 'object' || Array.isArray(member)) return normalized;
+    const uid = normalizeIdentityValue(member.uid);
+    if (!uid || seen.has(uid)) return normalized;
+    seen.add(uid);
+    normalized.push({ ...clonePlainValue(member), uid });
+    return normalized;
+  }, []);
+}
+
 export function createTeamJoinMember(room, user, userName, joinedAt) {
   if (!room || !user?.uid) return null;
-  const members = Array.isArray(room.members) ? room.members : [];
-  if (members.some((member) => member.uid === user.uid)) return null;
+  const uid = normalizeIdentityValue(user.uid);
+  if (!uid) return null;
+  const members = normalizeTeamRoomMembers(room.members);
+  if (members.some((member) => member.uid === uid)) return null;
   const maxMembers = normalizeTeamRoomCapacityInput(room.maxMembers);
   if (maxMembers > 0 && members.length >= maxMembers) return null;
   return {
-    uid: user.uid,
+    uid,
     name: cleanName(userName, user),
     joinedAt,
   };

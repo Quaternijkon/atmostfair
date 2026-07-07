@@ -1225,13 +1225,19 @@ function normalizeRoomMember(member, user) {
 
 function normalizeRoomMembers(members) {
   if (!Array.isArray(members)) return [];
-  return members
-    .filter((member) => member?.uid)
-    .map((member) => ({
-      uid: member.uid,
+  const seen = new Set();
+  return members.reduce((normalized, member) => {
+    if (!member || typeof member !== 'object' || Array.isArray(member)) return normalized;
+    const uid = String(member.uid ?? '').trim();
+    if (!uid || seen.has(uid)) return normalized;
+    seen.add(uid);
+    normalized.push({
+      uid,
       name: member.name || '',
       joinedAt: member.joinedAt,
-    }));
+    });
+    return normalized;
+  }, []);
 }
 
 function normalizeRoomMaxMembers(value) {
