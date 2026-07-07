@@ -561,6 +561,8 @@ test('game hub exposes localized active and finished room summaries', async () =
   }
 
   assert.match(files.gameHub, /createGameRoomSummary/, 'Game hub should derive list summaries through the domain helper');
+  assert.match(files.gameHub, /createGameRoomPlayerSummary/, 'Game hub should derive player membership through the domain helper');
+  assert.match(files.projectDomain, /export function createGameRoomPlayerSummary/, 'Project domain should expose a reusable game player summary helper');
   assert.match(files.gameHub, /createUserGameResultHistory/, 'Game hub should derive per-user result history through the domain helper');
   assert.match(files.gameHub, /createGameRoomInviteUrl/, 'Game hub should build shareable room invite URLs through the domain helper');
   assert.match(files.gameHub, /getGameRoomInviteId/, 'Game hub should read room invites from the URL through the domain helper');
@@ -587,6 +589,9 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.match(files.gameHub, /roomSummary\.playerCount/, 'Room cards should show normalized player counts from the domain helper');
   assert.match(files.gameHub, /roomSummary\.winnerName/, 'Room cards should show the finished winner');
   assert.match(files.gameHub, /roomSummary\.scoreLine/, 'Room cards should show the score line');
+  assert.doesNotMatch(files.gameHub, /room\.players\s*&&\s*room\.players\.some/, 'Game room membership checks should not read raw stored player arrays');
+  assert.doesNotMatch(files.gameHub, /room\.players\?\.length/, 'Game room player counts should not render raw stored player array length');
+  assert.doesNotMatch(files.gameHub, /room\.players\[[01]\]/, 'RPS showdown display should not index raw stored player arrays');
   assert.doesNotMatch(files.gameHub, /room\.players\?\.length \|\| 0/, 'Room cards should not render raw stored player array length');
   assert.match(files.projectDomain, /resultSummary/, 'Finished game rooms should persist a reusable result summary');
   assert.match(files.projectDomain, /createMineRoomProgressPatch/, 'Minesweeper completion should persist a reusable result summary');

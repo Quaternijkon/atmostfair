@@ -1160,6 +1160,41 @@ test('game room summaries normalize dirty player membership before display', () 
   });
 });
 
+test('game room player summary normalizes dirty membership before current-user checks', () => {
+  const createGameRoomPlayerSummary = projectDomain.createGameRoomPlayerSummary;
+  assert.equal(typeof createGameRoomPlayerSummary, 'function');
+
+  const summary = createGameRoomPlayerSummary({
+    id: 'game-dirty-player-summary',
+    game: 'rps',
+    players: [
+      { uid: ' host ', name: 'Host', score: 1, move: 'rock' },
+      { uid: ' u2 ', name: 'Ada', score: 0, move: null },
+      { uid: 'u2', name: 'Duplicate Ada', score: 2, move: 'paper' },
+      { uid: ' ', name: 'Blank' },
+      null,
+    ],
+  }, { uid: 'u2' });
+
+  assert.deepEqual(summary, {
+    players: [
+      { uid: 'host', name: 'Host', score: 1, move: 'rock' },
+      { uid: 'u2', name: 'Ada', score: 0, move: null },
+    ],
+    playerCount: 2,
+    currentPlayer: { uid: 'u2', name: 'Ada', score: 0, move: null },
+    opponentPlayer: { uid: 'host', name: 'Host', score: 1, move: 'rock' },
+    hostPlayer: { uid: 'host', name: 'Host', score: 1, move: 'rock' },
+    isCurrentPlayer: true,
+    isHost: false,
+  });
+
+  assert.equal(
+    createGameRoomPlayerSummary({ id: 'game-host', players: [{ uid: ' host ', name: 'Host' }] }, { uid: 'host' }).isHost,
+    true,
+  );
+});
+
 test('user game result history summarizes finished rooms for one player', () => {
   assert.equal(typeof createUserGameResultHistory, 'function');
 

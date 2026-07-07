@@ -8,6 +8,7 @@ import {
   PROJECT_CHILD_TEXT_MAX_LENGTH,
   createGameRoomCreateData,
   createGameRoomJoinPatch,
+  createGameRoomPlayerSummary,
   createGameRoomSummary,
   createUserGameResultHistory,
   createGameRoomInviteUrl,
@@ -38,14 +39,16 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
   const isJoiningRpsGameRef = useRef(false);
   const [showdownAnim, setShowdownAnim] = useState(null); // Local state for animation trigger
   const selectedMove = selectedMoveState.round === room.currentRound ? selectedMoveState.move : null;
+  const playerSummary = useMemo(() => createGameRoomPlayerSummary(room, user), [room, user]);
+  const players = playerSummary.players;
   
-  const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
-  const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
-  const opponent = isPlayer ? room.players.find(p => p.uid !== user.uid) : null;
+  const isPlayer = playerSummary.isCurrentPlayer;
+  const me = playerSummary.currentPlayer;
+  const opponent = playerSummary.opponentPlayer;
   const myScore = me ? normalizeRpsScoreInput(me.score, room.config) : 0;
   const opponentScore = opponent ? normalizeRpsScoreInput(opponent.score, room.config) : 0;
   const isSpectator = !isPlayer;
-  const isHost = room.players && room.players.length > 0 && room.players[0].uid === user.uid; // Simple host logic
+  const isHost = playerSummary.isHost;
   
   const startNextRound = useCallback(async () => {
        if (!canInteract) return;
@@ -56,10 +59,11 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
 
   const handleMove = useCallback(async (move) => {
       if (!canInteract) return;
+      if (!me) return;
       if ((selectedMove || me.move) && room.status === 'playing') return; // Already acted locally
       setSelectedMoveState({ round: room.currentRound, move });
       
-      let newPlayers = room.players.map(p => {
+      let newPlayers = players.map(p => {
           if (p.uid === user.uid) return { ...p, move: move };
           return p;
       });
@@ -74,7 +78,7 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
           );
       }
       
-      const allMoved = newPlayers.every(p => p.move);
+      const allMoved = newPlayers.length >= 2 && newPlayers.every(p => p.move);
       let updateData = { players: newPlayers };
       
       if (allMoved) {
@@ -118,7 +122,7 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
       }
       
       await updateDoc(doc(db, 'game_rooms', room.id), updateData);
-  }, [canInteract, me, room, selectedMove, user.uid]);
+  }, [canInteract, me, players, room, selectedMove, user.uid]);
 
   // Timer & Game Loop logic
   useEffect(() => {
@@ -197,7 +201,7 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
              
             {/* Showdown Overlay */}
             <AnimatePresence>
-                {room.status === 'showdown' && (
+                {room.status === 'showdown' && players.length >= 2 && (
                     <motion.div 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -211,9 +215,9 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                                 className="flex flex-col items-center"
                              >
                                  <div className="app-card-quiet flex h-28 w-28 items-center justify-center p-5">
-                                     <MoveIcon move={room.players[0].move} className="w-16 h-16" />
+                                     <MoveIcon move={players[0].move} className="w-16 h-16" />
                                  </div>
-                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[0].name}</div>
+                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{players[0].name}</div>
                              </motion.div>
 
                              <div className="text-2xl font-black italic text-m3-on-surface-variant">VS</div>
@@ -224,9 +228,9 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                                 className="flex flex-col items-center"
                              >
                                  <div className="app-card-quiet flex h-28 w-28 items-center justify-center p-5">
-                                     <MoveIcon move={room.players[1].move} className="w-16 h-16" />
+                                     <MoveIcon move={players[1].move} className="w-16 h-16" />
                                  </div>
-                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{room.players[1].name}</div>
+                                 <div className="mt-2 text-lg font-bold text-m3-on-surface">{players[1].name}</div>
                              </motion.div>
                          </div>
                          
@@ -236,15 +240,15 @@ const RPSGame = ({ user, room, projectId, isStopped = false, onLeave, t }) => {
                             className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-google-blue to-google-green"
                          >
                             {(() => {
-                                const p1 = room.players[0];
-                                const p2 = room.players[1];
+                                const p1 = players[0];
+                                const p2 = players[1];
                                 if (p1.move === p2.move) return t('draw');
                                 // We calculated round winner logic in handleMove but hard to reconstruct here cleanly without duplicating logic
                                 // Or reading last history item?
                                 const lastRound = room.history && room.history[room.history.length - 1];
                                 if (lastRound) {
                                     if (!lastRound.winnerId) return t('draw');
-                                    const winnerName = room.players.find(p => p.uid === lastRound.winnerId)?.name;
+                                    const winnerName = players.find(p => p.uid === lastRound.winnerId)?.name;
                                     return t('wins', { name: winnerName });
                                 }
                                 return t('roundOver');
@@ -474,13 +478,15 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
       Array.from({ length: cols }, (_, c) => ({ r, c }))
     ));
   }, [cols, rows]);
+  const playerSummary = useMemo(() => createGameRoomPlayerSummary(room, user), [room, user]);
+  const players = playerSummary.players;
   
-  const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
-  const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
+  const isPlayer = playerSummary.isCurrentPlayer;
+  const me = playerSummary.currentPlayer;
   const isSpectator = !isPlayer || me?.status === 'spectating'; // if implemented
   const sortedPlayers = useMemo(() => (
-    [...(room.players || [])].sort((a, b) => normalizeMineProgressInput(b.progress) - normalizeMineProgressInput(a.progress))
-  ), [room.players]);
+    [...players].sort((a, b) => normalizeMineProgressInput(b.progress) - normalizeMineProgressInput(a.progress))
+  ), [players]);
   const difficultyLabels = {
     easy: t('difficultyEasy'),
     medium: t('difficultyMedium'),
@@ -713,7 +719,7 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
         
         {/* Sidebar: Players List */}
          <div className="app-card-quiet flex h-full w-full flex-col p-4 lg:w-80">
-             <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> {t('players')} ({room.players?.length})</h3>
+             <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> {t('players')} ({players.length})</h3>
              <div className="flex-1 overflow-y-auto space-y-3">
                  {sortedPlayers.map(p => {
                      const progress = normalizeMineProgressInput(p.progress);

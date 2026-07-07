@@ -627,6 +627,24 @@ export function createGameRoomSummary(room) {
   return mergeStoredGameRoomSummary(derivedSummary, room.resultSummary);
 }
 
+export function createGameRoomPlayerSummary(room, user) {
+  const players = normalizeGameRoomPlayers(room?.players);
+  const uid = normalizeIdentityValue(user?.uid);
+  const currentPlayer = uid ? players.find((player) => player.uid === uid) || null : null;
+  const opponentPlayer = currentPlayer ? players.find((player) => player.uid !== uid) || null : null;
+  const hostPlayer = players[0] || null;
+
+  return {
+    players,
+    playerCount: players.length,
+    currentPlayer,
+    opponentPlayer,
+    hostPlayer,
+    isCurrentPlayer: Boolean(currentPlayer),
+    isHost: Boolean(uid && hostPlayer?.uid === uid),
+  };
+}
+
 function createDerivedGameRoomSummary(room) {
   const players = normalizeGameRoomPlayers(room.players);
   const playerCount = players.length;
