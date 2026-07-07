@@ -2873,6 +2873,37 @@ test('HTTP data API restricts game room writes to current-player transitions', a
         },
       });
       assert.equal(bobRevives.status, 403);
+
+      const legacyMineRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Legacy Mine',
+        game: 'mine',
+        status: 'playing',
+        createdBy: alice.user.uid,
+        players: [
+          { uid: alice.user.uid, name: 'Alice', progress: 500, status: 'dead' },
+          { uid: carol.user.uid, name: 'Carol', progress: 500, status: 'playing' },
+        ],
+        config: { difficulty: 'easy', rows: 9, cols: 9, mines: 10, mineLocations: [] },
+        createdAt: 7,
+      });
+      const carolWinsLegacyMine = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: carol.token,
+        body: {
+          collection: 'game_rooms',
+          id: legacyMineRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', progress: 500, status: 'dead' },
+              { uid: carol.user.uid, name: 'Carol', progress: 100, status: 'won' },
+            ],
+          },
+        },
+      });
+      assert.equal(carolWinsLegacyMine.doc.status, 'finished');
+      assert.equal(carolWinsLegacyMine.doc.winnerId, carol.user.uid);
+      assert.equal(carolWinsLegacyMine.doc.resultSummary.scoreLine, '100%');
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

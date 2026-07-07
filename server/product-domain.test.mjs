@@ -869,6 +869,38 @@ test('minesweeper progress patch completes rooms with reusable result summaries'
   });
 });
 
+test('minesweeper summaries normalize legacy progress before ranking', () => {
+  assert.equal(typeof projectDomain.createGameRoomSummary, 'function');
+  assert.equal(typeof projectDomain.normalizeMineProgressInput, 'function');
+
+  assert.equal(projectDomain.normalizeMineProgressInput(''), 0);
+  assert.equal(projectDomain.normalizeMineProgressInput('-5'), 0);
+  assert.equal(projectDomain.normalizeMineProgressInput('42'), 42);
+  assert.equal(projectDomain.normalizeMineProgressInput('500'), 100);
+
+  const summary = projectDomain.createGameRoomSummary({
+    id: 'mine-legacy-progress',
+    game: 'mine',
+    status: 'finished',
+    winnerId: 'u2',
+    players: [
+      { uid: 'u1', name: 'Legacy high', progress: 500, status: 'dead' },
+      { uid: 'u2', name: 'Winner', progress: 100, status: 'won' },
+      { uid: 'u3', name: 'Legacy low', progress: -20, status: 'dead' },
+    ],
+  });
+
+  assert.deepEqual(summary, {
+    game: 'mine',
+    status: 'finished',
+    winnerId: 'u2',
+    winnerName: 'Winner',
+    roundsPlayed: 0,
+    scoreLine: '100%',
+    playerCount: 3,
+  });
+});
+
 test('game room creation data normalizes setup and rejects invalid room names', () => {
   assert.equal(typeof createGameRoomCreateData, 'function');
 

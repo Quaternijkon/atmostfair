@@ -568,15 +568,19 @@ export function createGameRoomSummary(room) {
     };
   }
 
-  const leader = [...players].sort((a, b) => (Number.parseInt(b.progress, 10) || 0) - (Number.parseInt(a.progress, 10) || 0))[0] || null;
-  const winner = players.find((player) => player.status === 'won') || null;
+  const minePlayers = players.map((player) => ({
+    ...player,
+    progress: normalizeMineProgressInput(player.progress),
+  }));
+  const leader = [...minePlayers].sort((a, b) => b.progress - a.progress)[0] || null;
+  const winner = minePlayers.find((player) => player.status === 'won') || null;
   return {
     game: room.game || 'mine',
     status: room.status || 'playing',
     winnerId: winner?.uid || null,
     winnerName: winner?.name || '',
     roundsPlayed: 0,
-    scoreLine: leader ? `${Number.parseInt(leader.progress, 10) || 0}%` : '',
+    scoreLine: leader ? `${leader.progress}%` : '',
     playerCount,
   };
 }
@@ -773,6 +777,12 @@ export function normalizeRpsCurrentRoundInput(value, fallback = 1) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 1) return fallback;
   return parsed;
+}
+
+export function normalizeMineProgressInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return 0;
+  return Math.min(100, Math.max(0, parsed));
 }
 
 function normalizeMineRoomConfig(config) {

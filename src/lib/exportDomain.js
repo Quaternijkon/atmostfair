@@ -1,4 +1,4 @@
-import { createGameRoomSummary } from './projectDomain.js';
+import { createGameRoomSummary, normalizeMineProgressInput } from './projectDomain.js';
 import { getActivityMessageKey } from './activityDomain.js';
 
 const PARTICIPANT_EXPORT_TYPES = new Set(['queue', 'book', 'schedule', 'gather', 'claim', 'game_hub']);
@@ -352,7 +352,7 @@ function formatGamePlayers(players = []) {
       const score = Number.parseInt(player.score, 10);
       if (Number.isInteger(score)) return `${name} (${score})`;
       const progress = Number.parseInt(player.progress, 10);
-      if (Number.isInteger(progress)) return `${name} (${progress}%)`;
+      if (Number.isInteger(progress)) return `${name} (${normalizeMineProgressInput(progress)}%)`;
       return name;
     })
     .filter(Boolean)

@@ -197,7 +197,10 @@ test('participant export builds localized CSV for each participant workflow', ()
         name: 'Mine room',
         game: 'mine',
         status: 'playing',
-        players: [{ uid: 'u3', name: 'Cy', progress: 42, status: 'playing' }],
+        players: [
+          { uid: 'u3', name: 'Cy', progress: 142, status: 'playing' },
+          { uid: 'u4', name: 'Dee', progress: -4, status: 'dead' },
+        ],
         createdAt: 1714550000000,
       },
       {
@@ -219,7 +222,7 @@ test('participant export builds localized CSV for each participant workflow', ()
   assert.equal(gameExport.filename, 'Game-Night_game_results.csv');
   assert.match(gameExport.csv, /^Room,Game,Status,Winner,Score,Players,Rounds,Finished At,Player List\n/);
   assert.match(gameExport.csv, /Final RPS,Rock Paper Scissors,Finished,Ana,2 - 1,2,3,2024-05-01T09:00:00.000Z,Ana \(2\); Bo \(1\)/);
-  assert.match(gameExport.csv, /Mine room,Minesweeper,Playing,,42%,1,0,,Cy \(42%\)/);
+  assert.match(gameExport.csv, /Mine room,Minesweeper,Playing,,100%,2,0,,Cy \(100%\); Dee \(0%\)/);
 });
 
 test('participant export returns null for unsupported or empty participant data', () => {

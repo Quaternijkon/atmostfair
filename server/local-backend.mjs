@@ -26,6 +26,7 @@ import {
   createMineRoomProgressPatch,
   createScheduleConfigData,
   normalizeClaimCapacityInput,
+  normalizeMineProgressInput,
   normalizeParticipantValueInput,
   normalizeRpsCurrentRoundInput,
   normalizeTeamRoomCapacityInput,
@@ -924,7 +925,7 @@ function authorizeMineRoomUpdate({ user, data, existing, now }) {
 
 function assertValidMinePlayerTransition(before, after, progress) {
   const beforeStatus = MINE_PLAYER_STATUSES.has(before.status) ? before.status : 'playing';
-  const beforeProgress = Number.parseInt(before.progress, 10) || 0;
+  const beforeProgress = normalizeMineProgressInput(before.progress);
   if (['dead', 'won'].includes(beforeStatus)) forbidden();
   if (progress < beforeProgress) forbidden();
   if (after.status === 'won' && progress !== 100) forbidden();

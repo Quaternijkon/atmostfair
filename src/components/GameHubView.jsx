@@ -14,6 +14,7 @@ import {
   getGameRoomInviteId,
   createMineRoomProgressPatch,
   createRpsNextRoundPatch,
+  normalizeMineProgressInput,
 } from '../lib/projectDomain';
 
 const RPS_ICONS = { rock: Disc, paper: Hand, scissors: Scissors };
@@ -473,6 +474,9 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
   const isPlayer = room.players && room.players.some(p => p.uid === user.uid);
   const me = isPlayer ? room.players.find(p => p.uid === user.uid) : null;
   const isSpectator = !isPlayer || me?.status === 'spectating'; // if implemented
+  const sortedPlayers = useMemo(() => (
+    [...(room.players || [])].sort((a, b) => normalizeMineProgressInput(b.progress) - normalizeMineProgressInput(a.progress))
+  ), [room.players]);
   const difficultyLabels = {
     easy: t('difficultyEasy'),
     medium: t('difficultyMedium'),
@@ -707,23 +711,26 @@ const MinesweeperGame = ({ user, room, isStopped = false, onLeave, t }) => {
          <div className="app-card-quiet flex h-full w-full flex-col p-4 lg:w-80">
              <h3 className="font-medium text-sm mb-4 flex items-center gap-2"><User className="w-4 h-4"/> {t('players')} ({room.players?.length})</h3>
              <div className="flex-1 overflow-y-auto space-y-3">
-                 {room.players?.sort((a,b) => (b.progress||0) - (a.progress||0)).map(p => (
+                 {sortedPlayers.map(p => {
+                     const progress = normalizeMineProgressInput(p.progress);
+                     return (
                      <div key={p.uid} className={`relative rounded-xl border p-3 ${p.status === 'dead' ? 'border-google-red/30 bg-google-red/10' : 'border-m3-outline-variant/30 bg-m3-surface'}`}>
                          <div className="flex justify-between items-center mb-1">
                              <span className="font-medium text-sm truncate max-w-[120px]">{p.name} {p.uid === user.uid && `(${t('you')})`}</span>
                              {p.status === 'dead' && <span className="app-chip app-chip-red min-h-0 px-2 py-0 text-[10px]">{t('failed')}</span>}
                              {p.status === 'won' && <span className="app-chip app-chip-green min-h-0 px-2 py-0 text-[10px]">{t('success')}</span>}
-                             {p.status === 'playing' && <span className="text-xs font-mono">{p.progress}%</span>}
+                             {p.status === 'playing' && <span className="text-xs font-mono">{progress}%</span>}
                          </div>
                          <div className="h-2 bg-m3-surface-container-high rounded-full overflow-hidden">
                              <motion.div 
                                 className={`h-full ${p.status === 'dead' ? 'bg-google-red' : p.status === 'won' ? 'bg-google-green' : 'bg-google-blue'}`}
                                 initial={{ width: 0 }}
-                                animate={{ width: `${p.progress}%` }}
+                                animate={{ width: `${progress}%` }}
                              />
                          </div>
                      </div>
-                 ))}
+                     );
+                 })}
              </div>
          </div>
       </div>

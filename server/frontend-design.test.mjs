@@ -567,6 +567,8 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.match(files.gameHub, /userResultHistory/, 'Game hub should expose a current-user result history panel');
   assert.match(files.gameHub, /createRpsNextRoundPatch/, 'RPS room transitions should use the domain helper');
   assert.match(files.gameHub, /createMineRoomProgressPatch/, 'Minesweeper progress should use the domain helper for terminal room summaries');
+  assert.match(files.gameHub, /normalizeMineProgressInput/, 'Minesweeper player list should normalize legacy progress before sorting and rendering');
+  assert.doesNotMatch(files.gameHub, /room\.players\?\.sort/, 'Minesweeper player list should not mutate live room player snapshots while sorting');
   assert.match(files.gameHub, /setActiveTab\('finished'\)/, 'Game hub should expose finished rooms');
   assert.match(files.gameHub, /setActiveTab\('lobby'\)/, 'Game hub should expose active rooms');
   assert.match(files.gameHub, /currentActiveRoom/, 'Active game room should be derived from live room snapshots');
