@@ -2256,7 +2256,7 @@ async function authorizeFriendshipOperation({ store, user, context, type, id, da
     patch.status === 'confirmed'
     && patchKeys.length === 1
     && existing.status === 'pending'
-    && existing.initiator !== user.uid
+    && normalizeFriendMemberId(existing.initiator) !== user.uid
   ) {
     return { status: 'confirmed' };
   }

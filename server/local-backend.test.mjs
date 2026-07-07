@@ -6404,6 +6404,29 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       });
       assert.equal(dirtyAccept.doc.status, 'confirmed');
 
+      const dirtySelfInitiatedFriendship = await store.add('friendships', {
+        members: [bob.user.uid, diana.user.uid],
+        names: { [bob.user.uid]: 'Bob', [diana.user.uid]: 'Diana' },
+        status: 'pending',
+        initiator: ` ${bob.user.uid} `,
+        createdAt: 7,
+      });
+      const dirtySelfConfirm = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'friendships', id: dirtySelfInitiatedFriendship.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(dirtySelfConfirm.status, 403);
+      assert.equal(dirtySelfConfirm.body.error.code, 'data/forbidden');
+      assert.equal((await store.get('friendships', dirtySelfInitiatedFriendship.id)).status, 'pending');
+
+      const dirtyRecipientConfirm = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: diana.token,
+        body: { collection: 'friendships', id: dirtySelfInitiatedFriendship.id, data: { status: 'confirmed' } },
+      });
+      assert.equal(dirtyRecipientConfirm.doc.status, 'confirmed');
+
       const strangerMessage = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: charlie.token,
