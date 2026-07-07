@@ -862,7 +862,7 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   };
 
   for (const [fileKey, keys] of Object.entries({
-    detail: ['copyFullProjectId', 'projectIdCopied', 'projectView', 'share', 'chat', 'shareUnavailable'],
+    detail: ['copyFullProjectId', 'projectIdCopied', 'projectIdManualCopy', 'projectIdManualCopyHint', 'projectView', 'share', 'chat', 'shareUnavailable'],
     qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable', 'shareManualCopy', 'shareManualCopyHint', 'qrCodeLoadFailed', 'qrCodeRetry'],
     announcements: ['announcements'],
     chat: ['chatRoom', 'noMessagesYet', 'messageSendFailed', 'anonymousUser', 'typeMessage'],
@@ -888,7 +888,13 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   assert.match(files.detail, /const projectShareUrl = createProjectShareUrl/, 'Project detail should derive one canonical share URL per project');
   assert.match(files.detail, /<QRCodeShare url=\{projectShareUrl\}/, 'Project QR modal should share the canonical project URL instead of transient browser state');
   assert.match(files.detail, /showToast\(t\('projectIdCopied'\), 'success'\)/, 'Project ID copy should provide localized success feedback');
-  assert.match(files.detail, /showToast\(t\('shareUnavailable'\), 'error'\)/, 'Project ID copy failure should provide localized recovery feedback');
+  assert.match(files.detail, /\[manualProjectId,\s*setManualProjectId\]\s*=\s*useState\(''\)/, 'Project ID copy should keep a manual fallback value');
+  assert.match(files.detail, /await navigator\.clipboard\.writeText\(project\.id\)[\s\S]{0,160}setManualProjectId\(''\)/, 'Project ID copy success should clear stale manual fallback state');
+  assert.match(files.detail, /catch[\s\S]{0,220}setManualProjectId\(project\.id\)[\s\S]{0,160}projectIdManualCopy/, 'Project ID copy failure should preserve the full ID and use localized recovery feedback');
+  assert.match(files.detail, /manualProjectId[\s\S]{0,520}role="alert"[\s\S]{0,520}t\('projectIdManualCopy'\)/, 'Project ID copy failure should render announced manual-copy recovery copy');
+  assert.match(files.detail, /readOnly[\s\S]{0,240}value=\{manualProjectId\}/, 'Project ID manual fallback should render the full ID in a read-only field');
+  assert.match(files.detail, /onFocus=\{\(event\) => event\.target\.select\(\)\}/, 'Project ID manual fallback should select the full ID on focus');
+  assert.match(files.detail, /setManualProjectId\(''\)/, 'Project ID manual fallback should be dismissible');
   assert.match(files.qr, /navigator\.clipboard\?\.writeText/, 'QR share copy should guard clipboard availability');
   assert.match(files.qr, /\[manualShareUrl,\s*setManualShareUrl\]\s*=\s*useState\(''\)/, 'QR share should keep a manual link fallback URL');
   assert.match(files.qr, /catch[\s\S]{0,220}setManualShareUrl\(url\)[\s\S]{0,160}shareManualCopy/, 'QR share copy failures should preserve the URL and use localized recovery feedback');

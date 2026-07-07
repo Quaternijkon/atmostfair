@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, AlertTriangle, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText } from '../components/Icons';
+import { Activity, AlertTriangle, Archive, ArrowLeft, ChartLine, Copy, Download, Key, Lock, Flag, RotateCcw, Trash2, Info, MessageSquare, QrCode, FileText, X } from '../components/Icons';
 import { useUI } from '../components/UIContext';
 import { collection, db, getDocs, query, where } from '../lib/localData';
 import { getActivityMessageKey } from '../lib/activityDomain';
@@ -232,10 +232,15 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
   const [isUnlockingProject, setIsUnlockingProject] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [manualProjectId, setManualProjectId] = useState('');
   const [pendingProjectAction, setPendingProjectAction] = useState(null);
   const pendingProjectActionRef = useRef(null);
 
   const project = projects.find(p => p.id === id);
+
+  useEffect(() => {
+    setManualProjectId('');
+  }, [project?.id]);
 
   if (!project && !projectsLoaded) {
     return (
@@ -346,9 +351,15 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
     try {
       if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
       await navigator.clipboard.writeText(project.id);
+      setManualProjectId('');
       showToast(t('projectIdCopied'), 'success');
     } catch {
-      showToast(t('shareUnavailable'), 'error');
+      if (project.id) {
+        setManualProjectId(project.id);
+        showToast(t('projectIdManualCopy'), 'info');
+      } else {
+        showToast(t('shareUnavailable'), 'error');
+      }
     }
   };
   const runProjectAction = async (actionKey, actionLabel, action, fallbackResult = false) => {
@@ -529,6 +540,32 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
             {isStopped && <div className="app-chip"><Lock className="w-3 h-3" /> {t('paused')}</div>}
             {isFinished && <div className="app-chip app-chip-red"><Flag className="w-3 h-3" /> {t('finished')}</div>}
           </div>
+          {manualProjectId && (
+            <div role="alert" className="mt-4 max-w-xl rounded-2xl border border-google-blue/25 bg-google-blue/5 p-3 text-sm text-m3-on-surface-variant">
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium text-m3-on-surface">{t('projectIdManualCopy')}</div>
+                  <p className="mt-1">{t('projectIdManualCopyHint')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManualProjectId('')}
+                  className="app-icon-button h-10 min-h-10 w-10 shrink-0"
+                  title={t('close')}
+                  aria-label={t('close')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <input
+                readOnly
+                value={manualProjectId}
+                onFocus={(event) => event.target.select()}
+                className="app-input font-mono text-xs"
+                aria-label={t('copyFullProjectId')}
+              />
+            </div>
+          )}
         </div>
         
         <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center md:mt-0">
