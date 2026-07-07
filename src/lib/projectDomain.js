@@ -26,8 +26,15 @@ export const CLAIM_CAPACITY_MIN = 1;
 export const CLAIM_CAPACITY_MAX = 99;
 export const ROULETTE_PRIZE_COUNT_MIN = 0;
 export const ROULETTE_PRIZE_COUNT_MAX = 99;
+export const ROULETTE_SURVIVOR_COUNT_MIN = 1;
+export const ROULETTE_SURVIVOR_COUNT_MAX = 99;
+export const ROULETTE_REPLAY_SPEED_MIN = 0.1;
+export const ROULETTE_REPLAY_SPEED_MAX = 5;
+export const ROULETTE_REPLAY_SPEED_DEFAULT = 2;
 
 const PROJECT_TYPES = new Set(['vote', 'gather', 'schedule', 'book', 'team', 'claim', 'roulette', 'queue', 'game_hub']);
+const ROULETTE_MODES = new Set(['classic', 'multi', 'elim']);
+const ROULETTE_ORDERS = new Set(['fwd', 'rev']);
 const GAME_ROOM_TYPES = new Set(['rps', 'mine']);
 const GATHER_FIELD_TYPES = new Set(['text', 'number', 'date', 'option']);
 const SCHEDULE_MODES = new Set(['date', 'half', 'time']);
@@ -926,8 +933,36 @@ export function normalizeRoulettePrizeCountInput(value) {
   return Math.min(ROULETTE_PRIZE_COUNT_MAX, Math.max(ROULETTE_PRIZE_COUNT_MIN, parsed));
 }
 
+export function normalizeRouletteSurvivorCountInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return ROULETTE_SURVIVOR_COUNT_MIN;
+  return Math.min(ROULETTE_SURVIVOR_COUNT_MAX, Math.max(ROULETTE_SURVIVOR_COUNT_MIN, parsed));
+}
+
+export function normalizeRouletteReplaySpeedInput(value) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return ROULETTE_REPLAY_SPEED_DEFAULT;
+  return Math.min(ROULETTE_REPLAY_SPEED_MAX, Math.max(ROULETTE_REPLAY_SPEED_MIN, parsed));
+}
+
 export function normalizeRouletteConfigInput(config = {}) {
-  const normalizedConfig = { ...(config || {}) };
+  const sourceConfig = config && typeof config === 'object' ? config : {};
+  const normalizedConfig = { ...sourceConfig };
+  if ('mode' in normalizedConfig) {
+    normalizedConfig.mode = ROULETTE_MODES.has(normalizedConfig.mode) ? normalizedConfig.mode : 'classic';
+  }
+  if ('order' in normalizedConfig) {
+    normalizedConfig.order = ROULETTE_ORDERS.has(normalizedConfig.order) ? normalizedConfig.order : 'fwd';
+  }
+  if ('survivorCount' in normalizedConfig) {
+    normalizedConfig.survivorCount = normalizeRouletteSurvivorCountInput(normalizedConfig.survivorCount);
+  }
+  if ('replaySpeed' in normalizedConfig) {
+    normalizedConfig.replaySpeed = normalizeRouletteReplaySpeedInput(normalizedConfig.replaySpeed);
+  }
+  for (const key of ['allowRepeat', 'enableReplay', 'creatorWeightPublic']) {
+    if (key in normalizedConfig) normalizedConfig[key] = normalizedConfig[key] === true;
+  }
   if (Array.isArray(normalizedConfig.prizes)) {
     normalizedConfig.prizes = normalizedConfig.prizes.map((prize) => {
       const prizeRecord = prize && typeof prize === 'object' ? prize : {};

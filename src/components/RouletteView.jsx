@@ -18,7 +18,7 @@ const DEFAULT_ROULETTE_CONFIG = {
 };
 
 function createInitialRouletteConfig(project) {
-  return { ...DEFAULT_ROULETTE_CONFIG, ...(project.rouletteConfig || {}) };
+  return normalizeRouletteConfigInput({ ...DEFAULT_ROULETTE_CONFIG, ...(project.rouletteConfig || {}) });
 }
 
 function normalizeRepeatSeed(seed) {
@@ -52,8 +52,9 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   const isSavingRouletteConfigRef = useRef(false);
   
   // -- Config State --
-  const [activeTab, setActiveTab] = useState(() => project.rouletteConfig?.mode || 'classic');
+  const [activeTab, setActiveTab] = useState(() => createInitialRouletteConfig(project).mode || 'classic');
   const [config, setConfig] = useState(() => createInitialRouletteConfig(project));
+  const simulationConfig = useMemo(() => normalizeRouletteConfigInput(config), [config]);
 
   // -- Replay State --
   const [replayState, setReplayState] = useState({ 
@@ -102,7 +103,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           return Math.abs(currentSum) % currentPoolLength;
       };
 
-      const mode = config.mode || 'classic';
+      const mode = simulationConfig.mode || 'classic';
       
       if (mode === 'classic') {
           if (pool.length > 0) {
@@ -122,13 +123,13 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       else if (mode === 'multi') {
           // Flatten prizes
           let prizeQueue = [];
-          (config.prizes || []).forEach(p => {
+          (simulationConfig.prizes || []).forEach(p => {
               for(let i=0; i<normalizeRoulettePrizeCountInput(p.count); i++) prizeQueue.push(p.name);
           });
           
-          if (config.order === 'rev') prizeQueue = prizeQueue.reverse();
+          if (simulationConfig.order === 'rev') prizeQueue = prizeQueue.reverse();
           
-          const isRepeat = config.allowRepeat;
+          const isRepeat = simulationConfig.allowRepeat;
 
           for (let i = 0; i < prizeQueue.length; i++) {
                if (pool.length === 0) break;
@@ -157,7 +158,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           }
       }
       else if (mode === 'elim') {
-          let survivorsNeeded = parseInt(config.survivorCount) || 1;
+          let survivorsNeeded = simulationConfig.survivorCount;
           if (survivorsNeeded < 1) survivorsNeeded = 1;
           if (survivorsNeeded >= pool.length && pool.length > 0) survivorsNeeded = Math.max(1, pool.length - 1); 
           
@@ -212,7 +213,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       }
       
       return { steps, winners, totalValue: initialTotal };
-  }, [sortedParticipants, config, t]);
+  }, [sortedParticipants, simulationConfig, t]);
 
   // -- Handlers --
   
@@ -284,14 +285,14 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       if (replayState.active && replayState.autoPlay && replayState.stepIndex < steps.length - 1) {
            interval = setInterval(() => {
                setReplayState(prev => ({...prev, stepIndex: prev.stepIndex + 1}));
-           }, (config.replaySpeed || 2) * 1000);
+           }, simulationConfig.replaySpeed * 1000);
       }
       return () => clearInterval(interval);
-  }, [replayState.active, replayState.autoPlay, replayState.stepIndex, steps.length, config.replaySpeed]);
+  }, [replayState.active, replayState.autoPlay, replayState.stepIndex, steps.length, simulationConfig.replaySpeed]);
 
 
   const startReplay = () => {
-      setReplayState({ active: true, stepIndex: -1, autoPlay: true, speed: config.replaySpeed });
+      setReplayState({ active: true, stepIndex: -1, autoPlay: true, speed: simulationConfig.replaySpeed });
   };
   
   // -- Render Sections --

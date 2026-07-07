@@ -412,8 +412,12 @@ test('roulette result data records deterministic winners and replayable audit st
 
 test('roulette prize count input normalizes empty and bounded numeric values', () => {
   const normalizeRoulettePrizeCountInput = projectDomain.normalizeRoulettePrizeCountInput;
+  const normalizeRouletteSurvivorCountInput = projectDomain.normalizeRouletteSurvivorCountInput;
+  const normalizeRouletteReplaySpeedInput = projectDomain.normalizeRouletteReplaySpeedInput;
   const normalizeRouletteConfigInput = projectDomain.normalizeRouletteConfigInput;
   assert.equal(typeof normalizeRoulettePrizeCountInput, 'function');
+  assert.equal(typeof normalizeRouletteSurvivorCountInput, 'function');
+  assert.equal(typeof normalizeRouletteReplaySpeedInput, 'function');
   assert.equal(typeof normalizeRouletteConfigInput, 'function');
 
   assert.equal(normalizeRoulettePrizeCountInput(''), 0);
@@ -425,24 +429,46 @@ test('roulette prize count input normalizes empty and bounded numeric values', (
   assert.equal(normalizeRoulettePrizeCountInput('99'), 99);
   assert.equal(normalizeRoulettePrizeCountInput('100'), 99);
 
+  assert.equal(normalizeRouletteSurvivorCountInput(''), 1);
+  assert.equal(normalizeRouletteSurvivorCountInput('0'), 1);
+  assert.equal(normalizeRouletteSurvivorCountInput('-4'), 1);
+  assert.equal(normalizeRouletteSurvivorCountInput('12'), 12);
+  assert.equal(normalizeRouletteSurvivorCountInput('100'), 99);
+
+  assert.equal(normalizeRouletteReplaySpeedInput(''), 2);
+  assert.equal(normalizeRouletteReplaySpeedInput('0'), 0.1);
+  assert.equal(normalizeRouletteReplaySpeedInput('0.05'), 0.1);
+  assert.equal(normalizeRouletteReplaySpeedInput('2.5'), 2.5);
+  assert.equal(normalizeRouletteReplaySpeedInput('9'), 5);
+
   assert.deepEqual(
     normalizeRouletteConfigInput({
-      mode: 'multi',
+      mode: 'unknown',
+      order: 'sideways',
       prizes: [
         { name: 'Gold', count: '' },
         { name: 'Silver', count: '3' },
         { name: 'Overflow', count: 120 },
       ],
-      allowRepeat: true,
+      survivorCount: '',
+      replaySpeed: '9',
+      allowRepeat: 'true',
+      enableReplay: 'false',
+      creatorWeightPublic: 1,
     }),
     {
-      mode: 'multi',
+      mode: 'classic',
+      order: 'fwd',
       prizes: [
         { name: 'Gold', count: 0 },
         { name: 'Silver', count: 3 },
         { name: 'Overflow', count: 99 },
       ],
-      allowRepeat: true,
+      survivorCount: 1,
+      replaySpeed: 5,
+      allowRepeat: false,
+      enableReplay: false,
+      creatorWeightPublic: false,
     },
   );
 });

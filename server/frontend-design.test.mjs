@@ -1018,6 +1018,13 @@ test('roulette config saves prevent duplicate submits and expose pending state',
   assert.match(roulette, /if \(isSavingRouletteConfigRef\.current\) return;/, 'Roulette config saves should ignore duplicate clicks before rerender');
   assert.match(roulette, /isSavingRouletteConfigRef\.current = true[\s\S]{0,160}setIsSavingRouletteConfig\(true\)/, 'Roulette config saves should expose pending state before writing');
   assert.match(roulette, /normalizeRouletteConfigInput/, 'Roulette config saves should use the shared config normalizer');
+  assert.match(roulette, /function createInitialRouletteConfig\(project\) \{\s*return normalizeRouletteConfigInput\(\{ \.\.\.DEFAULT_ROULETTE_CONFIG, \.\.\.\(project\.rouletteConfig \|\| \{\}\) \}\);\s*\}/, 'Roulette initial config should normalize persisted values before rendering controls');
+  assert.match(roulette, /\[activeTab,\s*setActiveTab\]\s*=\s*useState\(\(\) => createInitialRouletteConfig\(project\)\.mode \|\| 'classic'\)/, 'Roulette active tab should initialize from normalized persisted mode');
+  assert.match(roulette, /const simulationConfig = useMemo\(\(\) => normalizeRouletteConfigInput\(config\), \[config\]\)/, 'Roulette previews should use normalized config while the user edits');
+  assert.match(roulette, /const mode = simulationConfig\.mode \|\| 'classic'/, 'Roulette preview mode should be read from normalized config');
+  assert.match(roulette, /let survivorsNeeded = simulationConfig\.survivorCount/, 'Roulette survivor previews should use normalized survivor count');
+  assert.match(roulette, /\(simulationConfig\.prizes \|\| \[\]\)\.forEach/, 'Roulette prize previews should use normalized prize counts');
+  assert.match(roulette, /simulationConfig\.replaySpeed/, 'Roulette replay timing should use normalized replay speed');
   assert.match(roulette, /const normalizedConfig = normalizeRouletteConfigInput\(\{ \.\.\.config, mode: activeTab \}\)/, 'Roulette config should be normalized at save time');
   assert.match(roulette, /await actions\.handleUpdateRouletteConfig\(project\.id, normalizedConfig\)/, 'Roulette config saves should await the normalized write while pending');
   assert.match(roulette, /await actions\.handleUpdateRouletteConfig[\s\S]{0,220}showToast\(t\('rSaveConfig'\), 'success'\)/, 'Roulette config saves should show success only after the write resolves');
