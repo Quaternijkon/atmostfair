@@ -4539,6 +4539,65 @@ test('HTTP data API restricts voting item writes to current-user vote toggles', 
       assert.equal(forgedRemoval.status, 403);
       assert.equal(forgedRemoval.body.error.code, 'data/forbidden');
       assert.deepEqual((await store.get('voting_items', secondItem.doc.id)).votes, [alice.user.uid]);
+
+      const dirtyProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: { title: 'Dirty single vote', type: 'vote', status: 'active', votingConfig: { mode: 'single' }, createdAt: 10 },
+        },
+      });
+      const dirtyFirst = await store.add('voting_items', {
+        projectId: dirtyProject.doc.id,
+        title: 'Dirty first',
+        creatorId: alice.user.uid,
+        creatorName: 'Alice',
+        votes: [` ${alice.user.uid} `],
+        createdAt: 11,
+      });
+      const dirtySecond = await store.add('voting_items', {
+        projectId: dirtyProject.doc.id,
+        title: 'Dirty second',
+        creatorId: alice.user.uid,
+        creatorName: 'Alice',
+        votes: [],
+        createdAt: 12,
+      });
+      const dirtySingleModeBypass = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'voting_items',
+          id: dirtySecond.id,
+          data: { votes: arrayUnion(alice.user.uid) },
+        },
+      });
+      assert.equal(dirtySingleModeBypass.status, 403);
+      assert.equal(dirtySingleModeBypass.body.error.code, 'data/forbidden');
+
+      const dirtyModeSwitch = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            {
+              type: 'update',
+              collection: 'voting_items',
+              id: dirtyFirst.id,
+              data: { votes: arrayRemove(alice.user.uid) },
+            },
+            {
+              type: 'update',
+              collection: 'voting_items',
+              id: dirtySecond.id,
+              data: { votes: arrayUnion(alice.user.uid) },
+            },
+          ],
+        },
+      });
+      assert.deepEqual(dirtyModeSwitch.results[0].votes, []);
+      assert.deepEqual(dirtyModeSwitch.results[1].votes, [alice.user.uid]);
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

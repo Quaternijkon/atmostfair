@@ -2438,6 +2438,24 @@ test('single vote mode moves the user vote inside one project only', () => {
   assert.deepEqual(createVoteToggleOperations(items, items[1], { uid: '' }, { mode: 'single' }), []);
 });
 
+test('vote toggle operations normalize dirty stored votes before toggling', () => {
+  const user = { uid: 'u2', displayName: 'Dorothy' };
+  const items = [
+    { id: 'vote-1', projectId: 'project-1', title: 'A', votes: [' u2 ', 'u3'] },
+    { id: 'vote-2', projectId: 'project-1', title: 'B', votes: [] },
+    { id: 'vote-3', projectId: 'other-project', title: 'C', votes: [' u2 '] },
+  ];
+
+  assert.deepEqual(createVoteToggleOperations(items, items[0], user, { mode: 'multiple' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'removeVote', uid: ' u2 ' },
+  ]);
+
+  assert.deepEqual(createVoteToggleOperations(items, items[1], user, { mode: 'single' }), [
+    { type: 'update', collection: 'voting_items', id: 'vote-1', action: 'removeVote', uid: ' u2 ' },
+    { type: 'update', collection: 'voting_items', id: 'vote-2', action: 'addVote', uid: 'u2' },
+  ]);
+});
+
 test('voting result summary deduplicates votes and derives share bars', () => {
   assert.equal(typeof createVotingResultSummary, 'function');
 

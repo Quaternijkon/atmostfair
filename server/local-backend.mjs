@@ -584,28 +584,64 @@ async function authorizeVotingItemVotePatch({ store, context, user, type, data, 
   const mutableKeys = Object.keys(data || {}).filter((key) => key !== 'projectId');
   if (mutableKeys.length !== 1 || mutableKeys[0] !== 'votes') forbidden();
 
-  const voteAction = getOwnVoteTransformAction(data.votes, user);
+  const voteAction = getOwnVoteTransformAction(data.votes, user, existing);
   if (!voteAction) forbidden();
 
-  if (voteAction === 'add' && getVotingMode(project) === 'single') {
+  if (voteAction.type === 'add' && getVotingMode(project) === 'single') {
     const projectItems = await listProjectedVotingItems({ store, context, projectId: existing.projectId });
     const hasConflictingVote = projectItems.some((item) => (
       item.id !== existing.id
       && Array.isArray(item.votes)
-      && item.votes.includes(user.uid)
+      && findStoredVoteValues(item.votes, user.uid).length > 0
     ));
     if (hasConflictingVote) forbidden();
   }
 
-  return data || {};
+  return {
+    ...(data || {}),
+    votes: voteAction.votes,
+  };
 }
 
-function getOwnVoteTransformAction(value, user) {
+function getOwnVoteTransformAction(value, user, existing) {
+  const uid = normalizeVoteIdentityValue(user?.uid);
   const values = Array.isArray(value?.values) ? value.values : [];
-  if (values.length !== 1 || values[0] !== user.uid) return null;
-  if (value?.__type === 'arrayUnion') return 'add';
-  if (value?.__type === 'arrayRemove') return 'remove';
+  if (!uid || values.length !== 1 || normalizeVoteIdentityValue(values[0]) !== uid) return null;
+  if (value?.__type === 'arrayUnion') {
+    const existingVotes = findStoredVoteValues(existing?.votes, uid);
+    return {
+      type: 'add',
+      votes: {
+        __type: 'arrayUnion',
+        values: existingVotes.length > 0 ? existingVotes : [uid],
+      },
+    };
+  }
+  if (value?.__type === 'arrayRemove') {
+    const existingVotes = findStoredVoteValues(existing?.votes, uid);
+    return {
+      type: 'remove',
+      votes: {
+        __type: 'arrayRemove',
+        values: existingVotes.length > 0 ? existingVotes : [uid],
+      },
+    };
+  }
   return null;
+}
+
+function findStoredVoteValues(votes, uid) {
+  const normalizedUid = normalizeVoteIdentityValue(uid);
+  if (!normalizedUid || !Array.isArray(votes)) return [];
+  return votes.reduce((matches, vote) => {
+    if (normalizeVoteIdentityValue(vote) !== normalizedUid) return matches;
+    if (!matches.some((entry) => deepEqualData(entry, vote))) matches.push(cloneDataValue(vote));
+    return matches;
+  }, []);
+}
+
+function normalizeVoteIdentityValue(value) {
+  return String(value ?? '').trim();
 }
 
 function getVotingMode(project) {

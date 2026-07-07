@@ -219,6 +219,12 @@ function normalizePrimitiveIdentities(values) {
   return [...new Set(values.map(normalizeIdentityValue).filter(Boolean))];
 }
 
+function findStoredPrimitiveIdentity(values, uid) {
+  const normalizedUid = normalizeIdentityValue(uid);
+  if (!normalizedUid || !Array.isArray(values)) return null;
+  return values.find((value) => normalizeIdentityValue(value) === normalizedUid) ?? null;
+}
+
 function countUniqueRecordIdentities(records, options = {}) {
   if (!Array.isArray(records)) return 0;
   const { fallbackToId = true } = options;
@@ -1382,13 +1388,14 @@ export function createVotingResultSummary(items) {
 }
 
 export function createVoteToggleOperations(items, targetItem, user, votingConfig) {
-  if (!targetItem?.id || !targetItem.projectId || !user?.uid) return [];
+  const uid = normalizeIdentityValue(user?.uid);
+  if (!targetItem?.id || !targetItem.projectId || !uid) return [];
   const votes = Array.isArray(targetItem.votes) ? targetItem.votes : [];
-  const hasVoted = votes.includes(user.uid);
-  if (hasVoted) return [createVoteOperation(targetItem.id, 'removeVote', user.uid)];
+  const storedTargetVote = findStoredPrimitiveIdentity(votes, uid);
+  if (storedTargetVote !== null) return [createVoteOperation(targetItem.id, 'removeVote', storedTargetVote)];
 
   if (normalizeVotingMode(votingConfig) !== 'single') {
-    return [createVoteOperation(targetItem.id, 'addVote', user.uid)];
+    return [createVoteOperation(targetItem.id, 'addVote', uid)];
   }
 
   const operations = [];
@@ -1396,9 +1403,10 @@ export function createVoteToggleOperations(items, targetItem, user, votingConfig
   for (const item of projectItems) {
     if (!item?.id || item.id === targetItem.id || item.projectId !== targetItem.projectId) continue;
     const itemVotes = Array.isArray(item.votes) ? item.votes : [];
-    if (itemVotes.includes(user.uid)) operations.push(createVoteOperation(item.id, 'removeVote', user.uid));
+    const storedItemVote = findStoredPrimitiveIdentity(itemVotes, uid);
+    if (storedItemVote !== null) operations.push(createVoteOperation(item.id, 'removeVote', storedItemVote));
   }
-  operations.push(createVoteOperation(targetItem.id, 'addVote', user.uid));
+  operations.push(createVoteOperation(targetItem.id, 'addVote', uid));
   return operations;
 }
 
