@@ -1644,7 +1644,7 @@ async function authorizeProjectUserEntryOperation({
 }
 
 async function normalizeProjectUserEntryCreateData({ store, context, user, collection, projectId, data, project }) {
-  await assertNoDuplicateProjectUserEntry(store, collection, projectId, user.uid);
+  await assertNoDuplicateProjectUserEntry({ store, context, collection, projectId, uid: user.uid });
 
   const base = {
     ...(data || {}),
@@ -1711,14 +1711,31 @@ function normalizeScheduleSubmissionData(data, project) {
   };
 }
 
-async function assertNoDuplicateProjectUserEntry(store, collection, projectId, uid) {
+async function assertNoDuplicateProjectUserEntry({ store, context, collection, projectId, uid }) {
+  const normalizedProjectId = normalizeProjectUserEntryProjectId(projectId);
   const normalizedUid = normalizeProjectUserEntryUid(uid);
-  const docs = await store.list(collection, {
-    filters: [{ field: 'projectId', op: '==', value: projectId }],
-  });
-  if (docs.some((doc) => normalizeProjectUserEntryUid(doc.uid) === normalizedUid)) {
+  const key = projectUserEntryCreateKey(collection, normalizedProjectId, normalizedUid);
+  if (context?.projectUserEntryCreateKeys?.has(key)) {
     throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
   }
+
+  const docs = await listProjectedDocs({ store, context, collection });
+  if (docs.some((doc) => (
+    normalizeProjectUserEntryProjectId(doc.projectId) === normalizedProjectId
+    && normalizeProjectUserEntryUid(doc.uid) === normalizedUid
+  ))) {
+    throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
+  }
+
+  context?.projectUserEntryCreateKeys?.add(key);
+}
+
+function projectUserEntryCreateKey(collection, projectId, uid) {
+  return `${collection}\0${projectId}\0${uid}`;
+}
+
+function normalizeProjectUserEntryProjectId(projectId) {
+  return String(projectId ?? '').trim();
 }
 
 function normalizeProjectUserEntryUid(uid) {
@@ -2347,7 +2364,7 @@ function hasMember(record, uid) {
 }
 
 function createAuthorizationContext() {
-  return { projectedDocs: new Map(), friendshipCreateKeys: new Set() };
+  return { projectedDocs: new Map(), friendshipCreateKeys: new Set(), projectUserEntryCreateKeys: new Set() };
 }
 
 function projectionKey(collection, id) {

@@ -2286,6 +2286,29 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
       assert.equal(duplicateQueue.status, 409);
       assert.equal(duplicateQueue.body.error.code, 'data/duplicate-entry');
 
+      const queueCountBeforeDuplicateBatch = (await store.list('queue_participants')).length;
+      const duplicateQueueBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          operations: [
+            {
+              type: 'add',
+              collection: 'queue_participants',
+              data: { projectId: queueProject.doc.id, uid: bob.user.uid, name: 'Alice Once', value: 12, joinedAt: 12 },
+            },
+            {
+              type: 'add',
+              collection: 'queue_participants',
+              data: { projectId: queueProject.doc.id, uid: bob.user.uid, name: 'Alice Twice', value: 34, joinedAt: 13 },
+            },
+          ],
+        },
+      });
+      assert.equal(duplicateQueueBatch.status, 409);
+      assert.equal(duplicateQueueBatch.body.error.code, 'data/duplicate-entry');
+      assert.equal((await store.list('queue_participants')).length, queueCountBeforeDuplicateBatch);
+
       const rouletteProject = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: owner.token,
