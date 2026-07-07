@@ -1076,6 +1076,36 @@ export function normalizeParticipantValueInput(value) {
   return Math.min(PARTICIPANT_VALUE_MAX, Math.max(PARTICIPANT_VALUE_MIN, parsed));
 }
 
+export function createParticipantValueDistribution(participants) {
+  const buckets = [
+    { key: '0-20', min: 0, max: 20, count: 0 },
+    { key: '21-40', min: 21, max: 40, count: 0 },
+    { key: '41-60', min: 41, max: 60, count: 0 },
+    { key: '61-80', min: 61, max: 80, count: 0 },
+    { key: '81-100', min: 81, max: 100, count: 0 },
+  ];
+  const values = (Array.isArray(participants) ? participants : [])
+    .filter((participant) => participant && (participant.id || participant.uid))
+    .map((participant) => normalizeParticipantValueInput(participant.value));
+
+  values.forEach((value) => {
+    const bucket = buckets.find((entry) => value >= entry.min && value <= entry.max);
+    if (bucket) bucket.count += 1;
+  });
+
+  const participantCount = values.length;
+  const maxCount = buckets.reduce((max, bucket) => Math.max(max, bucket.count), 0);
+
+  return {
+    participantCount,
+    maxCount,
+    buckets: buckets.map((bucket) => ({
+      ...bucket,
+      percent: participantCount > 0 ? bucket.count / participantCount : 0,
+    })),
+  };
+}
+
 export function normalizeTeamRoomCapacityInput(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return TEAM_ROOM_CAPACITY_DEFAULT;

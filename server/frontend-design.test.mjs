@@ -1101,6 +1101,18 @@ test('roulette config writes are normalized before persistence', async () => {
   assert.match(app, /createRouletteResultData\(parts, normalizeRouletteConfigInput\(config\), nowMs\(\)\)/, 'Roulette result generation should use normalized config');
 });
 
+test('roulette distribution chart uses real participant buckets instead of a placeholder', async () => {
+  const roulette = await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8');
+
+  assert.ok(TRANSLATIONS.en.valueDistributionBucket, 'missing English distribution bucket translation');
+  assert.ok(TRANSLATIONS.zh.valueDistributionBucket, 'missing Chinese distribution bucket translation');
+  assert.match(roulette, /createParticipantValueDistribution/, 'Roulette chart should derive buckets through the domain helper');
+  assert.match(roulette, /distribution\.buckets\.map/, 'Roulette chart should render one row per value bucket');
+  assert.match(roulette, /t\('valueDistributionBucket'/, 'Roulette bucket labels should be localized');
+  assert.match(roulette, /!isFinished[\s\S]{0,360}t\('availAfterResults'\)/, 'Roulette chart should keep other participant values private before results');
+  assert.doesNotMatch(roulette, /Placeholder for simple chart/, 'Roulette chart should not be a placeholder block');
+});
+
 test('queue and roulette result actions prevent duplicate submits and expose pending state', async () => {
   const files = {
     queue: await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8'),

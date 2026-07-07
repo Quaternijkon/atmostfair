@@ -15,6 +15,7 @@ import {
   createProjectCascadeDeleteOperations,
   createProjectCreateData,
   createGatherFieldData,
+  createParticipantValueDistribution,
   createProjectInsightSummary,
   createQueueJoinData,
   createQueueResultData,
@@ -126,6 +127,42 @@ test('participant value input normalizes queue and roulette weights', () => {
     0,
     'roulette join data should floor negative weights',
   );
+});
+
+test('participant value distribution buckets normalized roulette values', () => {
+  assert.equal(typeof createParticipantValueDistribution, 'function');
+
+  assert.deepEqual(createParticipantValueDistribution([
+    { id: 'p1', uid: 'u1', value: -10 },
+    { id: 'p2', uid: 'u2', value: 20 },
+    { id: 'p3', uid: 'u3', value: 21 },
+    { id: 'p4', uid: 'u4', value: 60 },
+    { id: 'p5', uid: 'u5', value: 100 },
+    { value: 50 },
+    null,
+  ]), {
+    participantCount: 5,
+    maxCount: 2,
+    buckets: [
+      { key: '0-20', min: 0, max: 20, count: 2, percent: 0.4 },
+      { key: '21-40', min: 21, max: 40, count: 1, percent: 0.2 },
+      { key: '41-60', min: 41, max: 60, count: 1, percent: 0.2 },
+      { key: '61-80', min: 61, max: 80, count: 0, percent: 0 },
+      { key: '81-100', min: 81, max: 100, count: 1, percent: 0.2 },
+    ],
+  });
+
+  assert.deepEqual(createParticipantValueDistribution([]), {
+    participantCount: 0,
+    maxCount: 0,
+    buckets: [
+      { key: '0-20', min: 0, max: 20, count: 0, percent: 0 },
+      { key: '21-40', min: 21, max: 40, count: 0, percent: 0 },
+      { key: '41-60', min: 41, max: 60, count: 0, percent: 0 },
+      { key: '61-80', min: 61, max: 80, count: 0, percent: 0 },
+      { key: '81-100', min: 81, max: 100, count: 0, percent: 0 },
+    ],
+  });
 });
 
 test('queue result data records deterministic order and replayable audit steps', () => {

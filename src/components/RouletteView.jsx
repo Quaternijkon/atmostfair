@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForward, RotateCcw, X, Pause } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
-import { normalizeRouletteConfigInput, normalizeRoulettePrizeCountInput } from '../lib/projectDomain';
+import { createParticipantValueDistribution, normalizeRouletteConfigInput, normalizeRoulettePrizeCountInput } from '../lib/projectDomain';
 
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
@@ -67,6 +67,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   // -- Derived Data --
   const sortedParticipants = useMemo(() => [...participants].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)), [participants]);
   const hasJoined = useMemo(() => user && participants.some(p => p.uid === user.uid), [participants, user]);
+  const distribution = useMemo(() => createParticipantValueDistribution(sortedParticipants), [sortedParticipants]);
   
   // -- Logic Helpers --
   const handleJoinRoulette = async () => {
@@ -380,6 +381,50 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       </div>
   );
 
+  const renderDistributionChart = () => (
+      <div className="app-card-quiet p-6 text-m3-on-surface" aria-label={t('distributionChart')}>
+          <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-google-yellow/15 text-google-yellow">
+                      <ChartLine className="h-5 w-5" />
+                  </span>
+                  <div>
+                      <h3 className="text-sm font-semibold text-m3-on-surface">{t('distributionChart')}</h3>
+                      <p className="text-xs text-m3-on-surface-variant">{t('people')}: {distribution.participantCount}</p>
+                  </div>
+              </div>
+          </div>
+
+          {!isFinished ? (
+              <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-m3-outline-variant/55 bg-m3-surface-container/35 p-5 text-center text-sm text-m3-on-surface-variant">
+                  <Lock className="h-5 w-5 text-google-yellow" />
+                  <span>{t('availAfterResults')}</span>
+              </div>
+          ) : distribution.participantCount === 0 ? (
+              <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-m3-outline-variant/55 bg-m3-surface-container/35 p-5 text-center text-sm text-m3-on-surface-variant">
+                  {t('notEnoughData')}
+              </div>
+          ) : (
+              <div className="grid gap-3">
+                  {distribution.buckets.map((bucket) => {
+                      const barWidth = distribution.maxCount > 0 ? `${(bucket.count / distribution.maxCount) * 100}%` : '0%';
+                      return (
+                          <div key={bucket.key} className="grid gap-1.5">
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="font-medium text-m3-on-surface">{t('valueDistributionBucket', { min: bucket.min, max: bucket.max })}</span>
+                                  <span className="font-mono text-m3-on-surface-variant">{bucket.count} · {Math.round(bucket.percent * 100)}%</span>
+                              </div>
+                              <div className="h-2.5 overflow-hidden rounded-full bg-m3-surface-container-high">
+                                  <div className="h-full rounded-full bg-google-yellow transition-[width] duration-300" style={{ width: barWidth }} />
+                              </div>
+                          </div>
+                      );
+                  })}
+              </div>
+          )}
+      </div>
+  );
+
   // -- Replay Overlay --
   if (replayState.active) {
       const currentStepData = replayState.stepIndex >= 0 ? steps[replayState.stepIndex] : null;
@@ -519,8 +564,6 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                      </div>
                  )}
             </div>
-            
-            <InfoCard title={t('distributionChart')} steps={[t('availAfterResults')]} />
         </div>
   );
 
@@ -609,13 +652,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
           </div>
         </div>
         
-        {/* Placeholder for simple chart */}
-        <div className="app-card-quiet flex items-center justify-center p-6 text-m3-on-surface">
-            <div className="text-center opacity-50">
-                <ChartLine className="w-12 h-12 mx-auto mb-2" />
-                <div>{t('distributionChart')}</div> 
-            </div>
-        </div>
+        {renderDistributionChart()}
       </div>
       
     </div>
