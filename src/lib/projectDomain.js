@@ -22,6 +22,9 @@ export const PROJECT_CREATOR_NAME_MAX_LENGTH = 60;
 export const PROJECT_PASSWORD_MAX_LENGTH = 128;
 export const PROJECT_CHILD_TEXT_MAX_LENGTH = 120;
 export const PROJECT_BRIEF_MAX_LENGTH = 500;
+export const PARTICIPANT_VALUE_MIN = 0;
+export const PARTICIPANT_VALUE_MAX = 100;
+export const PARTICIPANT_VALUE_DEFAULT = 0;
 export const CLAIM_CAPACITY_MIN = 1;
 export const CLAIM_CAPACITY_MAX = 99;
 export const TEAM_ROOM_CAPACITY_MIN = 1;
@@ -222,7 +225,7 @@ export function createQueueJoinData(existingParticipants, projectId, user, userN
     projectId,
     uid: user.uid,
     name: cleanName(userName, user),
-    value: Number.parseInt(value, 10) || 0,
+    value: normalizeParticipantValueInput(value),
     joinedAt,
     queueOrder: null,
   };
@@ -376,7 +379,7 @@ export function createRouletteJoinData(existingParticipants, projectId, user, us
     projectId,
     uid: user.uid,
     name: cleanName(userName, user),
-    value: Number.parseInt(value, 10) || 0,
+    value: normalizeParticipantValueInput(value),
     joinedAt,
     isWinner: false,
   };
@@ -928,6 +931,12 @@ export function normalizeClaimCapacityInput(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return CLAIM_CAPACITY_MIN;
   return Math.min(CLAIM_CAPACITY_MAX, Math.max(CLAIM_CAPACITY_MIN, parsed));
+}
+
+export function normalizeParticipantValueInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return PARTICIPANT_VALUE_DEFAULT;
+  return Math.min(PARTICIPANT_VALUE_MAX, Math.max(PARTICIPANT_VALUE_MIN, parsed));
 }
 
 export function normalizeTeamRoomCapacityInput(value) {
@@ -1526,7 +1535,7 @@ function normalizedQueueParticipants(participants) {
     .map((participant) => ({
       id: participant.id,
       name: String(participant.name || '').trim(),
-      value: Number.parseInt(participant.value, 10) || 0,
+      value: normalizeParticipantValueInput(participant.value),
       joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
     }))
     .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
@@ -1540,7 +1549,7 @@ function normalizedRouletteParticipants(participants) {
       id: participant.id,
       uid: participant.uid || '',
       name: String(participant.name || '').trim(),
-      value: Number.parseInt(participant.value, 10) || 0,
+      value: normalizeParticipantValueInput(participant.value),
       joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
     }))
     .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));

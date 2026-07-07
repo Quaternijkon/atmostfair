@@ -1900,7 +1900,7 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
             projectId: queueProject.doc.id,
             uid: alice.user.uid,
             name: 'Bob Alias',
-            value: 7,
+            value: 250,
             queueOrder: 1,
             joinedAt: 10,
           },
@@ -1908,6 +1908,7 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
       });
       assert.equal(queueEntry.doc.uid, bob.user.uid);
       assert.equal(queueEntry.doc.name, 'Bob Alias');
+      assert.equal(queueEntry.doc.value, 100);
       assert.equal(queueEntry.doc.queueOrder, null);
 
       const duplicateQueue = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
@@ -1935,7 +1936,7 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
             projectId: rouletteProject.doc.id,
             uid: bob.user.uid,
             name: 'Alice Alias',
-            value: 4,
+            value: -5,
             isWinner: true,
             joinedAt: 12,
           },
@@ -1943,6 +1944,7 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
       });
       assert.equal(rouletteEntry.doc.uid, alice.user.uid);
       assert.equal(rouletteEntry.doc.name, 'Alice Alias');
+      assert.equal(rouletteEntry.doc.value, 0);
       assert.equal(rouletteEntry.doc.isWinner, false);
 
       const duplicateRoulette = await fetchJsonResponse(`${baseUrl}/api/data/add`, {

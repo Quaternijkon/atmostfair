@@ -19,6 +19,7 @@ import {
   createQueueJoinData,
   createQueueResultData,
   createTeamJoinMember,
+  normalizeParticipantValueInput,
   normalizeTeamRoomCapacityInput,
   createScheduleRecommendationSummary,
   createVoteToggleOperations,
@@ -101,6 +102,32 @@ test('queue join guard creates one participant per project and user', () => {
   );
 });
 
+test('participant value input normalizes queue and roulette weights', () => {
+  assert.equal(typeof normalizeParticipantValueInput, 'function');
+
+  assert.equal(normalizeParticipantValueInput(''), 0);
+  assert.equal(normalizeParticipantValueInput('abc'), 0);
+  assert.equal(normalizeParticipantValueInput('-5'), 0);
+  assert.equal(normalizeParticipantValueInput('0'), 0);
+  assert.equal(normalizeParticipantValueInput('42'), 42);
+  assert.equal(normalizeParticipantValueInput('100'), 100);
+  assert.equal(normalizeParticipantValueInput('250'), 100);
+
+  const queueUser = { uid: 'queue-user', displayName: 'Grace' };
+  assert.equal(
+    createQueueJoinData([], 'project-weights', queueUser, 'Grace Hopper', '250', 2100).value,
+    100,
+    'queue join data should cap pasted or forged weights',
+  );
+
+  const rouletteUser = { uid: 'roulette-user', displayName: 'Marie' };
+  assert.equal(
+    projectDomain.createRouletteJoinData([], 'project-weights', rouletteUser, 'Marie Curie', '-10', 2101).value,
+    0,
+    'roulette join data should floor negative weights',
+  );
+});
+
 test('queue result data records deterministic order and replayable audit steps', () => {
   const participants = [
     { id: 'p3', projectId: 'project-1', uid: 'u3', name: 'Cy', value: 4, joinedAt: 30 },
@@ -149,6 +176,60 @@ test('queue result data records deterministic order and replayable audit steps',
 
   assert.equal(createQueueResultData([], 4001), null);
   assert.equal(createQueueResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], 4002), null);
+});
+
+test('queue and roulette results normalize legacy participant weights before selection', () => {
+  const participants = [
+    { id: 'p1', projectId: 'project-1', uid: 'u1', name: 'Zeroed', value: -5, joinedAt: 10 },
+    { id: 'p2', projectId: 'project-1', uid: 'u2', name: 'Capped', value: 250, joinedAt: 20 },
+    { id: 'p3', projectId: 'project-1', uid: 'u3', name: 'Needle', value: 1, joinedAt: 30 },
+  ];
+
+  assert.deepEqual(createQueueResultData(participants, 4200), {
+    generatedAt: 4200,
+    participantCount: 3,
+    updates: [
+      { id: 'p3', queueOrder: 1 },
+      { id: 'p1', queueOrder: 2 },
+      { id: 'p2', queueOrder: 3 },
+    ],
+    steps: [
+      {
+        order: 1,
+        sum: 101,
+        remainingCount: 3,
+        selectedIndex: 2,
+        participantId: 'p3',
+        participantName: 'Needle',
+        participantValue: 1,
+      },
+      {
+        order: 2,
+        sum: 100,
+        remainingCount: 2,
+        selectedIndex: 0,
+        participantId: 'p1',
+        participantName: 'Zeroed',
+        participantValue: 0,
+      },
+      {
+        order: 3,
+        sum: 100,
+        remainingCount: 1,
+        selectedIndex: 0,
+        participantId: 'p2',
+        participantName: 'Capped',
+        participantValue: 100,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    projectDomain.createRouletteResultData(participants, { mode: 'classic' }, 4201).winners,
+    [
+      { id: 'p3', participantId: 'p3', uid: 'u3', name: 'Needle', value: 1, rank: 1 },
+    ],
+  );
 });
 
 test('booking guard refuses already booked or stale slots', () => {

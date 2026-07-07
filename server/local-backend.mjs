@@ -26,6 +26,7 @@ import {
   createMineRoomProgressPatch,
   createScheduleConfigData,
   normalizeClaimCapacityInput,
+  normalizeParticipantValueInput,
   normalizeTeamRoomCapacityInput,
   normalizeProjectChildText,
   createRpsNextRoundPatch,
@@ -1450,7 +1451,7 @@ async function normalizeProjectUserEntryCreateData({ store, user, collection, pr
   if (collection === 'queue_participants') {
     return {
       ...base,
-      value: Number.parseInt(data?.value, 10) || 0,
+      value: normalizeParticipantValueInput(data?.value),
       queueOrder: null,
     };
   }
@@ -1458,7 +1459,7 @@ async function normalizeProjectUserEntryCreateData({ store, user, collection, pr
   if (collection === 'roulette_participants') {
     return {
       ...base,
-      value: Number.parseInt(data?.value, 10) || 0,
+      value: normalizeParticipantValueInput(data?.value),
       isWinner: false,
     };
   }
