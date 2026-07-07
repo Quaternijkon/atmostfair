@@ -978,6 +978,43 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       });
       assert.deepEqual(readable.docs.map((entry) => entry.id), [adminAdd.doc.id]);
 
+      const scheduledAnnouncements = [];
+      for (let index = 0; index < 5; index += 1) {
+        const scheduledAnnouncement = await fetchJson(`${baseUrl}/api/data/add`, {
+          method: 'POST',
+          token: admin.token,
+          body: {
+            collection: 'announcements',
+            data: {
+              title: `Scheduled ${index + 1}`,
+              content: 'Visible later',
+              active: true,
+              startsAt: 1700000100000 + index,
+              createdAt: 100 + index,
+            },
+          },
+        });
+        scheduledAnnouncements.push(scheduledAnnouncement.doc);
+      }
+
+      const frontendQueryReadable = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: user.token,
+        body: {
+          collection: 'announcements',
+          query: {
+            filters: [{ field: 'active', op: '==', value: true }],
+            orderBy: [{ field: 'createdAt', direction: 'desc' }],
+            limit: 5,
+          },
+        },
+      });
+      assert.deepEqual(
+        frontendQueryReadable.docs.map((entry) => entry.id),
+        [adminAdd.doc.id],
+        'Announcement queries should apply the visible-result limit after filtering future or expired records',
+      );
+
       const hiddenGet = await fetchJson(`${baseUrl}/api/data/get`, {
         method: 'POST',
         token: user.token,
@@ -992,7 +1029,7 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       });
       assert.deepEqual(
         adminReadable.docs.map((entry) => entry.title).sort(),
-        ['Expired', 'Future', 'Inactive', 'Release'],
+        ['Expired', 'Future', 'Inactive', 'Release', 'Scheduled 1', 'Scheduled 2', 'Scheduled 3', 'Scheduled 4', 'Scheduled 5'],
       );
 
       const invalidUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
@@ -1016,7 +1053,7 @@ test('HTTP data API limits announcement writes to admins while keeping announcem
       assert.equal(adminDelete.ok, true);
       assert.equal(await store.get('announcements', adminAdd.doc.id), null);
 
-      for (const id of [hiddenInactive.doc.id, hiddenFuture.doc.id, hiddenExpired.doc.id]) {
+      for (const id of [hiddenInactive.doc.id, hiddenFuture.doc.id, hiddenExpired.doc.id, ...scheduledAnnouncements.map((entry) => entry.id)]) {
         await fetchJson(`${baseUrl}/api/data/delete`, {
           method: 'POST',
           token: admin.token,

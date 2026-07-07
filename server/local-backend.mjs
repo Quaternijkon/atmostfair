@@ -205,9 +205,9 @@ async function handleDataApi({ request, response, url, store, body, user, now })
   if (url.pathname === '/api/data/list') {
     const collection = validateDataCollection(body.collection);
     const query = body.query || {};
-    const rawDocs = await store.list(collection, query);
+    const rawDocs = await store.list(collection, createReadableListQuery(collection, query));
     const docs = await filterReadableDocs({ store, user, collection, docs: rawDocs, query, now });
-    return sendJson(response, 200, { docs });
+    return sendJson(response, 200, { docs: applyReadableListLimit(collection, docs, query) });
   }
 
   if (url.pathname === '/api/data/get') {
@@ -1737,6 +1737,18 @@ function collectionNeedsReadFiltering(collection) {
     || collection === 'announcements'
     || PROJECT_CHILD_COLLECTION_FIELDS.has(collection)
     || ['notifications', 'friendships', 'friend_messages'].includes(collection);
+}
+
+function createReadableListQuery(collection, query = {}) {
+  if (!collectionNeedsReadFiltering(collection) || !Number.isFinite(query.limit)) return query;
+  const queryWithoutLimit = { ...query };
+  delete queryWithoutLimit.limit;
+  return queryWithoutLimit;
+}
+
+function applyReadableListLimit(collection, docs, query = {}) {
+  if (!collectionNeedsReadFiltering(collection) || !Number.isFinite(query.limit)) return docs;
+  return docs.slice(0, query.limit);
 }
 
 async function toReadableDataDoc({ store, user, collection, doc, query, now }) {
