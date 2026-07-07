@@ -1,6 +1,6 @@
 export function createMarkNotificationReadOperation(notifications, notificationId) {
   const notification = normalizedNotifications(notifications).find((entry) => entry.id === notificationId);
-  if (!notification || notification.read) return null;
+  if (!notification || isNotificationRead(notification)) return null;
   return {
     type: 'update',
     collection: 'notifications',
@@ -11,7 +11,7 @@ export function createMarkNotificationReadOperation(notifications, notificationI
 
 export function createMarkNotificationsReadOperations(notifications) {
   return normalizedNotifications(notifications)
-    .filter((notification) => !notification.read)
+    .filter((notification) => isNotificationUnread(notification))
     .map((notification) => ({
       type: 'update',
       collection: 'notifications',
@@ -21,14 +21,14 @@ export function createMarkNotificationsReadOperations(notifications) {
 }
 
 export function createMarkFriendChatNotificationsReadOperations(notifications, chatId) {
-  const normalizedChatId = typeof chatId === 'string' ? chatId.trim() : '';
+  const normalizedChatId = normalizeNotificationChatId(chatId);
   if (!normalizedChatId) return [];
 
   return normalizedNotifications(notifications)
     .filter((notification) => (
       notification.type === 'friend_message'
-      && notification.chatId === normalizedChatId
-      && !notification.read
+      && normalizeNotificationChatId(notification.chatId) === normalizedChatId
+      && isNotificationUnread(notification)
     ))
     .map((notification) => ({
       type: 'update',
@@ -40,7 +40,7 @@ export function createMarkFriendChatNotificationsReadOperations(notifications, c
 
 export function createClearReadNotificationOperations(notifications) {
   return normalizedNotifications(notifications)
-    .filter((notification) => notification.read)
+    .filter((notification) => isNotificationRead(notification))
     .map((notification) => ({
       type: 'delete',
       collection: 'notifications',
@@ -48,6 +48,28 @@ export function createClearReadNotificationOperations(notifications) {
     }));
 }
 
+export function normalizeNotificationRecipientId(recipientId) {
+  return typeof recipientId === 'string' ? recipientId.trim() : '';
+}
+
+export function isNotificationForRecipient(notification, recipientId) {
+  const normalizedRecipientId = normalizeNotificationRecipientId(recipientId);
+  return Boolean(normalizedRecipientId)
+    && normalizeNotificationRecipientId(notification?.recipientId) === normalizedRecipientId;
+}
+
+export function isNotificationRead(notification) {
+  return notification?.read === true;
+}
+
+export function isNotificationUnread(notification) {
+  return !isNotificationRead(notification);
+}
+
 function normalizedNotifications(notifications) {
   return (Array.isArray(notifications) ? notifications : []).filter((notification) => notification?.id);
+}
+
+function normalizeNotificationChatId(chatId) {
+  return typeof chatId === 'string' ? chatId.trim() : '';
 }

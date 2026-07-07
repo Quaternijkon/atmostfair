@@ -55,6 +55,9 @@ import {
   createMarkFriendChatNotificationsReadOperations,
   createMarkNotificationReadOperation,
   createMarkNotificationsReadOperations,
+  isNotificationForRecipient,
+  isNotificationRead,
+  isNotificationUnread,
 } from './lib/notificationDomain';
 import { TRANSLATIONS } from './constants/translations';
 import { LogOut, Shield, Bell, Users, X, RotateCcw } from './components/Icons';
@@ -276,7 +279,7 @@ function AppContent() {
     const unsubGameRooms = subscribeWorkspaceCollection('game_rooms', setGameRooms);
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (s) => {
       setNotificationsLoadError(false);
-      setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => n.recipientId === user.uid).sort((a,b)=>b.createdAt-a.createdAt));
+      setNotifications(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => isNotificationForRecipient(n, user.uid)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
     }, (error) => {
       console.error("Error loading notifications:", error);
       setNotificationsLoadError(true);
@@ -826,7 +829,7 @@ function AppContent() {
                 <div className="relative">
                      <button onClick={() => setShowNotifications(!showNotifications)} className="app-icon-button relative" title={t('notifications')}>
                         <Bell className="w-5 h-5" />
-                        {notifications.some(n => !n.read) && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-google-red"></span>}
+                        {notifications.some(n => isNotificationUnread(n)) && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-google-red"></span>}
                      </button>
                      {showNotifications && (
                          <div className="app-card absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden">
@@ -836,7 +839,7 @@ function AppContent() {
                                      <button
                                        type="button"
                                        onClick={actions.handleMarkAllNotificationsRead}
-                                       disabled={notificationsLoadError || !notifications.some(n => !n.read) || isMarkingAllNotificationsRead}
+                                       disabled={notificationsLoadError || !notifications.some(n => isNotificationUnread(n)) || isMarkingAllNotificationsRead}
                                        aria-busy={isMarkingAllNotificationsRead}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
@@ -845,7 +848,7 @@ function AppContent() {
                                      <button
                                        type="button"
                                        onClick={actions.handleClearReadNotifications}
-                                       disabled={notificationsLoadError || !notifications.some(n => n.read) || isClearingReadNotifications}
+                                       disabled={notificationsLoadError || !notifications.some(n => isNotificationRead(n)) || isClearingReadNotifications}
                                        aria-busy={isClearingReadNotifications}
                                        className="rounded-full border border-m3-outline-variant/60 px-2 py-1.5 text-xs font-medium text-m3-on-surface-variant transition-colors hover:border-google-blue/40 hover:bg-google-blue/5 hover:text-google-blue disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-m3-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-m3-on-surface-variant"
                                      >
@@ -877,7 +880,7 @@ function AppContent() {
                                                onClick={() => actions.handleReadNotification(n.id)}
                                                disabled={isNotificationReadPending}
                                                aria-busy={isNotificationReadPending}
-                                               className={`w-full border-b border-m3-outline-variant/20 p-3 text-left transition-colors hover:bg-google-blue/5 disabled:cursor-not-allowed ${n.read ? 'opacity-65' : 'bg-google-blue/5'}`}
+                                               className={`w-full border-b border-m3-outline-variant/20 p-3 text-left transition-colors hover:bg-google-blue/5 disabled:cursor-not-allowed ${isNotificationRead(n) ? 'opacity-65' : 'bg-google-blue/5'}`}
                                              >
                                                  <div className="text-sm font-medium mb-1">{n.title}</div>
                                                  <div className="text-xs text-m3-on-surface-variant">{n.message}</div>

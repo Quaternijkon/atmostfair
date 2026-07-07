@@ -69,6 +69,31 @@ test('friend chat read operations update only unread matching message notificati
   assert.deepEqual(createMarkFriendChatNotificationsReadOperations([{ id: 'n5', type: 'friend_message', chatId: 'chat-1' }], ''), []);
 });
 
+test('notification operations normalize legacy chat ids and read flags', () => {
+  assert.deepEqual(createMarkFriendChatNotificationsReadOperations([
+    { id: 'n1', type: 'friend_message', chatId: ' chat-1 ', read: false },
+    { id: 'n2', type: 'friend_message', chatId: 'chat-1', read: 'false' },
+    { id: 'n3', type: 'friend_message', chatId: 'chat-1', read: true },
+  ], 'chat-1'), [
+    { type: 'update', collection: 'notifications', id: 'n1', data: { read: true } },
+    { type: 'update', collection: 'notifications', id: 'n2', data: { read: true } },
+  ]);
+
+  assert.deepEqual(createMarkNotificationsReadOperations([
+    { id: 'n1', read: 'false' },
+    { id: 'n2', read: true },
+  ]), [
+    { type: 'update', collection: 'notifications', id: 'n1', data: { read: true } },
+  ]);
+
+  assert.deepEqual(createClearReadNotificationOperations([
+    { id: 'n1', read: 'false' },
+    { id: 'n2', read: true },
+  ]), [
+    { type: 'delete', collection: 'notifications', id: 'n2' },
+  ]);
+});
+
 test('notification center exposes bulk read and clear-read actions', async () => {
   const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
 
@@ -110,15 +135,22 @@ test('notification center actions prevent duplicate submits and expose pending s
   assert.match(app, /await runNotificationAction\(`read:\$\{nId\}`/, 'Single notification reads should route through the pending action guard');
   assert.match(app, /await runNotificationAction\('mark-all-read'/, 'Mark-all notification reads should route through the pending action guard');
   assert.match(app, /await runNotificationAction\('clear-read'/, 'Clear-read notification actions should route through the pending action guard');
-  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => !n\.read\) \|\| isMarkingAllNotificationsRead\}/, 'Mark-all button should be disabled while pending or notification loading failed');
+  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => isNotificationUnread\(n\)\) \|\| isMarkingAllNotificationsRead\}/, 'Mark-all button should be disabled while pending or notification loading failed');
   assert.match(app, /aria-busy=\{isMarkingAllNotificationsRead\}/, 'Mark-all button should expose busy state');
   assert.match(app, /isMarkingAllNotificationsRead \? t\('processing'\) : t\('markAllRead'\)/, 'Mark-all button should show localized pending copy');
-  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => n\.read\) \|\| isClearingReadNotifications\}/, 'Clear-read button should be disabled while pending or notification loading failed');
+  assert.match(app, /disabled=\{notificationsLoadError \|\| !notifications\.some\(n => isNotificationRead\(n\)\) \|\| isClearingReadNotifications\}/, 'Clear-read button should be disabled while pending or notification loading failed');
   assert.match(app, /aria-busy=\{isClearingReadNotifications\}/, 'Clear-read button should expose busy state');
   assert.match(app, /isClearingReadNotifications \? t\('processing'\) : t\('clearRead'\)/, 'Clear-read button should show localized pending copy');
   assert.match(app, /pendingNotificationActionKeys\.includes\(`read:\$\{n\.id\}`\)/, 'Notification rows should derive pending state from the notification id');
   assert.match(app, /disabled=\{isNotificationReadPending\}/, 'Notification rows should be disabled while marking read');
   assert.match(app, /aria-busy=\{isNotificationReadPending\}/, 'Notification rows should expose busy state');
+});
+
+test('notification center filters and badges by normalized recipient and read state', async () => {
+  const app = await readFile(path.join(root, 'src/App.jsx'), 'utf8');
+
+  assert.match(app, /isNotificationForRecipient\(n,\s*user\.uid\)/, 'Notification center should not hide legacy recipient ids with surrounding whitespace');
+  assert.match(app, /isNotificationUnread\(n\)/, 'Notification unread badges and disabled states should treat only boolean true as read');
 });
 
 test('notification center exposes a recoverable load error state', async () => {

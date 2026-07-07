@@ -16,6 +16,7 @@ import { PROJECT_ACTIVITY_TYPES } from '../src/lib/activityDomain.js';
 import { normalizePinnedProjectIds, normalizeRecentProjectIds } from '../src/lib/dashboardDomain.js';
 import { hasFriendMember, normalizeFriendMemberId, normalizeFriendMemberIds } from '../src/lib/friendDomain.js';
 import { MESSAGE_TEXT_MAX_LENGTH, normalizeMessageText } from '../src/lib/messageDomain.js';
+import { normalizeNotificationRecipientId } from '../src/lib/notificationDomain.js';
 import { normalizeUserDisplayName } from '../src/lib/userDomain.js';
 import {
   PROJECT_CREATOR_NAME_MAX_LENGTH,
@@ -1775,7 +1776,7 @@ async function canReadDataDoc({ store, user, collection, doc, query, now }) {
     return canReadProjectById({ store, user, projectId: doc[projectField] });
   }
   if (collection === 'notifications') {
-    return doc.recipientId === user.uid || (
+    return normalizeNotificationRecipientId(doc.recipientId) === user.uid || (
       isExactProjectQuery(query, doc.projectId)
       && await canManageProjectNotification(store, user, doc)
     );
@@ -1969,10 +1970,12 @@ async function authorizeNotificationOperation({ store, user, type, id, data }) {
 }
 
 async function normalizeNotificationCreateData({ store, user, data }) {
-  if (isAdminUser(user)) return data || {};
-
   const notification = data || {};
-  const recipientId = typeof notification.recipientId === 'string' ? notification.recipientId.trim() : '';
+  const recipientId = normalizeNotificationRecipientId(notification.recipientId);
+  if (isAdminUser(user)) {
+    return recipientId ? { ...notification, recipientId } : notification;
+  }
+
   if (!recipientId) forbidden();
 
   if (notification.type === 'friend_req') {
@@ -2038,13 +2041,14 @@ async function normalizeFriendMessageNotificationData({ store, user, notificatio
 }
 
 async function hasDuplicateFriendRequestNotification(store, senderId, recipientId) {
-  const notifications = await store.list('notifications', {
-    filters: [{ field: 'recipientId', op: '==', value: recipientId }],
-  });
+  const senderUid = normalizeNotificationRecipientId(senderId);
+  const recipientUid = normalizeNotificationRecipientId(recipientId);
+  const notifications = await store.list('notifications');
 
   return notifications.some((notification) => (
     notification.type === 'friend_req'
-    && notification.senderId === senderId
+    && normalizeNotificationRecipientId(notification.recipientId) === recipientUid
+    && normalizeNotificationRecipientId(notification.senderId) === senderUid
   ));
 }
 
@@ -2159,7 +2163,7 @@ function friendshipMembersKey(members) {
 }
 
 function canWriteNotification(notification, user) {
-  return notification.recipientId === user.uid || isAdminUser(user);
+  return normalizeNotificationRecipientId(notification.recipientId) === user.uid || isAdminUser(user);
 }
 
 async function canManageProjectNotification(store, user, notification) {

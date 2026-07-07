@@ -1111,6 +1111,32 @@ test('HTTP data API restricts notification creation to verified app events', asy
       });
       assert.equal(friendship.doc.status, 'pending');
 
+      const dirtyExistingFriendNotification = await store.add('notifications', {
+        recipientId: ` ${bob.user.uid} `,
+        type: 'friend_req',
+        senderId: ` ${alice.user.uid} `,
+        title: 'Dirty existing request',
+        read: false,
+        createdAt: 3.5,
+      });
+      const dirtyDuplicateFriendNotification = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'notifications',
+          data: {
+            recipientId: bob.user.uid,
+            type: 'friend_req',
+            title: 'Duplicate clean request',
+            read: false,
+            createdAt: 3.6,
+          },
+        },
+      });
+      assert.equal(dirtyDuplicateFriendNotification.status, 409);
+      assert.equal(dirtyDuplicateFriendNotification.body.error.code, 'data/duplicate-notification');
+      await store.delete('notifications', dirtyExistingFriendNotification.id);
+
       const validFriendNotification = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: alice.token,
@@ -4645,6 +4671,11 @@ test('HTTP data API filters private notifications and friend records by current 
         title: 'Bob only',
         read: false,
       });
+      const dirtyBobNotification = await store.add('notifications', {
+        recipientId: ` ${bob.user.uid} `,
+        title: 'Bob legacy',
+        read: false,
+      });
       const aliceBobFriendship = await store.add('friendships', {
         members: [alice.user.uid, bob.user.uid],
         names: { [alice.user.uid]: 'Alice', [bob.user.uid]: 'Bob' },
@@ -4694,6 +4725,24 @@ test('HTTP data API filters private notifications and friend records by current 
       assert.equal(aliceUpdatesBobNotification.status, 403);
       assert.equal(aliceUpdatesBobNotification.body.error.code, 'data/forbidden');
       assert.equal((await store.get('notifications', bobNotification.id)).read, false);
+
+      const bobNotifications = await fetchJson(`${baseUrl}/api/data/list`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'notifications', query: {} },
+      });
+      assert.deepEqual(
+        bobNotifications.docs.map((entry) => entry.id).sort(),
+        [bobNotification.id, dirtyBobNotification.id].sort(),
+      );
+
+      const bobUpdatesDirtyNotification = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: { collection: 'notifications', id: dirtyBobNotification.id, data: { read: true } },
+      });
+      assert.equal(bobUpdatesDirtyNotification.doc.read, true);
+      assert.equal((await store.get('notifications', dirtyBobNotification.id)).read, true);
 
       const aliceFriendships = await fetchJson(`${baseUrl}/api/data/list`, {
         method: 'POST',
@@ -4801,7 +4850,7 @@ test('HTTP data API filters private notifications and friend records by current 
       });
       assert.deepEqual(
         adminNotifications.docs.map((entry) => entry.id).sort(),
-        [aliceNotification.id, bobNotification.id].sort(),
+        [aliceNotification.id, bobNotification.id, dirtyBobNotification.id].sort(),
       );
     } finally {
       await new Promise((resolve) => server.close(resolve));
