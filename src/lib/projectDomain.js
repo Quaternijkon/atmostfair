@@ -1864,14 +1864,11 @@ function normalizedRouletteParticipants(participants) {
 }
 
 function normalizeRpsPlayers(players, config) {
-  if (!Array.isArray(players)) return [];
-  return players
-    .filter((player) => player?.uid)
-    .map((player) => ({
-      ...clonePlainValue(player),
-      score: normalizeRpsScoreInput(player.score, config),
-      move: player.move || null,
-    }));
+  return normalizeGameRoomPlayers(players).map((player) => ({
+    ...clonePlainValue(player),
+    score: normalizeRpsScoreInput(player.score, config),
+    move: player.move || null,
+  }));
 }
 
 function createRouletteTarget(participant) {

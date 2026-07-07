@@ -867,6 +867,34 @@ test('RPS room transition normalizes legacy current round before continuing', ()
   });
 });
 
+test('RPS room transition normalizes dirty player membership before deciding rounds', () => {
+  const createRpsNextRoundPatch = projectDomain.createRpsNextRoundPatch;
+  assert.equal(typeof createRpsNextRoundPatch, 'function');
+
+  assert.deepEqual(createRpsNextRoundPatch({
+    id: 'game-dirty-rps-transition',
+    game: 'rps',
+    status: 'showdown',
+    currentRound: 1,
+    config: { bestOf: 3, timeout: 30 },
+    players: [
+      { uid: 'u1', name: 'Ana', score: 1, move: 'rock' },
+      { uid: 'u1', name: 'Duplicate Ana', score: 2, move: 'scissors' },
+      { uid: ' ', name: 'Blank', score: 2, move: 'paper' },
+      { uid: 'u2', name: 'Bo', score: 0, move: 'scissors' },
+    ],
+    history: [{ round: 1, p1Move: 'rock', p2Move: 'scissors', winnerId: 'u1', timestamp: 1000 }],
+  }, 9200), {
+    status: 'playing',
+    currentRound: 2,
+    roundStartTime: 9200,
+    players: [
+      { uid: 'u1', name: 'Ana', score: 1, lastMove: 'rock', move: null },
+      { uid: 'u2', name: 'Bo', score: 0, lastMove: 'scissors', move: null },
+    ],
+  });
+});
+
 test('RPS summaries and transitions normalize legacy scores before displaying results', () => {
   assert.equal(typeof projectDomain.normalizeRpsScoreInput, 'function');
   assert.equal(projectDomain.normalizeRpsScoreInput('', { bestOf: 3 }), 0);
