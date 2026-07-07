@@ -984,11 +984,15 @@ function normalizeBoundedInt(value, min, max, fallback) {
 }
 
 export function createScheduleSubmissionWrite(existingSubmissions, projectId, user, userName, availability, submittedAt, config) {
-  if (!projectId || !user?.uid) return null;
+  const uid = normalizeIdentityValue(user?.uid);
+  if (!projectId || !uid) return null;
   const normalizedAvailability = normalizeScheduleAvailabilityInput(availability, config);
   if (normalizedAvailability === null) return null;
   const submissions = Array.isArray(existingSubmissions) ? existingSubmissions : [];
-  const existing = submissions.find((submission) => submission.projectId === projectId && submission.uid === user.uid);
+  const existing = normalizeScheduleSubmissions(
+    submissions.filter((submission) => submission?.projectId === projectId),
+    config,
+  ).find((submission) => submission.uid === uid);
   if (existing?.id) {
     return {
       type: 'update',
@@ -1006,7 +1010,7 @@ export function createScheduleSubmissionWrite(existingSubmissions, projectId, us
     collection: 'schedule_submissions',
     data: {
       projectId,
-      uid: user.uid,
+      uid,
       name: cleanName(userName, user),
       availability: normalizedAvailability,
       submittedAt,
@@ -1069,6 +1073,40 @@ export function createDateRangeDays(config) {
   return dates;
 }
 
+export function normalizeScheduleSubmissions(submissions, config) {
+  if (!Array.isArray(submissions)) return [];
+
+  const byUid = new Map();
+  submissions.forEach((submission, index) => {
+    if (!submission || typeof submission !== 'object' || Array.isArray(submission)) return;
+    const uid = normalizeIdentityValue(submission.uid);
+    if (!uid) return;
+
+    const availability = normalizeScheduleAvailabilityInput(submission.availability, config);
+    const normalized = {
+      ...clonePlainValue(submission),
+      uid,
+      availability: Array.isArray(availability) ? availability : [],
+    };
+    const current = byUid.get(uid);
+    if (!current || shouldReplaceScheduleSubmission(current, { submission: normalized, index })) {
+      byUid.set(uid, { submission: normalized, index });
+    }
+  });
+
+  return [...byUid.values()].map((entry) => entry.submission);
+}
+
+export function createScheduleSubmissionSummary(submissions, user, config) {
+  const normalizedSubmissions = normalizeScheduleSubmissions(submissions, config);
+  const uid = normalizeIdentityValue(user?.uid);
+  return {
+    submissions: normalizedSubmissions,
+    participantCount: normalizedSubmissions.length,
+    mySubmission: uid ? normalizedSubmissions.find((submission) => submission.uid === uid) || null : null,
+  };
+}
+
 export function createScheduleHeatmapData(submissions, config) {
   return Object.fromEntries(
     [...createScheduleBucketCounts(submissions, config).values()].map((entry) => [entry.key, entry.count]),
@@ -1076,7 +1114,7 @@ export function createScheduleHeatmapData(submissions, config) {
 }
 
 export function createScheduleRecommendationSummary(submissions, config, limit = 3) {
-  const participantCount = Array.isArray(submissions) ? submissions.length : 0;
+  const participantCount = createScheduleSubmissionSummary(submissions, null, config).participantCount;
   if (!participantCount || !config?.mode) {
     return { participantCount, recommendations: [] };
   }
@@ -1791,9 +1829,8 @@ function createScheduleBucketCounts(submissions, config) {
     counts.set(key, current ? { ...current, count: current.count + 1 } : { ...meta, key, count: 1 });
   };
 
-  for (const submission of submissions) {
-    const availability = normalizeScheduleAvailabilityInput(submission?.availability, scheduleConfig);
-    if (!Array.isArray(availability)) continue;
+  for (const submission of normalizeScheduleSubmissions(submissions, scheduleConfig)) {
+    const availability = submission.availability;
 
     if (scheduleConfig.mode === 'date') {
       for (const date of availability) {
@@ -1819,6 +1856,17 @@ function createScheduleBucketCounts(submissions, config) {
   }
 
   return counts;
+}
+
+function shouldReplaceScheduleSubmission(current, candidate) {
+  const currentSubmittedAt = Number(current.submission.submittedAt);
+  const candidateSubmittedAt = Number(candidate.submission.submittedAt);
+  const currentHasSubmittedAt = Number.isFinite(currentSubmittedAt);
+  const candidateHasSubmittedAt = Number.isFinite(candidateSubmittedAt);
+
+  if (currentHasSubmittedAt && candidateHasSubmittedAt) return candidateSubmittedAt >= currentSubmittedAt;
+  if (candidateHasSubmittedAt !== currentHasSubmittedAt) return candidateHasSubmittedAt;
+  return candidate.index >= current.index;
 }
 
 function normalizeRequiredFields(value) {

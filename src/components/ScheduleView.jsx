@@ -7,6 +7,7 @@ import {
   createScheduleHeatmapData,
   createScheduleConfigData,
   createScheduleRecommendationSummary,
+  createScheduleSubmissionSummary,
 } from '../lib/projectDomain';
 import { addDaysIsoDate, nowMs, todayIsoDate } from '../lib/time';
 import { useUI } from './UIContext';
@@ -35,7 +36,11 @@ export default function ScheduleView({ user, isAdmin, project, submissions, isSt
   const [config, setConfig] = useState(() => project.scheduleConfig || createDefaultScheduleConfig());
 
   // User Submission State
-  const mySubmission = submissions.find(s => s.uid === user?.uid);
+  const submissionSummary = useMemo(
+      () => createScheduleSubmissionSummary(submissions, user, config),
+      [submissions, user, config],
+  );
+  const mySubmission = submissionSummary.mySubmission;
   const [myAvailability, setMyAvailability] = useState(mySubmission?.availability || []); // Array depends on mode
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
   const isSubmittingScheduleRef = useRef(false);

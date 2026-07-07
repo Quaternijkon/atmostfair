@@ -1576,7 +1576,7 @@ async function authorizeProjectUserEntryOperation({
   }
 
   if (collection === 'schedule_submissions') {
-    if (existing.uid !== user.uid && !isAdminUser(user)) forbidden();
+    if (normalizeProjectUserEntryUid(existing.uid) !== user.uid && !isAdminUser(user)) forbidden();
     return normalizeScheduleSubmissionData(allowOnlyFields(data, ['availability', 'submittedAt']), project);
   }
 
@@ -1658,12 +1658,17 @@ function normalizeScheduleSubmissionData(data, project) {
 }
 
 async function assertNoDuplicateProjectUserEntry(store, collection, projectId, uid) {
+  const normalizedUid = normalizeProjectUserEntryUid(uid);
   const docs = await store.list(collection, {
     filters: [{ field: 'projectId', op: '==', value: projectId }],
   });
-  if (docs.some((doc) => doc.uid === uid)) {
+  if (docs.some((doc) => normalizeProjectUserEntryUid(doc.uid) === normalizedUid)) {
     throwDataError(409, 'data/duplicate-entry', 'Entry already exists for this user.');
   }
+}
+
+function normalizeProjectUserEntryUid(uid) {
+  return String(uid ?? '').trim();
 }
 
 function allowOnlyFields(data, fields) {

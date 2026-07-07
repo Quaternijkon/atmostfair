@@ -1016,6 +1016,22 @@ test('schedule workspace exposes localized owner recommendation summary', async 
   assert.doesNotMatch(schedule, />Recommendations<|>Best time<|>No recommendations/, 'Schedule recommendation copy should be localized');
 });
 
+test('schedule workspace resolves the current user submission through normalized domain state', async () => {
+  const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
+
+  assert.match(schedule, /createScheduleSubmissionSummary/, 'Schedule should import the shared submission summary helper');
+  assert.match(
+    schedule,
+    /createScheduleSubmissionSummary\(submissions,\s*user,\s*config\)/,
+    'Schedule should derive the current user submission from normalized submission state',
+  );
+  assert.doesNotMatch(
+    schedule,
+    /submissions\.find\(s\s*=>\s*s\.uid\s*===\s*user\?\.uid\)/,
+    'Schedule should not compare raw submission uid values in the component',
+  );
+});
+
 test('schedule config saves prevent duplicate submits and expose pending state', async () => {
   const schedule = await readFile(path.join(root, 'src/components/ScheduleView.jsx'), 'utf8');
 

@@ -1715,6 +1715,36 @@ test('schedule submission guard updates an existing response instead of duplicat
   });
 });
 
+test('schedule submission guard matches existing responses by normalized uid', () => {
+  const createScheduleSubmissionWrite = projectDomain.createScheduleSubmissionWrite;
+  const user = { uid: 'u2', displayName: 'Rosalind' };
+  const config = { mode: 'date', start: '2026-07-05', end: '2026-07-07', deadline: '' };
+
+  assert.deepEqual(
+    createScheduleSubmissionWrite(
+      [
+        { id: 'schedule-1', projectId: 'project-1', uid: 'u1' },
+        { id: 'schedule-dirty', projectId: 'project-1', uid: ' u2 ', availability: ['2026-07-05'], submittedAt: 3700 },
+      ],
+      'project-1',
+      user,
+      'Rosalind Franklin',
+      ['2026-07-06'],
+      3702,
+      config,
+    ),
+    {
+      type: 'update',
+      collection: 'schedule_submissions',
+      id: 'schedule-dirty',
+      data: {
+        availability: ['2026-07-06'],
+        submittedAt: 3702,
+      },
+    },
+  );
+});
+
 test('schedule and booking config guards reject invalid date ranges', () => {
   assert.equal(typeof projectDomain.createScheduleConfigData, 'function');
   assert.equal(typeof projectDomain.createBookingConfigData, 'function');
@@ -1862,6 +1892,43 @@ test('schedule recommendation summary ranks date availability and filters stale 
       { key: '2026-07-06', date: '2026-07-06', count: 1, participantCount: 3, coverage: 1 / 3 },
       { key: '2026-07-07', date: '2026-07-07', count: 1, participantCount: 3, coverage: 1 / 3 },
     ],
+  });
+});
+
+test('schedule summaries ignore invalid uid values and use one response per participant', () => {
+  const config = { mode: 'date', start: '2026-07-05', end: '2026-07-07' };
+  const submissions = [
+    { id: 'blank', uid: ' ', availability: ['2026-07-05'], submittedAt: 40 },
+    { id: 'old-u2', uid: ' u2 ', name: 'Old Rosalind', availability: ['2026-07-05'], submittedAt: 41 },
+    { id: 'u1', uid: 'u1', name: 'Ada', availability: ['2026-07-05', 'bad-date', '2026-07-09'], submittedAt: 42 },
+    { id: 'new-u2', uid: 'u2', name: 'Rosalind', availability: ['2026-07-06'], submittedAt: 43 },
+  ];
+
+  assert.equal(typeof projectDomain.createScheduleSubmissionSummary, 'function');
+  const submissionSummary = projectDomain.createScheduleSubmissionSummary(submissions, { uid: 'u2' }, config);
+  assert.equal(submissionSummary.participantCount, 2);
+  assert.deepEqual(
+    submissionSummary.submissions.map((submission) => submission.uid).sort(),
+    ['u1', 'u2'],
+  );
+  assert.deepEqual(submissionSummary.mySubmission, {
+    id: 'new-u2',
+    uid: 'u2',
+    name: 'Rosalind',
+    availability: ['2026-07-06'],
+    submittedAt: 43,
+  });
+
+  assert.deepEqual(createScheduleRecommendationSummary(submissions, config, 3), {
+    participantCount: 2,
+    recommendations: [
+      { key: '2026-07-05', date: '2026-07-05', count: 1, participantCount: 2, coverage: 1 / 2 },
+      { key: '2026-07-06', date: '2026-07-06', count: 1, participantCount: 2, coverage: 1 / 2 },
+    ],
+  });
+  assert.deepEqual(projectDomain.createScheduleHeatmapData(submissions, config), {
+    '2026-07-05': 1,
+    '2026-07-06': 1,
   });
 });
 

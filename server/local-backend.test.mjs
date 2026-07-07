@@ -2050,6 +2050,55 @@ test('HTTP data API normalizes participant identities and rejects duplicate dire
       assert.equal(bobScheduleUpdate.body.error.code, 'data/forbidden');
       assert.deepEqual((await store.get('schedule_submissions', scheduleSubmission.doc.id)).availability, ['2026-07-06']);
 
+      const dirtyScheduleProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          collection: 'projects',
+          data: {
+            title: 'Dirty schedule',
+            type: 'schedule',
+            status: 'active',
+            scheduleConfig: { mode: 'date', start: '2026-07-05', end: '2026-07-07', deadline: '' },
+            createdAt: 36,
+          },
+        },
+      });
+      const dirtyScheduleSubmission = await store.add('schedule_submissions', {
+        projectId: dirtyScheduleProject.doc.id,
+        uid: ` ${alice.user.uid} `,
+        name: 'Legacy Alice',
+        availability: ['2026-07-05'],
+        submittedAt: 37,
+      });
+      const dirtyScheduleUpdate = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          id: dirtyScheduleSubmission.id,
+          data: { availability: ['2026-07-06'], submittedAt: 38 },
+        },
+      });
+      assert.equal(dirtyScheduleUpdate.status, 200);
+      assert.deepEqual(dirtyScheduleUpdate.body.doc.availability, ['2026-07-06']);
+
+      const dirtyScheduleDuplicate = await fetchJsonResponse(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: alice.token,
+        body: {
+          collection: 'schedule_submissions',
+          data: {
+            projectId: dirtyScheduleProject.doc.id,
+            name: 'Alice Again',
+            availability: ['2026-07-07'],
+            submittedAt: 39,
+          },
+        },
+      });
+      assert.equal(dirtyScheduleDuplicate.status, 409);
+      assert.equal(dirtyScheduleDuplicate.body.error.code, 'data/duplicate-entry');
+
       const timedScheduleProject = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
         token: owner.token,
