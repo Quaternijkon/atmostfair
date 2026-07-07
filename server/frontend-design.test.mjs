@@ -717,6 +717,13 @@ test('gather workspace displays submissions normalized against current fields', 
   assert.doesNotMatch(gather, /const rows = submissions\.map/, 'Gather local CSV export should not serialize raw submissions directly');
 });
 
+test('participant schedule export uses the current schedule config', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.match(detail, /createProjectParticipantExport\(project,\s*\{[\s\S]{0,700}scheduleSubmissions: projectScheduleSubmissions/, 'Project detail should build participant exports from scoped schedule records');
+  assert.match(detail, /scheduleConfig:\s*project\.scheduleConfig/, 'Schedule participant exports should normalize against the current project config');
+});
+
 test('gather submission form prevents duplicate submits and exposes pending state', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 

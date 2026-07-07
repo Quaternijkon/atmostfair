@@ -156,6 +156,37 @@ test('participant export builds localized CSV for each participant workflow', ()
   assert.match(scheduleExport.csv, /^Name,Availability,Submitted At\n/);
   assert.match(scheduleExport.csv, /Chen,2024-05-02; 2024-05-03_morning; 2024-05-04 09:00-10:30,2024-05-01T09:00:00.000Z/);
 
+  const normalizedScheduleExport = createProjectParticipantExport({
+    id: 'p3b',
+    title: 'Current Planning',
+    type: 'schedule',
+  }, {
+    scheduleConfig: { mode: 'time', start: '2024-05-02', end: '2024-05-03', deadline: '' },
+    scheduleSubmissions: [
+      {
+        name: 'Iris',
+        availability: [
+          { date: '2024-05-02', start: '09:00', end: '10:30' },
+          { date: '2024-05-04', start: '09:00', end: '10:00' },
+          { date: '2024-05-03', start: 'bad', end: '11:00' },
+          { date: '2024-05-03', start: '13:00', end: '12:00' },
+        ],
+        submittedAt: 1714554000000,
+      },
+      {
+        name: 'Jo',
+        availability: [
+          { date: '2024-05-03', start: '14:00', end: '15:00' },
+          { date: '2024-05-03', start: '14:00', end: '15:00' },
+        ],
+        submittedAt: 1714557600000,
+      },
+    ],
+  }, t);
+  assert.match(normalizedScheduleExport.csv, /Iris,2024-05-02 09:00-10:30,2024-05-01T09:00:00.000Z/);
+  assert.match(normalizedScheduleExport.csv, /Jo,2024-05-03 14:00-15:00,2024-05-01T10:00:00.000Z/);
+  assert.doesNotMatch(normalizedScheduleExport.csv, /2024-05-04|bad|13:00-12:00/);
+
   const gatherExport = createProjectParticipantExport({
     id: 'p4',
     title: '',

@@ -3,6 +3,7 @@ import {
   normalizeGatherSubmissionData,
   normalizeMineProgressInput,
   normalizeRpsScoreInput,
+  normalizeScheduleAvailabilityInput,
 } from './projectDomain.js';
 import { getActivityMessageKey } from './activityDomain.js';
 
@@ -194,11 +195,21 @@ function createBookingExport({ bookingSlots = [] }, t) {
   };
 }
 
-function createScheduleExport({ scheduleSubmissions = [] }, t) {
+function createScheduleExport({ scheduleSubmissions = [], scheduleConfig }, t) {
+  const readableSubmissions = scheduleSubmissions.map((submission) => {
+    const availability = scheduleConfig?.mode
+      ? normalizeScheduleAvailabilityInput(submission.availability, scheduleConfig)
+      : submission.availability;
+    return {
+      ...submission,
+      availability: Array.isArray(availability) ? availability : [],
+    };
+  });
+
   return {
     suffix: 'schedule_participants',
     headers: [t('nameLabel'), t('exportAvailability'), t('submittedAtCsv')],
-    rows: scheduleSubmissions.map((submission) => [
+    rows: readableSubmissions.map((submission) => [
       submission.name,
       formatAvailability(submission.availability),
       formatExportDate(submission.submittedAt),
