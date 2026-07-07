@@ -3913,6 +3913,36 @@ test('HTTP data API restricts booking slot updates to booking and waitlist guard
       assert.equal(forgedWaitlistRewrite.body.error.code, 'data/forbidden');
       assert.deepEqual((await store.get('booking_slots', slot.doc.id)).waitlist, bobWaitlist);
 
+      const dirtyWaitlistSlot = await store.add('booking_slots', {
+        projectId: project.doc.id,
+        start: '2026-07-08',
+        end: '2026-07-08',
+        label: 'Dirty waitlist',
+        bookedBy: alice.user.uid,
+        bookerName: 'Alice',
+        bookingData: { phone: '111' },
+        bookedAt: 8,
+        waitlist: [
+          { uid: ` ${bob.user.uid} `, name: 'Legacy Bob', bookingData: { phone: '222' }, joinedAt: 9 },
+          { uid: ' ', name: 'Blank', bookingData: { phone: '000' }, joinedAt: 10 },
+          { uid: bob.user.uid, name: 'Duplicate Bob', bookingData: { phone: '999' }, joinedAt: 11 },
+          { uid: carol.user.uid, name: 'Carol', bookingData: null, joinedAt: 12 },
+        ],
+        createdAt: 8,
+      });
+      const bobLeavesDirtyWaitlist = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'booking_slots',
+          id: dirtyWaitlistSlot.id,
+          data: { waitlist: [{ uid: carol.user.uid, name: 'Carol', bookingData: {}, joinedAt: 12 }] },
+        },
+      });
+      assert.deepEqual(bobLeavesDirtyWaitlist.doc.waitlist, [
+        { uid: carol.user.uid, name: 'Carol', bookingData: {}, joinedAt: 12 },
+      ]);
+
       const forgedRelease = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: bob.token,

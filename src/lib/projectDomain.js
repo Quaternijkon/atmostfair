@@ -371,6 +371,18 @@ export function createBookingWaitlistPatch(slot, user, userName, bookingData, jo
   };
 }
 
+export function createBookingWaitlistSummary(slot, user) {
+  const waitlist = normalizeBookingWaitlist(slot?.waitlist);
+  const uid = normalizeIdentityValue(user?.uid);
+  const currentEntry = uid ? waitlist.find((entry) => entry.uid === uid) || null : null;
+  return {
+    waitlist,
+    waitlistSize: waitlist.length,
+    currentEntry,
+    isWaitlisted: Boolean(currentEntry),
+  };
+}
+
 export function createBookingReleasePatch(slot, releasedAt) {
   if (!slot?.id) return null;
   const waitlist = normalizeBookingWaitlist(slot.waitlist);
@@ -1860,14 +1872,20 @@ function normalizeGatherOptions(options) {
 
 function normalizeBookingWaitlist(waitlist) {
   if (!Array.isArray(waitlist)) return [];
-  return waitlist
-    .filter((entry) => entry?.uid)
-    .map((entry) => ({
-      uid: entry.uid,
+  const seen = new Set();
+  return waitlist.reduce((normalized, entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return normalized;
+    const uid = normalizeIdentityValue(entry.uid);
+    if (!uid || seen.has(uid)) return normalized;
+    seen.add(uid);
+    normalized.push({
+      uid,
       name: entry.name || '',
       bookingData: normalizeBookingDataInput(entry.bookingData),
       joinedAt: entry.joinedAt,
-    }));
+    });
+    return normalized;
+  }, []);
 }
 
 function normalizedQueueParticipants(participants) {

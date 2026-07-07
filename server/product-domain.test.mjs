@@ -375,6 +375,37 @@ test('booking waitlist guard toggles full-slot waitlist entries and blocks inval
   assert.equal(createBookingWaitlistPatch(null, user, 'Lin', {}, 3005), null);
 });
 
+test('booking waitlist guard normalizes dirty waitlist entries before toggles and release', () => {
+  const user = { uid: 'u2', displayName: 'Lin' };
+  const dirtySlot = {
+    id: 'dirty-slot',
+    projectId: 'project-1',
+    bookedBy: 'u1',
+    waitlist: [
+      { uid: ' u2 ', name: 'Legacy Lin', bookingData: { phone: '222' }, joinedAt: 3000 },
+      { uid: ' ', name: 'Blank', bookingData: { phone: '000' }, joinedAt: 3001 },
+      { uid: 'u2', name: 'Duplicate Lin', bookingData: { phone: '999' }, joinedAt: 3002 },
+      { uid: 'u3', name: 'Grace', bookingData: null, joinedAt: 3003 },
+    ],
+  };
+
+  assert.deepEqual(createBookingWaitlistPatch(dirtySlot, user, 'Lin', { phone: '123' }, 3004), {
+    type: 'remove',
+    waitlist: [{ uid: 'u3', name: 'Grace', bookingData: {}, joinedAt: 3003 }],
+  });
+
+  assert.deepEqual(createBookingReleasePatch(dirtySlot, 3005), {
+    patch: {
+      bookedBy: 'u2',
+      bookerName: 'Legacy Lin',
+      bookingData: { phone: '222' },
+      bookedAt: 3005,
+      waitlist: [{ uid: 'u3', name: 'Grace', bookingData: {}, joinedAt: 3003 }],
+    },
+    promoted: { uid: 'u2', name: 'Legacy Lin', bookingData: { phone: '222' }, joinedAt: 3000 },
+  });
+});
+
 test('booking release patch promotes the first waitlisted participant without dropping the queue', () => {
   const slot = {
     id: 'slot-1',

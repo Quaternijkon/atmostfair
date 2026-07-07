@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { CalendarCheck, CheckSquare, Plus, UserMinus } from './Icons';
 import { InfoCard } from './InfoCard';
 import { getAppLocale } from '../lib/locale';
-import { createBookingConfigData, createDateRangeDays } from '../lib/projectDomain';
+import { createBookingConfigData, createBookingWaitlistSummary, createDateRangeDays } from '../lib/projectDomain';
 import { addDaysIsoDate, todayIsoDate } from '../lib/time';
 import { useUI } from './UIContext';
 
@@ -49,7 +49,7 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
 
   const hasConfig = !!project.bookingConfig;
   const reqFields = (config.requiredFields || '').split(/[，,]/).map(s => s.trim()).filter(s => s);
-  const getWaitlist = (slot) => Array.isArray(slot?.waitlist) ? slot.waitlist : [];
+  const getWaitlistSummary = (slot) => createBookingWaitlistSummary(slot, user);
   const canInteract = !isStopped && !isFinished;
 
   // --- Handlers ---
@@ -267,9 +267,9 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                         const isWaitlistTogglePending = existing ? pendingWaitlistSlotIds.includes(existing.id) : false;
                         const isBooked = existing?.bookedBy;
                         const isMine = existing?.bookedBy === user?.uid;
-                        const waitlist = getWaitlist(existing);
-                        const waitlistSize = waitlist.length;
-                        const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
+                        const waitlistSummary = getWaitlistSummary(existing);
+                        const waitlistSize = waitlistSummary.waitlistSize;
+                        const isWaitlisted = waitlistSummary.isWaitlisted;
                         const isInteractive = canInteract && !isSlotTogglePending && !isWaitlistTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
                         const SlotShell = isInteractive || isSlotTogglePending || isWaitlistTogglePending ? 'button' : 'div';
 
@@ -368,9 +368,9 @@ export default function BookingView({ user, isAdmin, project, slots, isStopped, 
                                         const isWaitlistTogglePending = existing ? pendingWaitlistSlotIds.includes(existing.id) : false;
                                         const isBooked = existing?.bookedBy;
                                         const isMine = existing?.bookedBy === user?.uid;
-                                        const waitlist = getWaitlist(existing);
-                                        const waitlistSize = waitlist.length;
-                                        const isWaitlisted = waitlist.some((entry) => entry.uid === user?.uid);
+                                        const waitlistSummary = getWaitlistSummary(existing);
+                                        const waitlistSize = waitlistSummary.waitlistSize;
+                                        const isWaitlisted = waitlistSummary.isWaitlisted;
                                         const isInteractive = canInteract && !isSlotTogglePending && !isWaitlistTogglePending && (isOwner ? !isBooked : Boolean(existing && (!isBooked || (!isMine && isBooked))));
                                         const CellShell = isInteractive || isSlotTogglePending || isWaitlistTogglePending ? 'button' : 'div';
 

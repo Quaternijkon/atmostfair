@@ -1217,7 +1217,9 @@ test('booking workspace exposes localized waitlist states for full slots', async
   }
 
   assert.match(files.booking, /handleToggleBookingWaitlist/, 'Booking view should call the waitlist action for full slots');
-  assert.match(files.booking, /waitlist\.some/, 'Booking view should derive whether the current user is already waitlisted');
+  assert.match(files.booking, /createBookingWaitlistSummary/, 'Booking view should use normalized waitlist summaries');
+  assert.doesNotMatch(files.booking, /waitlist\.some/, 'Booking view should not derive waitlist status from raw stored entries');
+  assert.doesNotMatch(files.booking, /waitlist\.length/, 'Booking view should not derive waitlist size from raw stored entries');
   assert.match(files.booking, /waitlistCount/, 'Booking view should show the waitlist size');
   assert.match(files.booking, /bookModalMode/, 'Booking modal should distinguish direct booking from waitlist join');
   assert.match(files.booking, /const canInteract = !isStopped && !isFinished;/, 'Booking should derive a stopped/finished interaction guard');

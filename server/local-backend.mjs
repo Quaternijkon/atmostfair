@@ -1414,14 +1414,20 @@ function hasExactFields(keys, fields) {
 
 function normalizeBookingWaitlistData(waitlist) {
   if (!Array.isArray(waitlist)) return [];
-  return waitlist
-    .filter((entry) => entry?.uid)
-    .map((entry) => ({
-      uid: entry.uid,
+  const seen = new Set();
+  return waitlist.reduce((normalized, entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return normalized;
+    const uid = String(entry.uid ?? '').trim();
+    if (!uid || seen.has(uid)) return normalized;
+    seen.add(uid);
+    normalized.push({
+      uid,
       name: entry.name || '',
       bookingData: normalizeBookingData(entry.bookingData),
       joinedAt: entry.joinedAt,
-    }));
+    });
+    return normalized;
+  }, []);
 }
 
 function normalizeBookingData(data) {
