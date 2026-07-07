@@ -5,7 +5,8 @@ const API_BASE_URL = resolveApiBaseUrl({
   configuredBaseUrl: import.meta.env?.VITE_API_BASE_URL || '',
 });
 const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
-const MAX_RETRY_ATTEMPTS = 1;
+const RETRY_DELAYS_MS = [250, 750];
+const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
 
 export function getAuthToken() {
   if (typeof localStorage === 'undefined') return null;
@@ -35,7 +36,10 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
       response = await fetch(requestUrl, requestInit);
     } catch (error) {
       const status = getTransportErrorStatus(error);
-      if ((!status || RETRYABLE_STATUS_CODES.has(status)) && attempt < MAX_RETRY_ATTEMPTS) continue;
+      if ((!status || RETRYABLE_STATUS_CODES.has(status)) && attempt < MAX_RETRY_ATTEMPTS) {
+        await waitForRetry(attempt);
+        continue;
+      }
       throwApiError({
         payload: {},
         serviceUnavailable: !status || status >= 500,
@@ -44,11 +48,20 @@ export async function apiRequest(path, { method = 'POST', body, token = getAuthT
     }
     const payload = await response.json().catch(() => ({}));
     if (response.ok) return payload;
-    if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRY_ATTEMPTS) continue;
+    if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRY_ATTEMPTS) {
+      await waitForRetry(attempt);
+      continue;
+    }
 
     const serviceUnavailable = response.status >= 500;
     throwApiError({ payload, serviceUnavailable, status: response.status });
   }
+}
+
+function waitForRetry(attempt) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, RETRY_DELAYS_MS[attempt] || 0);
+  });
 }
 
 export async function checkApiHealth() {

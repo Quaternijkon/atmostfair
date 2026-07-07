@@ -856,7 +856,7 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
 
   for (const [fileKey, keys] of Object.entries({
     detail: ['copyFullProjectId', 'projectIdCopied', 'projectView', 'share', 'chat', 'shareUnavailable'],
-    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable'],
+    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable', 'qrCodeLoadFailed', 'qrCodeRetry'],
     announcements: ['announcements'],
     chat: ['chatRoom', 'noMessagesYet', 'messageSendFailed', 'anonymousUser', 'typeMessage'],
     queue: ['noParticipantsYet', 'currentUserBadge'],
@@ -884,6 +884,11 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   assert.match(files.detail, /showToast\(t\('shareUnavailable'\), 'error'\)/, 'Project ID copy failure should provide localized recovery feedback');
   assert.match(files.qr, /navigator\.clipboard\?\.writeText/, 'QR share copy should guard clipboard availability');
   assert.match(files.qr, /catch[\s\S]{0,180}shareUnavailable/, 'QR share copy failures should use localized recovery feedback');
+  assert.match(files.qr, /\[qrLoadError,\s*setQrLoadError\]\s*=\s*useState\(false\)/, 'QR share should track QR image load failures separately from the copy path');
+  assert.match(files.qr, /onError=\{\(\) => setQrLoadError\(true\)\}/, 'QR image failures should switch the modal into a recoverable state');
+  assert.match(files.qr, /qrLoadError[\s\S]{0,360}role="alert"[\s\S]{0,360}t\('qrCodeLoadFailed'\)/, 'QR load failures should render announced localized recovery copy');
+  assert.match(files.qr, /setQrRetryKey\(\(current\) => current \+ 1\)[\s\S]{0,180}setQrLoadError\(false\)/, 'QR retry should force a new image request and clear the failure state');
+  assert.match(files.qr, /RotateCcw/, 'QR retry should use the shared retry icon');
   assert.doesNotMatch(files.announcements, />Announcements<|title=["']Announcements|\|\|\s*['"]Announcements/, 'Announcement launcher and dialog should localize labels');
   assert.doesNotMatch(files.chat, /Chat Room|No messages yet|Type a message|Failed to send message|Anonymous/, 'Chat room should localize visible states and fallbacks');
   assert.match(files.queue, /app-card-quiet[\s\S]{0,300}noParticipantsYet/, 'Queue empty state should use a designed surface');

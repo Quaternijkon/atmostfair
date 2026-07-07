@@ -1,10 +1,12 @@
-import React from 'react';
-import { X, Copy } from './Icons';
+import React, { useState } from 'react';
+import { X, Copy, RotateCcw, AlertTriangle } from './Icons';
 import { useUI } from './UIContext';
 
 const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
   const { showToast } = useUI();
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+  const [qrLoadError, setQrLoadError] = useState(false);
+  const [qrRetryKey, setQrRetryKey] = useState(0);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}&retry=${qrRetryKey}`;
 
   const copyToClipboard = async () => {
     try {
@@ -16,19 +18,42 @@ const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
     }
   };
 
+  const retryQrCode = () => {
+    setQrRetryKey((current) => current + 1);
+    setQrLoadError(false);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
       <div className="app-dialog flex flex-col items-center">
         
         <div className="w-full flex justify-between items-center mb-4">
           <h3 className="ml-2 text-xl font-medium text-m3-on-surface">{t('shareProject')}</h3>
-          <button onClick={onClose} className="app-icon-button" title={t('close')}>
+          <button type="button" onClick={onClose} className="app-icon-button" title={t('close')}>
             <X className="w-5 h-5 text-m3-on-surface" />
           </button>
         </div>
 
-        <div className="bg-white p-4 rounded-xl mb-6 shadow-sm">
-          <img src={qrUrl} alt={t('qrCodeAlt')} className="w-48 h-48" />
+        <div className="mb-6 flex h-56 w-56 items-center justify-center rounded-xl bg-white p-4 shadow-sm">
+          {qrLoadError ? (
+            <div role="alert" className="flex h-48 w-48 flex-col items-center justify-center gap-3 rounded-lg border border-google-yellow/30 bg-google-yellow/10 p-4 text-center text-sm font-medium text-m3-on-surface-variant">
+              <AlertTriangle className="h-6 w-6 text-google-yellow" />
+              <p>{t('qrCodeLoadFailed')}</p>
+              <button type="button" onClick={retryQrCode} className="app-button-quiet min-h-10 text-google-blue">
+                <RotateCcw className="h-4 w-4" />
+                {t('qrCodeRetry')}
+              </button>
+            </div>
+          ) : (
+            <img
+              key={qrRetryKey}
+              src={qrUrl}
+              alt={t('qrCodeAlt')}
+              className="h-48 w-48"
+              loading="lazy"
+              onError={() => setQrLoadError(true)}
+            />
+          )}
         </div>
 
         <div className="text-center mb-6">
@@ -38,6 +63,7 @@ const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
 
         <div className="w-full flex gap-3">
             <button 
+                type="button"
                 onClick={copyToClipboard}
                 className="app-button-tonal flex-1"
             >

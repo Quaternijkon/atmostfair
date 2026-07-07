@@ -54,12 +54,14 @@ test('apiRequest hides raw thrown status text for gateway outages', async (t) =>
   );
 });
 
-test('apiRequest retries transient gateway failures once', async (t) => {
+test('apiRequest retries transient gateway failures with short backoff', async (t) => {
   const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
   let calls = 0;
+  const retryDelays = [];
   globalThis.fetch = async () => {
     calls += 1;
-    if (calls === 1) {
+    if (calls < 3) {
       return new Response('<html>bad gateway</html>', {
         status: 502,
         headers: { 'content-type': 'text/html' },
@@ -70,8 +72,14 @@ test('apiRequest retries transient gateway failures once', async (t) => {
       headers: { 'content-type': 'application/json' },
     });
   };
+  globalThis.setTimeout = (callback, delay) => {
+    retryDelays.push(delay);
+    callback();
+    return 0;
+  };
   t.after(() => {
     globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
   });
 
   const result = await apiRequest('/api/auth/email/login', {
@@ -80,7 +88,8 @@ test('apiRequest retries transient gateway failures once', async (t) => {
   });
 
   assert.deepEqual(result, { ok: true });
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
+  assert.deepEqual(retryDelays, [250, 750]);
 });
 
 test('apiRequest hides raw status text for non-json client failures', async (t) => {
