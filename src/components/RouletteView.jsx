@@ -2,7 +2,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Crown, Dices, ChartLine, Lock, Plus, Trash2, Settings, Play, FastForward, RotateCcw, X, Pause } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
-import { createParticipantValueDistribution, normalizeRouletteConfigInput, normalizeRoulettePrizeCountInput } from '../lib/projectDomain';
+import {
+  createParticipantValueDistribution,
+  createRouletteParticipantSummary,
+  normalizeRouletteConfigInput,
+  normalizeRoulettePrizeCountInput,
+} from '../lib/projectDomain';
 
 const REPEAT_SEED_MODULUS = 2147483647;
 const REPEAT_SEED_MULTIPLIER = 16807;
@@ -65,8 +70,13 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
   });
 
   // -- Derived Data --
-  const sortedParticipants = useMemo(() => [...participants].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)), [participants]);
-  const hasJoined = useMemo(() => user && participants.some(p => p.uid === user.uid), [participants, user]);
+  const participantSummary = useMemo(
+      () => createRouletteParticipantSummary(participants, user, project),
+      [participants, user, project],
+  );
+  const sortedParticipants = useMemo(() => [...participantSummary.participants].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)), [participantSummary.participants]);
+  const participantCount = participantSummary.participantCount;
+  const hasJoined = Boolean(participantSummary.currentParticipant);
   const distribution = useMemo(() => createParticipantValueDistribution(sortedParticipants), [sortedParticipants]);
   
   // -- Logic Helpers --
@@ -584,12 +594,12 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
               <div className="app-card flex items-center gap-4 mt-6 overflow-x-auto p-4">
                 <div className="text-center px-2"><div className="text-xs font-bold uppercase text-m3-on-surface-variant">{t('total')}</div><div className="text-xl font-mono text-m3-on-surface">{simulationData.totalValue}</div></div>
                 <div className="text-m3-on-surface-variant font-light text-2xl">%</div>
-                <div className="text-center px-2"><div className="text-xs font-bold uppercase text-m3-on-surface-variant">{t('people')}</div><div className="text-xl font-mono text-m3-on-surface">{participants.length}</div></div>
+                <div className="text-center px-2"><div className="text-xs font-bold uppercase text-m3-on-surface-variant">{t('people')}</div><div className="text-xl font-mono text-m3-on-surface">{participantCount}</div></div>
               </div>
             </div>
             
             {isOwner && !isFinished && !isStopped && (
-                 <button onClick={handleDraw} disabled={isDrawingRoulette || participants.length < 1} aria-busy={isDrawingRoulette} className="app-button w-full bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2 md:w-auto">
+                 <button onClick={handleDraw} disabled={isDrawingRoulette || participantCount < 1} aria-busy={isDrawingRoulette} className="app-button w-full bg-google-yellow px-8 text-gray-900 hover:shadow-elevation-2 md:w-auto">
                      <Crown className="w-5 h-5" /> {isDrawingRoulette ? t('processing') : t('rStartDraw')}
                  </button>
             )}
@@ -633,7 +643,7 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
       {/* Participants List */}
       <div className="grid md:grid-cols-2 gap-6 mt-8">
         <div className="app-card overflow-hidden p-6">
-          <h3 className="font-medium text-m3-on-surface mb-4">{t('participants')} ({participants.length})</h3>
+          <h3 className="font-medium text-m3-on-surface mb-4">{t('participants')} ({participantCount})</h3>
           <div className="max-h-[300px] overflow-y-auto pr-2">
             <table className="w-full text-sm text-left">
 	              <thead className="text-xs uppercase text-m3-on-surface-variant border-b border-m3-outline-variant/20"><tr><th className="px-4 py-3 font-medium">#</th><th className="px-4 py-3 font-medium">{t('nameLabel')}</th><th className="px-4 py-3 text-right font-medium">{t('shortValueLabel')}</th></tr></thead>
@@ -641,9 +651,9 @@ export default function RouletteView({ user, isAdmin, project, participants, isS
                 {sortedParticipants.map((p, idx) => (
                   <tr key={p.id || idx} className={`border-b border-m3-outline-variant/10 last:border-0`}>
                     <td className="px-4 py-3 text-m3-on-surface-variant font-mono">{idx + 1}</td>
-                    <td className={`px-4 py-3 ${p.uid === user?.uid ? 'font-bold text-google-blue' : 'text-m3-on-surface'}`}>{p.name} {p.isWinner && <Crown className="ml-2 inline h-4 w-4 text-google-yellow" />}</td>
+                    <td className={`px-4 py-3 ${p.isCurrentUser ? 'font-bold text-google-blue' : 'text-m3-on-surface'}`}>{p.name} {p.isWinner && <Crown className="ml-2 inline h-4 w-4 text-google-yellow" />}</td>
                     <td className="px-4 py-3 text-right font-mono font-medium text-m3-on-surface-variant">
-                        {(isFinished || p.uid === user?.uid || (config.creatorWeightPublic && p.uid === project.creatorId)) ? p.value : '***'}
+                        {(isFinished || p.isCurrentUser || (config.creatorWeightPublic && p.isProjectCreator)) ? p.value : '***'}
                     </td>
                   </tr>
                 ))}

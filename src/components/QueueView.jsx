@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ListOrdered, ClipboardList } from './Icons';
 import { InfoCard } from './InfoCard';
 import { useUI } from './UIContext';
+import { createQueueParticipantSummary } from '../lib/projectDomain';
 
 export default function QueueView({ user, isAdmin, project, participants, isStopped, isFinished, isOwner, actions, t }) {
   const [joinName, setJoinName] = useState(user.displayName || '');
@@ -12,14 +13,19 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
   const isGeneratingQueueRef = useRef(false);
   const { confirm, showToast } = useUI();
 
+  const participantSummary = useMemo(
+    () => createQueueParticipantSummary(participants, user),
+    [participants, user],
+  );
+
   // Sort: If finished, by queueOrder. Else by join time.
-  const sortedParticipants = [...participants].sort((a, b) => {
+  const sortedParticipants = [...participantSummary.participants].sort((a, b) => {
     if (isFinished) return (a.queueOrder || 999) - (b.queueOrder || 999);
     return (a.joinedAt || 0) - (b.joinedAt || 0);
   });
 
-  const myParticipant = participants.find((p) => p.uid === user?.uid);
-  const count = participants.length;
+  const myParticipant = participantSummary.currentParticipant;
+  const count = participantSummary.participantCount;
   const queueAuditSteps = project.queueResult?.steps || [];
 
   const handleJoinQueue = async () => {
@@ -180,14 +186,14 @@ export default function QueueView({ user, isAdmin, project, participants, isStop
                                     <span className="inline-block w-8 h-8 rounded-full bg-google-yellow text-gray-900 text-center leading-8 font-bold">{p.queueOrder}</span>
                                 ) : (
                                     idx + 1
-                                )}
+                              )}
                             </td>
                             <td className="px-4 py-3 font-medium text-m3-on-surface">
                               <span>{p.name}</span>
-                              {p.uid === user?.uid && <span className="ml-2 rounded-full bg-google-blue/10 px-2 py-0.5 text-[10px] font-medium text-google-blue">{t('currentUserBadge')}</span>}
+                              {p.isCurrentUser && <span className="ml-2 rounded-full bg-google-blue/10 px-2 py-0.5 text-[10px] font-medium text-google-blue">{t('currentUserBadge')}</span>}
                             </td>
                             <td className="px-4 py-3 text-right font-mono text-google-yellow">
-                                {isFinished || p.uid === user?.uid ? p.value : '***'}
+                                {isFinished || p.isCurrentUser ? p.value : '***'}
                             </td>
                         </tr>
                     ))}

@@ -1076,6 +1076,22 @@ test('queue workspace exposes localized replayable audit steps', async () => {
   assert.doesNotMatch(files.queue, />Audit|>Formula|>Step|No audit/i, 'Queue audit visible copy should be localized');
 });
 
+test('queue workspace derives participant display state from normalized identities', async () => {
+  const queue = await readFile(path.join(root, 'src/components/QueueView.jsx'), 'utf8');
+
+  assert.match(queue, /createQueueParticipantSummary/, 'Queue should import the shared participant summary helper');
+  assert.match(
+    queue,
+    /createQueueParticipantSummary\(participants,\s*user\)/,
+    'Queue should derive current-user state from normalized participant identities',
+  );
+  assert.match(queue, /participantSummary\.currentParticipant/, 'Queue should use normalized current participant state');
+  assert.match(queue, /p\.isCurrentUser[\s\S]{0,160}currentUserBadge/, 'Queue current-user badge should use normalized row metadata');
+  assert.match(queue, /isFinished \|\| p\.isCurrentUser/, 'Queue private values should use normalized current-user metadata');
+  assert.doesNotMatch(queue, /participants\.find\(\(p\) => p\.uid === user\?\.uid\)/, 'Queue should not find the current user by raw uid in the component');
+  assert.doesNotMatch(queue, /p\.uid === user\?\.uid/, 'Queue rows should not compare raw participant uid values');
+});
+
 test('roulette workspace exposes localized replayable audit steps', async () => {
   const files = {
     app: await readFile(path.join(root, 'src/App.jsx'), 'utf8'),
@@ -1101,6 +1117,22 @@ test('roulette workspace exposes localized replayable audit steps', async () => 
   assert.match(files.app, /createRouletteResultData/, 'App should derive roulette result through the domain helper');
   assert.match(files.app, /rouletteResult:\s*rouletteResult/, 'App should persist rouletteResult on the project');
   assert.doesNotMatch(files.roulette, />Audit|>Formula|>Step|No audit/i, 'Roulette audit visible copy should be localized');
+});
+
+test('roulette workspace derives participant display state from normalized identities', async () => {
+  const roulette = await readFile(path.join(root, 'src/components/RouletteView.jsx'), 'utf8');
+
+  assert.match(roulette, /createRouletteParticipantSummary/, 'Roulette should import the shared participant summary helper');
+  assert.match(
+    roulette,
+    /createRouletteParticipantSummary\(participants,\s*user,\s*project\)/,
+    'Roulette should derive current-user state from normalized participant identities',
+  );
+  assert.match(roulette, /participantSummary\.currentParticipant/, 'Roulette should use normalized current participant state');
+  assert.match(roulette, /p\.isCurrentUser[\s\S]{0,160}font-bold text-google-blue/, 'Roulette current-user row styling should use normalized row metadata');
+  assert.match(roulette, /isFinished \|\| p\.isCurrentUser \|\| \(config\.creatorWeightPublic && p\.isProjectCreator\)/, 'Roulette private values should use normalized current-user and creator metadata');
+  assert.doesNotMatch(roulette, /participants\.some\(p => p\.uid === user\.uid\)/, 'Roulette should not derive joined state from raw uid comparisons');
+  assert.doesNotMatch(roulette, /p\.uid === user\?\.uid/, 'Roulette rows should not compare raw participant uid values');
 });
 
 test('roulette config saves prevent duplicate submits and expose pending state', async () => {
@@ -1183,7 +1215,7 @@ test('queue and roulette result actions prevent duplicate submits and expose pen
   assert.match(files.roulette, /await actions\.handleSaveRouletteResult\(project\.id, normalizedConfig\)/, 'Roulette drawing should pass normalized config to result generation');
   assert.match(files.roulette, /showToast\(t\('resultGenerationFailed'\), 'error'\)/, 'Roulette drawing failures should use localized app feedback');
   assert.match(files.roulette, /aria-busy=\{isDrawingRoulette\}/, 'Roulette draw buttons should expose pending state to assistive technology');
-  assert.match(files.roulette, /disabled=\{isDrawingRoulette \|\| participants\.length < 1\}/, 'Roulette draw button should be disabled while pending or empty');
+  assert.match(files.roulette, /disabled=\{isDrawingRoulette \|\| participantCount < 1\}/, 'Roulette draw button should be disabled while pending or empty');
   assert.match(files.roulette, /isDrawingRoulette \? t\('processing'\) : t\('rStartDraw'\)/, 'Roulette draw buttons should show localized progress copy');
 });
 

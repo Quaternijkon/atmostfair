@@ -161,6 +161,68 @@ test('queue join guard creates one participant per project and user', () => {
   );
 });
 
+test('queue participant state normalizes dirty identities before join and display checks', () => {
+  const user = { uid: 'u2', displayName: 'Grace' };
+  const dirtyParticipants = [
+    { id: 'blank', projectId: 'project-1', uid: ' ', name: 'Blank', value: 100, joinedAt: 5 },
+    { id: 'p1', projectId: 'project-1', uid: ' u1 ', name: 'Ada', value: 20, joinedAt: 10 },
+    { id: 'p2-old', projectId: 'project-1', uid: ' u2 ', name: 'Old Grace', value: 80, joinedAt: 20 },
+    { id: 'p2-new', projectId: 'project-1', uid: 'u2', name: 'Duplicate Grace', value: 10, joinedAt: 30 },
+  ];
+
+  assert.equal(
+    createQueueJoinData(dirtyParticipants, 'project-1', user, 'Grace Hopper', '7', 2002),
+    null,
+    'dirty stored uid should still block duplicate queue joins',
+  );
+
+  assert.deepEqual(createQueueJoinData([], 'project-1', { uid: ' u3 ', displayName: 'Lin' }, 'Lin', '8', 2003), {
+    projectId: 'project-1',
+    uid: 'u3',
+    name: 'Lin',
+    value: 8,
+    joinedAt: 2003,
+    queueOrder: null,
+  });
+
+  assert.equal(typeof projectDomain.createQueueParticipantSummary, 'function');
+  assert.deepEqual(projectDomain.createQueueParticipantSummary(dirtyParticipants, user), {
+    participantCount: 2,
+    currentParticipant: {
+      id: 'p2-old',
+      projectId: 'project-1',
+      uid: 'u2',
+      name: 'Old Grace',
+      value: 80,
+      joinedAt: 20,
+      isCurrentUser: true,
+      queueOrder: null,
+    },
+    participants: [
+      {
+        id: 'p1',
+        projectId: 'project-1',
+        uid: 'u1',
+        name: 'Ada',
+        value: 20,
+        joinedAt: 10,
+        isCurrentUser: false,
+        queueOrder: null,
+      },
+      {
+        id: 'p2-old',
+        projectId: 'project-1',
+        uid: 'u2',
+        name: 'Old Grace',
+        value: 80,
+        joinedAt: 20,
+        isCurrentUser: true,
+        queueOrder: null,
+      },
+    ],
+  });
+});
+
 test('participant value input normalizes queue and roulette weights', () => {
   assert.equal(typeof normalizeParticipantValueInput, 'function');
 
@@ -223,6 +285,25 @@ test('participant value distribution buckets normalized roulette values', () => 
   });
 });
 
+test('participant value distribution ignores invalid and duplicate identities', () => {
+  assert.deepEqual(createParticipantValueDistribution([
+    { id: 'blank', uid: ' ', value: 100 },
+    { id: 'p1', uid: ' u1 ', value: 20, joinedAt: 10 },
+    { id: 'p2-old', uid: ' u2 ', value: 80, joinedAt: 20 },
+    { id: 'p2-new', uid: 'u2', value: 10, joinedAt: 30 },
+  ]), {
+    participantCount: 2,
+    maxCount: 1,
+    buckets: [
+      { key: '0-20', min: 0, max: 20, count: 1, percent: 1 / 2 },
+      { key: '21-40', min: 21, max: 40, count: 0, percent: 0 },
+      { key: '41-60', min: 41, max: 60, count: 0, percent: 0 },
+      { key: '61-80', min: 61, max: 80, count: 1, percent: 1 / 2 },
+      { key: '81-100', min: 81, max: 100, count: 0, percent: 0 },
+    ],
+  });
+});
+
 test('queue result data records deterministic order and replayable audit steps', () => {
   const participants = [
     { id: 'p3', projectId: 'project-1', uid: 'u3', name: 'Cy', value: 4, joinedAt: 30 },
@@ -271,6 +352,44 @@ test('queue result data records deterministic order and replayable audit steps',
 
   assert.equal(createQueueResultData([], 4001), null);
   assert.equal(createQueueResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], 4002), null);
+});
+
+test('queue result data ignores invalid and duplicate participant identities', () => {
+  const dirtyParticipants = [
+    { id: 'blank', uid: ' ', name: 'Blank', value: 100, joinedAt: 5 },
+    { id: 'p1', uid: ' u1 ', name: 'Ada', value: 20, joinedAt: 10 },
+    { id: 'p2-old', uid: ' u2 ', name: 'Old Grace', value: 80, joinedAt: 20 },
+    { id: 'p2-new', uid: 'u2', name: 'Duplicate Grace', value: 10, joinedAt: 30 },
+  ];
+
+  assert.deepEqual(createQueueResultData(dirtyParticipants, 2102), {
+    generatedAt: 2102,
+    participantCount: 2,
+    updates: [
+      { id: 'p1', queueOrder: 1 },
+      { id: 'p2-old', queueOrder: 2 },
+    ],
+    steps: [
+      {
+        order: 1,
+        sum: 100,
+        remainingCount: 2,
+        selectedIndex: 0,
+        participantId: 'p1',
+        participantName: 'Ada',
+        participantValue: 20,
+      },
+      {
+        order: 2,
+        sum: 80,
+        remainingCount: 1,
+        selectedIndex: 0,
+        participantId: 'p2-old',
+        participantName: 'Old Grace',
+        participantValue: 80,
+      },
+    ],
+  });
 });
 
 test('queue and roulette results normalize legacy participant weights before selection', () => {
@@ -689,6 +808,71 @@ test('roulette join guard creates one participant per project and user', () => {
   );
 });
 
+test('roulette participant state normalizes dirty identities before join and display checks', () => {
+  const user = { uid: 'u2', displayName: 'Marie' };
+  const dirtyParticipants = [
+    { id: 'blank', projectId: 'project-1', uid: ' ', name: 'Blank', value: 100, joinedAt: 5 },
+    { id: 'r1', projectId: 'project-1', uid: ' u1 ', name: 'Ada', value: 20, joinedAt: 10 },
+    { id: 'r2-old', projectId: 'project-1', uid: ' u2 ', name: 'Old Marie', value: 80, joinedAt: 20 },
+    { id: 'r2-new', projectId: 'project-1', uid: 'u2', name: 'Duplicate Marie', value: 10, joinedAt: 30 },
+  ];
+
+  assert.equal(
+    projectDomain.createRouletteJoinData(dirtyParticipants, 'project-1', user, 'Marie Curie', '9', 3602),
+    null,
+    'dirty stored uid should still block duplicate roulette joins',
+  );
+
+  assert.deepEqual(projectDomain.createRouletteJoinData([], 'project-1', { uid: ' u3 ', displayName: 'Lin' }, 'Lin', '8', 3603), {
+    projectId: 'project-1',
+    uid: 'u3',
+    name: 'Lin',
+    value: 8,
+    joinedAt: 3603,
+    isWinner: false,
+  });
+
+  assert.equal(typeof projectDomain.createRouletteParticipantSummary, 'function');
+  assert.deepEqual(projectDomain.createRouletteParticipantSummary(dirtyParticipants, user, { creatorId: ' u1 ' }), {
+    participantCount: 2,
+    currentParticipant: {
+      id: 'r2-old',
+      projectId: 'project-1',
+      uid: 'u2',
+      name: 'Old Marie',
+      value: 80,
+      joinedAt: 20,
+      isWinner: false,
+      isCurrentUser: true,
+      isProjectCreator: false,
+    },
+    participants: [
+      {
+        id: 'r1',
+        projectId: 'project-1',
+        uid: 'u1',
+        name: 'Ada',
+        value: 20,
+        joinedAt: 10,
+        isWinner: false,
+        isCurrentUser: false,
+        isProjectCreator: true,
+      },
+      {
+        id: 'r2-old',
+        projectId: 'project-1',
+        uid: 'u2',
+        name: 'Old Marie',
+        value: 80,
+        joinedAt: 20,
+        isWinner: false,
+        isCurrentUser: true,
+        isProjectCreator: false,
+      },
+    ],
+  });
+});
+
 test('roulette result data records deterministic winners and replayable audit steps', () => {
   const createRouletteResultData = projectDomain.createRouletteResultData;
   assert.equal(typeof createRouletteResultData, 'function');
@@ -764,6 +948,43 @@ test('roulette result data records deterministic winners and replayable audit st
 
   assert.equal(createRouletteResultData([], { mode: 'classic' }, 4101), null);
   assert.equal(createRouletteResultData([{ projectId: 'project-1', uid: 'u1', value: 1 }], { mode: 'classic' }, 4102), null);
+});
+
+test('roulette result data ignores invalid and duplicate participant identities', () => {
+  const dirtyParticipants = [
+    { id: 'blank', uid: ' ', name: 'Blank', value: 100, joinedAt: 5 },
+    { id: 'r1', uid: ' u1 ', name: 'Ada', value: 20, joinedAt: 10 },
+    { id: 'r2-old', uid: ' u2 ', name: 'Old Marie', value: 80, joinedAt: 20 },
+    { id: 'r2-new', uid: 'u2', name: 'Duplicate Marie', value: 10, joinedAt: 30 },
+  ];
+
+  assert.deepEqual(projectDomain.createRouletteResultData(dirtyParticipants, { mode: 'classic' }, 3604), {
+    generatedAt: 3604,
+    participantCount: 2,
+    seed: 100,
+    totalValue: 100,
+    configSnapshot: { mode: 'classic' },
+    winnerUpdates: [{ id: 'r1', isWinner: true }],
+    winners: [
+      { id: 'r1', participantId: 'r1', uid: 'u1', name: 'Ada', value: 20, rank: 1 },
+    ],
+    steps: [
+      {
+        type: 'win',
+        step: 1,
+        rank: 1,
+        sum: 100,
+        remainingCount: 2,
+        selectedIndex: 0,
+        participantId: 'r1',
+        participantName: 'Ada',
+        participantUid: 'u1',
+        participantValue: 20,
+        repeat: false,
+        target: { id: 'r1', uid: 'u1', name: 'Ada', value: 20, joinedAt: 10 },
+      },
+    ],
+  });
 });
 
 test('roulette prize count input normalizes empty and bounded numeric values', () => {

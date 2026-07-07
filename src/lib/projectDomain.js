@@ -288,16 +288,34 @@ export function createTeamRoomMembershipSummary(room, user) {
 }
 
 export function createQueueJoinData(existingParticipants, projectId, user, userName, value, joinedAt) {
-  if (!projectId || !user?.uid) return null;
-  const participants = Array.isArray(existingParticipants) ? existingParticipants : [];
-  if (participants.some((participant) => participant.projectId === projectId && participant.uid === user.uid)) return null;
+  const uid = normalizeIdentityValue(user?.uid);
+  if (!projectId || !uid) return null;
+  const participants = normalizeQueueParticipants(
+    (Array.isArray(existingParticipants) ? existingParticipants : [])
+      .filter((participant) => participant?.projectId === projectId),
+  );
+  if (participants.some((participant) => participant.uid === uid)) return null;
   return {
     projectId,
-    uid: user.uid,
+    uid,
     name: cleanName(userName, user),
     value: normalizeParticipantValueInput(value),
     joinedAt,
     queueOrder: null,
+  };
+}
+
+export function createQueueParticipantSummary(participants, user) {
+  const uid = normalizeIdentityValue(user?.uid);
+  const normalizedParticipants = normalizeQueueParticipants(participants).map((participant) => ({
+    ...participant,
+    isCurrentUser: Boolean(uid) && participant.uid === uid,
+  }));
+  const currentParticipant = normalizedParticipants.find((participant) => participant.isCurrentUser) || null;
+  return {
+    participants: normalizedParticipants,
+    participantCount: normalizedParticipants.length,
+    currentParticipant,
   };
 }
 
@@ -459,16 +477,36 @@ export function normalizeProjectChildText(value) {
 }
 
 export function createRouletteJoinData(existingParticipants, projectId, user, userName, value, joinedAt) {
-  if (!projectId || !user?.uid) return null;
-  const participants = Array.isArray(existingParticipants) ? existingParticipants : [];
-  if (participants.some((participant) => participant.projectId === projectId && participant.uid === user.uid)) return null;
+  const uid = normalizeIdentityValue(user?.uid);
+  if (!projectId || !uid) return null;
+  const participants = normalizeRouletteParticipants(
+    (Array.isArray(existingParticipants) ? existingParticipants : [])
+      .filter((participant) => participant?.projectId === projectId),
+  );
+  if (participants.some((participant) => participant.uid === uid)) return null;
   return {
     projectId,
-    uid: user.uid,
+    uid,
     name: cleanName(userName, user),
     value: normalizeParticipantValueInput(value),
     joinedAt,
     isWinner: false,
+  };
+}
+
+export function createRouletteParticipantSummary(participants, user, project) {
+  const uid = normalizeIdentityValue(user?.uid);
+  const creatorId = normalizeIdentityValue(project?.creatorId);
+  const normalizedParticipants = normalizeRouletteParticipants(participants, { includeWinner: true }).map((participant) => ({
+    ...participant,
+    isCurrentUser: Boolean(uid) && participant.uid === uid,
+    isProjectCreator: Boolean(creatorId) && participant.uid === creatorId,
+  }));
+  const currentParticipant = normalizedParticipants.find((participant) => participant.isCurrentUser) || null;
+  return {
+    participants: normalizedParticipants,
+    participantCount: normalizedParticipants.length,
+    currentParticipant,
   };
 }
 
@@ -1204,9 +1242,8 @@ export function createParticipantValueDistribution(participants) {
     { key: '61-80', min: 61, max: 80, count: 0 },
     { key: '81-100', min: 81, max: 100, count: 0 },
   ];
-  const values = (Array.isArray(participants) ? participants : [])
-    .filter((participant) => participant && (participant.id || participant.uid))
-    .map((participant) => normalizeParticipantValueInput(participant.value));
+  const values = normalizeRouletteParticipants(participants)
+    .map((participant) => participant.value);
 
   values.forEach((value) => {
     const bucket = buckets.find((entry) => value >= entry.min && value <= entry.max);
@@ -1954,31 +1991,72 @@ function normalizeBookingWaitlist(waitlist) {
   }, []);
 }
 
+function normalizeQueueParticipants(participants) {
+  return normalizeProjectParticipantEntries(participants, { includeQueueOrder: true })
+    .sort(compareParticipantsByJoinTime);
+}
+
 function normalizedQueueParticipants(participants) {
-  if (!Array.isArray(participants)) return [];
-  return participants
-    .filter((participant) => participant?.id)
-    .map((participant) => ({
-      id: participant.id,
-      name: String(participant.name || '').trim(),
-      value: normalizeParticipantValueInput(participant.value),
-      joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
-    }))
-    .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+  return normalizeQueueParticipants(participants);
+}
+
+function normalizeRouletteParticipants(participants, options = {}) {
+  return normalizeProjectParticipantEntries(participants, { includeWinner: options.includeWinner === true })
+    .sort(compareParticipantsByJoinTime);
 }
 
 function normalizedRouletteParticipants(participants) {
+  return normalizeRouletteParticipants(participants);
+}
+
+function normalizeProjectParticipantEntries(participants, options = {}) {
   if (!Array.isArray(participants)) return [];
-  return participants
-    .filter((participant) => participant?.id)
-    .map((participant) => ({
-      id: participant.id,
-      uid: participant.uid || '',
+
+  const byUid = new Map();
+  participants.forEach((participant, index) => {
+    if (!participant || typeof participant !== 'object' || Array.isArray(participant)) return;
+    const id = normalizeIdentityValue(participant.id);
+    const uid = normalizeIdentityValue(participant.uid);
+    if (!id || !uid) return;
+
+    const normalized = {
+      id,
+      ...(participant.projectId !== undefined ? { projectId: participant.projectId } : {}),
+      uid,
       name: String(participant.name || '').trim(),
       value: normalizeParticipantValueInput(participant.value),
-      joinedAt: Number.parseInt(participant.joinedAt, 10) || 0,
-    }))
-    .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+      joinedAt: normalizeJoinedAt(participant.joinedAt),
+      ...(options.includeQueueOrder ? { queueOrder: normalizeQueueOrderInput(participant.queueOrder) } : {}),
+      ...(options.includeWinner ? { isWinner: participant.isWinner === true } : {}),
+    };
+    const current = byUid.get(uid);
+    if (!current || shouldReplaceParticipantEntry(current, { participant: normalized, index })) {
+      byUid.set(uid, { participant: normalized, index });
+    }
+  });
+
+  return [...byUid.values()].map((entry) => entry.participant);
+}
+
+function shouldReplaceParticipantEntry(current, candidate) {
+  if (candidate.participant.joinedAt !== current.participant.joinedAt) {
+    return candidate.participant.joinedAt < current.participant.joinedAt;
+  }
+  return candidate.index < current.index;
+}
+
+function compareParticipantsByJoinTime(a, b) {
+  return a.joinedAt - b.joinedAt || a.id.localeCompare(b.id);
+}
+
+function normalizeJoinedAt(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeQueueOrderInput(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function normalizeRpsPlayers(players, config) {
