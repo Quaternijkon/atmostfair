@@ -539,6 +539,8 @@ test('game hub exposes localized active and finished room summaries', async () =
     'copyRoomInvite',
     'roomInviteCopied',
     'roomInviteUnavailable',
+    'roomInviteManualCopy',
+    'roomInviteManualCopyHint',
     'gameResult',
     'gameWinner',
     'gameRoundsPlayed',
@@ -555,6 +557,11 @@ test('game hub exposes localized active and finished room summaries', async () =
   assert.match(files.gameHub, /createGameRoomInviteUrl/, 'Game hub should build shareable room invite URLs through the domain helper');
   assert.match(files.gameHub, /getGameRoomInviteId/, 'Game hub should read room invites from the URL through the domain helper');
   assert.match(files.gameHub, /navigator\.clipboard\.writeText/, 'Game hub should copy room invite links to the clipboard');
+  assert.match(files.gameHub, /\[manualRoomInviteUrl,\s*setManualRoomInviteUrl\]\s*=\s*useState\(''\)/, 'Game hub should keep a manual invite fallback URL');
+  assert.match(files.gameHub, /setManualRoomInviteUrl\(inviteUrl\)/, 'Clipboard failures should preserve the invite URL for manual copy');
+  assert.match(files.gameHub, /roomInviteManualCopy/, 'Clipboard failures should use localized manual-copy recovery copy');
+  assert.match(files.gameHub, /readOnly[\s\S]{0,240}value=\{manualRoomInviteUrl\}/, 'Manual room invite fallback should render the URL in a read-only field');
+  assert.match(files.gameHub, /setManualRoomInviteUrl\(''\)/, 'Manual room invite fallback should be dismissible');
   assert.match(files.gameHub, /history\.replaceState/, 'Game hub should keep active room URL state in sync without navigation');
   assert.match(files.gameHub, /roomInviteUnavailable/, 'Invalid room invite links should use localized feedback');
   assert.match(files.gameHub, /userResultHistory/, 'Game hub should expose a current-user result history panel');

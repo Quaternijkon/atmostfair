@@ -740,6 +740,7 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const [gameRoomsReloadKey, setGameRoomsReloadKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState(null); // If joined/spectating a room
+  const [manualRoomInviteUrl, setManualRoomInviteUrl] = useState('');
   const handledInviteRef = useRef(null);
   
   // Create Form State
@@ -829,15 +830,22 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
   const copyRoomInvite = useCallback(async (room) => {
       const inviteUrl = typeof window === 'undefined' ? '' : createGameRoomInviteUrl(window.location.href, room?.id);
       if (!inviteUrl || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-          showToast(t('roomInviteUnavailable'), 'error');
+          if (inviteUrl) {
+              setManualRoomInviteUrl(inviteUrl);
+              showToast(t('roomInviteManualCopy'), 'info');
+          } else {
+              showToast(t('roomInviteUnavailable'), 'error');
+          }
           return;
       }
 
       try {
           await navigator.clipboard.writeText(inviteUrl);
+          setManualRoomInviteUrl('');
           showToast(t('roomInviteCopied'), 'success');
       } catch {
-          showToast(t('roomInviteUnavailable'), 'error');
+          setManualRoomInviteUrl(inviteUrl);
+          showToast(t('roomInviteManualCopy'), 'info');
       }
   }, [showToast, t]);
 
@@ -1116,8 +1124,35 @@ export default function GameHubView({ project, user, isStopped = false, t }) {
            </div>
        )}
        
-       {/* Rooms Grid */}
-       <div className="workspace-grid">
+           {manualRoomInviteUrl && (
+               <div role="alert" className="app-card-quiet flex flex-col gap-3 border-google-blue/25 bg-google-blue/5 p-4 text-sm text-m3-on-surface-variant">
+                   <div className="flex items-start justify-between gap-3">
+                       <div>
+                           <div className="font-medium text-m3-on-surface">{t('roomInviteManualCopy')}</div>
+                           <p className="mt-1">{t('roomInviteManualCopyHint')}</p>
+                       </div>
+                       <button
+                         type="button"
+                         onClick={() => setManualRoomInviteUrl('')}
+                         className="app-icon-button h-10 min-h-10 w-10 shrink-0"
+                         title={t('close')}
+                         aria-label={t('close')}
+                       >
+                           <X className="h-4 w-4" />
+                       </button>
+                   </div>
+                   <input
+                     readOnly
+                     value={manualRoomInviteUrl}
+                     onFocus={(event) => event.target.select()}
+                     className="app-input font-mono text-xs"
+                     aria-label={t('copyRoomInvite')}
+                   />
+               </div>
+           )}
+
+           {/* Rooms Grid */}
+           <div className="workspace-grid">
                {visibleRooms.length === 0 ? (
                    <div className="app-card-quiet col-span-full py-20 text-center text-m3-on-surface-variant/60">
                        <Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-50"/>
