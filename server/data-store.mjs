@@ -124,37 +124,43 @@ class DataStore {
 
   async batch(operations) {
     return this.mutate(async () => {
+      const previousState = clone(this.state);
       const results = [];
-      for (const operation of operations) {
-        const collection = this.ensureCollection(operation.collection);
-        if (operation.type === 'set') {
-          const existing = collection[operation.id] || {};
-          collection[operation.id] = operation.options?.merge
-            ? { ...existing, ...applyTransforms(existing, operation.data || {}) }
-            : clone(operation.data || {});
-          results.push({ id: operation.id, ...clone(collection[operation.id]) });
-        } else if (operation.type === 'update') {
-          if (!collection[operation.id]) {
-            const error = new Error(`Document not found: ${operation.collection}/${operation.id}`);
-            error.code = 'not-found';
-            throw error;
+      try {
+        for (const operation of operations) {
+          const collection = this.ensureCollection(operation.collection);
+          if (operation.type === 'set') {
+            const existing = collection[operation.id] || {};
+            collection[operation.id] = operation.options?.merge
+              ? { ...existing, ...applyTransforms(existing, operation.data || {}) }
+              : clone(operation.data || {});
+            results.push({ id: operation.id, ...clone(collection[operation.id]) });
+          } else if (operation.type === 'update') {
+            if (!collection[operation.id]) {
+              const error = new Error(`Document not found: ${operation.collection}/${operation.id}`);
+              error.code = 'not-found';
+              throw error;
+            }
+            collection[operation.id] = {
+              ...collection[operation.id],
+              ...applyTransforms(collection[operation.id], operation.data || {}),
+            };
+            results.push({ id: operation.id, ...clone(collection[operation.id]) });
+          } else if (operation.type === 'delete') {
+            delete collection[operation.id];
+            results.push({ id: operation.id, deleted: true });
+          } else if (operation.type === 'add') {
+            const id = crypto.randomUUID();
+            collection[id] = clone(operation.data || {});
+            results.push({ id, ...clone(collection[id]) });
           }
-          collection[operation.id] = {
-            ...collection[operation.id],
-            ...applyTransforms(collection[operation.id], operation.data || {}),
-          };
-          results.push({ id: operation.id, ...clone(collection[operation.id]) });
-        } else if (operation.type === 'delete') {
-          delete collection[operation.id];
-          results.push({ id: operation.id, deleted: true });
-        } else if (operation.type === 'add') {
-          const id = crypto.randomUUID();
-          collection[id] = clone(operation.data || {});
-          results.push({ id, ...clone(collection[id]) });
         }
+        await this.persist();
+        return results;
+      } catch (error) {
+        this.state = previousState;
+        throw error;
       }
-      await this.persist();
-      return results;
     });
   }
 

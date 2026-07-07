@@ -2239,7 +2239,7 @@ async function findPendingFriendRequest({ store, context, initiatorId, recipient
 async function authorizeFriendshipOperation({ store, user, context, type, id, data }) {
   if (type === 'add') return normalizeFriendshipCreateData({ store, context, data, user });
 
-  const existing = await store.get('friendships', id);
+  const existing = await getProjectedDoc({ store, context, collection: 'friendships', id });
   if (!existing) {
     if (type === 'set') return normalizeFriendshipCreateData({ store, context, data, user });
     throwDataError(404, 'data/not-found', 'Friendship not found.');

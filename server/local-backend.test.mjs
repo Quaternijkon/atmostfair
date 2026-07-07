@@ -141,6 +141,16 @@ test('local data store supports CRUD, queries, and array transforms', async () =
 
     assert.equal(await store.get('projects', alpha.id), null);
     assert.equal((await store.get('projects', beta.id)).title, 'Beta 2');
+
+    await assert.rejects(
+      () => store.batch([
+        { type: 'delete', collection: 'projects', id: beta.id },
+        { type: 'update', collection: 'projects', id: 'missing-project', data: { title: 'Bad update' } },
+      ]),
+      (error) => error.code === 'not-found',
+    );
+
+    assert.equal((await store.get('projects', beta.id)).title, 'Beta 2');
   });
 });
 
@@ -6252,6 +6262,10 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
         method: 'POST',
         body: { email: 'charlie@example.com', password: 'secret123', displayName: 'Charlie' },
       });
+      const diana = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'diana@example.com', password: 'secret123', displayName: 'Diana' },
+      });
 
       const request = await fetchJson(`${baseUrl}/api/data/add`, {
         method: 'POST',
@@ -6308,6 +6322,39 @@ test('HTTP data API rejects duplicate friendships and keeps friend messages appe
       assert.equal(duplicateReverse.status, 409);
       assert.equal(duplicateReverse.body.error.code, 'data/duplicate-friendship');
       assert.equal((await store.list('friendships')).length, 1);
+
+      const stalePendingRequest = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: charlie.token,
+        body: {
+          collection: 'friendships',
+          data: {
+            members: [charlie.user.uid, diana.user.uid],
+            names: { [charlie.user.uid]: 'Charlie', [diana.user.uid]: 'Diana' },
+            status: 'pending',
+            initiator: charlie.user.uid,
+            createdAt: 4,
+          },
+        },
+      });
+      const staleFriendshipUpdateBatch = await fetchJsonResponse(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: diana.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'friendships', id: stalePendingRequest.doc.id },
+            {
+              type: 'update',
+              collection: 'friendships',
+              id: stalePendingRequest.doc.id,
+              data: { status: 'confirmed' },
+            },
+          ],
+        },
+      });
+      assert.equal(staleFriendshipUpdateBatch.status, 404);
+      assert.equal(staleFriendshipUpdateBatch.body.error.code, 'data/not-found');
+      assert.equal((await store.get('friendships', stalePendingRequest.doc.id)).status, 'pending');
 
       const dirtyConfirmedFriendship = await store.add('friendships', {
         members: [` ${alice.user.uid} `, charlie.user.uid],
