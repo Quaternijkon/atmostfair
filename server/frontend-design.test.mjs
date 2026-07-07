@@ -724,6 +724,13 @@ test('participant schedule export uses the current schedule config', async () =>
   assert.match(detail, /scheduleConfig:\s*project\.scheduleConfig/, 'Schedule participant exports should normalize against the current project config');
 });
 
+test('participant booking export uses the current booking config', async () => {
+  const detail = await readFile(path.join(root, 'src/pages/ProjectDetail.jsx'), 'utf8');
+
+  assert.match(detail, /createProjectParticipantExport\(project,\s*\{[\s\S]{0,700}bookingSlots: projectBookingSlots/, 'Project detail should build participant exports from scoped booking records');
+  assert.match(detail, /bookingConfig:\s*project\.bookingConfig/, 'Booking participant exports should use the current required field config');
+});
+
 test('gather submission form prevents duplicate submits and exposes pending state', async () => {
   const gather = await readFile(path.join(root, 'src/components/GatherView.jsx'), 'utf8');
 

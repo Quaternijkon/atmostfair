@@ -129,7 +129,7 @@ function createQueueExport({ queueParticipants = [] }, t) {
   };
 }
 
-function createBookingExport({ bookingSlots = [] }, t) {
+function createBookingExport({ bookingSlots = [], bookingConfig }, t) {
   const participants = [];
 
   for (const slot of bookingSlots) {
@@ -163,7 +163,7 @@ function createBookingExport({ bookingSlots = [] }, t) {
     });
   }
 
-  const dynamicFields = collectDynamicKeys(participants.map((entry) => entry.bookingData));
+  const dynamicFields = getBookingExportFields(bookingConfig, participants.map((entry) => entry.bookingData));
   const rows = participants.map((entry) => [
     entry.slot.label,
     entry.slot.start,
@@ -193,6 +193,11 @@ function createBookingExport({ bookingSlots = [] }, t) {
     ],
     rows,
   };
+}
+
+function getBookingExportFields(bookingConfig, bookingDataRecords) {
+  const configuredFields = uniqueExportFields(String(bookingConfig?.requiredFields || '').split(/[，,]/));
+  return configuredFields.length ? configuredFields : collectDynamicKeys(bookingDataRecords);
 }
 
 function createScheduleExport({ scheduleSubmissions = [], scheduleConfig }, t) {
@@ -320,6 +325,18 @@ function collectDynamicKeys(records) {
     }
   }
   return keys;
+}
+
+function uniqueExportFields(fields) {
+  const normalized = [];
+  const seen = new Set();
+  for (const field of fields) {
+    const key = String(field || '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(key);
+  }
+  return normalized;
 }
 
 function hasKeys(value) {

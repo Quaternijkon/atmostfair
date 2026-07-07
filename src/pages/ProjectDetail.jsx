@@ -489,6 +489,7 @@ export default function ProjectDetail({ projects, projectsLoaded = false, user, 
       const exportData = createProjectParticipantExport(project, {
         queueParticipants: projectQueueData,
         bookingSlots: projectBookingSlots,
+        bookingConfig: project.bookingConfig,
         scheduleConfig: project.scheduleConfig,
         scheduleSubmissions: projectScheduleSubmissions,
         gatherFields: projectGatherFields,

@@ -136,6 +136,50 @@ test('participant export builds localized CSV for each participant workflow', ()
   assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Booked,Bo,u1,2024-05-01T09:00:00.000Z,,,123,"needs, projector"/);
   assert.match(bookingExport.csv, /Morning,2024-05-01,2024-05-01,Waitlisted,Cal,u2,,1,2024-05-01T10:00:00.000Z,456,backup/);
 
+  const configuredBookingExport = createProjectParticipantExport({
+    id: 'p2b',
+    title: 'Configured Booking',
+    type: 'book',
+  }, {
+    bookingConfig: {
+      mode: 'date',
+      start: '2024-05-01',
+      end: '2024-05-03',
+      requiredFields: 'Contact, Dietary',
+    },
+    bookingSlots: [
+      {
+        label: 'Workshop',
+        start: '2024-05-02',
+        end: '2024-05-02',
+        bookerName: 'Nia',
+        bookedBy: 'u3',
+        bookedAt: 1714640400000,
+        bookingData: {
+          Phone: '111',
+          Contact: 'nia@example.com',
+          Notes: 'legacy note',
+        },
+        waitlist: [
+          {
+            uid: 'u4',
+            name: 'Omar',
+            joinedAt: 1714644000000,
+            bookingData: {
+              Phone: '222',
+              Dietary: 'vegan',
+              Stale: 'old value',
+            },
+          },
+        ],
+      },
+    ],
+  }, t);
+  assert.match(configuredBookingExport.csv, /^Slot,Start Date,End Date,Status,Name,Participant ID,Booked At,Waitlist Order,Joined At,Contact,Dietary\n/);
+  assert.match(configuredBookingExport.csv, /Workshop,2024-05-02,2024-05-02,Booked,Nia,u3,2024-05-02T09:00:00.000Z,,,nia@example.com,/);
+  assert.match(configuredBookingExport.csv, /Workshop,2024-05-02,2024-05-02,Waitlisted,Omar,u4,,1,2024-05-02T10:00:00.000Z,,vegan/);
+  assert.doesNotMatch(configuredBookingExport.csv, /Phone|Notes|Stale|legacy note|old value/);
+
   const scheduleExport = createProjectParticipantExport({
     id: 'p3',
     title: 'Planning',
