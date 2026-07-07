@@ -2579,6 +2579,85 @@ test('HTTP data API accepts app-generated project cascade delete batches', async
   });
 });
 
+test('HTTP data API batch project deletes cascade remaining project-owned data', async () => {
+  await withTempStore(async ({ store }) => {
+    const server = createLocalBackendServer({
+      store,
+      sessionSecret: 'test-secret',
+      staticDir: path.join(process.cwd(), 'dist-missing-for-test'),
+      now: () => 1700000000000,
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const owner = await fetchJson(`${baseUrl}/api/auth/email/register`, {
+        method: 'POST',
+        body: { email: 'owner@example.com', password: 'secret123' },
+      });
+      const project = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Server Cascade', type: 'vote', status: 'active', createdAt: 1 } },
+      });
+      const otherProject = await fetchJson(`${baseUrl}/api/data/add`, {
+        method: 'POST',
+        token: owner.token,
+        body: { collection: 'projects', data: { title: 'Other Project', type: 'vote', status: 'active', createdAt: 2 } },
+      });
+
+      const seeded = [];
+      for (const { name, field } of PROJECT_CASCADE_COLLECTIONS.filter(({ name }) => name !== 'projects')) {
+        const doc = await store.add(name, {
+          [field]: project.doc.id,
+          title: `${name} child`,
+          name: `${name} child`,
+          label: `${name} child`,
+          uid: owner.user.uid,
+          creatorId: owner.user.uid,
+          recipientId: owner.user.uid,
+          type: name === 'project_activities' ? PROJECT_ACTIVITY_TYPES.projectCreated : 'kicked',
+          read: false,
+          createdAt: 3,
+        });
+        seeded.push({ collection: name, id: doc.id });
+      }
+      const otherChild = await store.add('voting_items', {
+        projectId: otherProject.doc.id,
+        title: 'Other child',
+        creatorId: owner.user.uid,
+        votes: [],
+        createdAt: 4,
+      });
+
+      const deleted = await fetchJson(`${baseUrl}/api/data/batch`, {
+        method: 'POST',
+        token: owner.token,
+        body: {
+          operations: [
+            { type: 'delete', collection: 'projects', id: project.doc.id },
+          ],
+        },
+      });
+      assert.deepEqual(deleted.results, [{ id: project.doc.id, deleted: true }]);
+
+      for (const doc of seeded) {
+        assert.equal(
+          await store.get(doc.collection, doc.id),
+          null,
+          `${doc.collection}/${doc.id} should be cascade deleted`,
+        );
+      }
+      assert.notEqual(await store.get('voting_items', otherChild.id), null);
+      assert.notEqual(await store.get('projects', otherProject.doc.id), null);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 test('HTTP data API restricts room member writes to self-join and managed removal', async () => {
   await withTempStore(async ({ store }) => {
     const server = createLocalBackendServer({

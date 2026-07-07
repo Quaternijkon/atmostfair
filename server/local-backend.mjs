@@ -22,6 +22,7 @@ import {
   PROJECT_CREATOR_NAME_MAX_LENGTH,
   PROJECT_PASSWORD_MAX_LENGTH,
   PROJECT_CHILD_TEXT_MAX_LENGTH,
+  PROJECT_CASCADE_COLLECTIONS,
   createBookingConfigData,
   createBookingSlotData,
   createGatherFieldData,
@@ -257,7 +258,7 @@ async function handleDataApi({ request, response, url, store, body, user, now })
     const id = validateDataId(body.id);
     await authorizeDataOperation({ store, user, type: 'delete', collection, id, now });
     const accessLifecycle = collection === 'projects'
-      ? { projectId: id, revoke: true, removeDashboardReferences: true }
+      ? { projectId: id, revoke: true, removeDashboardReferences: true, deleteProjectOwnedData: true }
       : null;
     await store.delete(collection, id);
     await applyProjectAccessLifecycleChange({ store, change: accessLifecycle });
@@ -1906,7 +1907,9 @@ async function getProjectAccessLifecycleChange({ store, context, type, id, data,
   const existing = await getProjectedDoc({ store, context, collection: 'projects', id });
   if (!existing && type === 'set') return { projectId: id, revoke: true };
   if (!existing) return null;
-  if (type === 'delete') return { projectId: id, revoke: true, removeDashboardReferences: true };
+  if (type === 'delete') {
+    return { projectId: id, revoke: true, removeDashboardReferences: true, deleteProjectOwnedData: true };
+  }
   if (type !== 'set' && type !== 'update') return null;
 
   const beforePassword = normalizeProjectPassword(existing.password, { rejectOverlong: false });
@@ -1944,9 +1947,15 @@ async function applyProjectAccessLifecycleChanges({ store, changes }) {
   const dashboardReferenceProjectIds = new Set((changes || [])
     .filter((change) => change?.removeDashboardReferences && typeof change.projectId === 'string' && change.projectId.trim())
     .map((change) => change.projectId));
+  const projectOwnedDataProjectIds = new Set((changes || [])
+    .filter((change) => change?.deleteProjectOwnedData && typeof change.projectId === 'string' && change.projectId.trim())
+    .map((change) => change.projectId));
 
   for (const projectId of projectIds) {
     await revokeProjectAccessGrants({ store, projectId });
+  }
+  for (const projectId of projectOwnedDataProjectIds) {
+    await deleteProjectOwnedData({ store, projectId });
   }
   for (const projectId of dashboardReferenceProjectIds) {
     await removeProjectDashboardReferences({ store, projectId });
@@ -1963,6 +1972,21 @@ async function revokeProjectAccessGrants({ store, projectId }) {
   });
   for (const grant of grants) {
     await store.delete('project_access', grant.id);
+  }
+}
+
+async function deleteProjectOwnedData({ store, projectId }) {
+  const cleanProjectId = String(projectId || '').trim();
+  if (!cleanProjectId) return;
+
+  for (const { name, field } of PROJECT_CASCADE_COLLECTIONS) {
+    if (name === 'projects') continue;
+    const docs = await store.list(name, {
+      filters: [{ field, op: '==', value: cleanProjectId }],
+    });
+    for (const doc of docs) {
+      await store.delete(name, doc.id);
+    }
   }
 }
 
