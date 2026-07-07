@@ -2820,6 +2820,43 @@ test('HTTP data API restricts game room writes to current-player transitions', a
       assert.equal(carolJoinFull.status, 409);
       assert.equal(carolJoinFull.body.error.code, 'data/game-full');
 
+      const dirtyJoinRoom = await store.add('game_rooms', {
+        projectId: project.doc.id,
+        name: 'Dirty RPS',
+        game: 'rps',
+        status: 'waiting',
+        createdBy: alice.user.uid,
+        players: [
+          { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+          { uid: alice.user.uid, name: 'Duplicate Alice', score: 2, move: 'rock' },
+          { uid: ' ', name: 'Blank', score: 0, move: null },
+        ],
+        config: { bestOf: 3, timeout: 30 },
+        createdAt: 31,
+      });
+      const bobJoinsDirtyRoom = await fetchJson(`${baseUrl}/api/data/update`, {
+        method: 'POST',
+        token: bob.token,
+        body: {
+          collection: 'game_rooms',
+          id: dirtyJoinRoom.id,
+          data: {
+            players: [
+              { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+              { uid: bob.user.uid, name: 'Bob', score: 0, move: null },
+            ],
+            status: 'playing',
+            roundStartTime: 32,
+            currentRound: 1,
+          },
+        },
+      });
+      assert.equal(bobJoinsDirtyRoom.doc.status, 'playing');
+      assert.deepEqual(bobJoinsDirtyRoom.doc.players, [
+        { uid: alice.user.uid, name: 'Alice', score: 0, move: null },
+        { uid: bob.user.uid, name: 'Bob', score: 0, move: null },
+      ]);
+
       const bobMovesAlice = await fetchJsonResponse(`${baseUrl}/api/data/update`, {
         method: 'POST',
         token: bob.token,

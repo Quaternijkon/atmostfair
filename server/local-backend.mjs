@@ -1025,7 +1025,16 @@ function assertOnlyGameRoomFields(data, fields) {
 }
 
 function normalizeGamePlayers(players) {
-  return Array.isArray(players) ? cloneDataValue(players) : [];
+  if (!Array.isArray(players)) return [];
+  const seen = new Set();
+  return players.reduce((normalized, player) => {
+    if (!player || typeof player !== 'object' || Array.isArray(player)) return normalized;
+    const uid = String(player.uid ?? '').trim();
+    if (!uid || seen.has(uid)) return normalized;
+    seen.add(uid);
+    normalized.push({ ...cloneDataValue(player), uid });
+    return normalized;
+  }, []);
 }
 
 function hasSamePlayerOrder(existingPlayers, nextPlayers) {
