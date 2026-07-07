@@ -1209,6 +1209,37 @@ test('minesweeper progress patch completes rooms with reusable result summaries'
   });
 });
 
+test('minesweeper progress patch normalizes dirty player membership before terminal checks', () => {
+  assert.deepEqual(projectDomain.createMineRoomProgressPatch({
+    id: 'mine-dirty-progress',
+    game: 'mine',
+    status: 'playing',
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'dead' },
+      { uid: 'u1', name: 'Duplicate Ana', progress: 95, status: 'playing' },
+      { uid: '', name: 'Blank', progress: 0, status: 'playing' },
+      { uid: 'u2', name: 'Bo', progress: 80, status: 'playing' },
+    ],
+  }, { uid: 'u2' }, 82, 'dead', 7100), {
+    players: [
+      { uid: 'u1', name: 'Ana', progress: 40, status: 'dead' },
+      { uid: 'u2', name: 'Bo', progress: 82, status: 'dead' },
+    ],
+    status: 'finished',
+    winnerId: null,
+    finishedAt: 7100,
+    resultSummary: {
+      game: 'mine',
+      status: 'finished',
+      winnerId: null,
+      winnerName: '',
+      roundsPlayed: 0,
+      scoreLine: '82%',
+      playerCount: 2,
+    },
+  });
+});
+
 test('minesweeper summaries normalize legacy progress before ranking', () => {
   assert.equal(typeof projectDomain.createGameRoomSummary, 'function');
   assert.equal(typeof projectDomain.normalizeMineProgressInput, 'function');

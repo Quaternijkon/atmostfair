@@ -769,7 +769,7 @@ export function createGameRoomInviteUrl(href, roomId) {
 
 export function createMineRoomProgressPatch(room, user, progress, status, transitionAt) {
   if (!room?.id || room.game !== 'mine' || room.status === 'finished' || !user?.uid) return null;
-  const players = Array.isArray(room.players) ? clonePlainValue(room.players) : [];
+  const players = normalizeGameRoomPlayers(room.players);
   const playerIndex = players.findIndex((player) => player.uid === user.uid);
   if (playerIndex < 0) return null;
 
