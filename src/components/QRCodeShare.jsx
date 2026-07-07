@@ -6,15 +6,22 @@ const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
   const { showToast } = useUI();
   const [qrLoadError, setQrLoadError] = useState(false);
   const [qrRetryKey, setQrRetryKey] = useState(0);
+  const [manualShareUrl, setManualShareUrl] = useState('');
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}&retry=${qrRetryKey}`;
 
   const copyToClipboard = async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
       await navigator.clipboard.writeText(url);
+      setManualShareUrl('');
       showToast(t('linkCopied'), 'success');
     } catch {
-      showToast(t('shareUnavailable'), 'error');
+      if (url) {
+        setManualShareUrl(url);
+        showToast(t('shareManualCopy'), 'info');
+      } else {
+        showToast(t('shareUnavailable'), 'error');
+      }
     }
   };
 
@@ -60,6 +67,33 @@ const QRCodeShare = ({ url, title, onClose, t = (k) => k }) => {
           <p className="font-medium text-m3-on-surface mb-1">{title}</p>
           <p className="text-sm text-m3-on-surface-variant break-all px-4 line-clamp-2">{url}</p>
         </div>
+
+        {manualShareUrl && (
+          <div role="alert" className="mb-4 w-full rounded-2xl border border-google-blue/25 bg-google-blue/5 p-3 text-sm text-m3-on-surface-variant">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium text-m3-on-surface">{t('shareManualCopy')}</div>
+                <p className="mt-1">{t('shareManualCopyHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualShareUrl('')}
+                className="app-icon-button h-10 min-h-10 w-10 shrink-0"
+                title={t('close')}
+                aria-label={t('close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <input
+              readOnly
+              value={manualShareUrl}
+              onFocus={(event) => event.target.select()}
+              className="app-input font-mono text-xs"
+              aria-label={t('copyLink')}
+            />
+          </div>
+        )}
 
         <div className="w-full flex gap-3">
             <button 

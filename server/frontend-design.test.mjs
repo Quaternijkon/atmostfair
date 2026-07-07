@@ -863,7 +863,7 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
 
   for (const [fileKey, keys] of Object.entries({
     detail: ['copyFullProjectId', 'projectIdCopied', 'projectView', 'share', 'chat', 'shareUnavailable'],
-    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable', 'qrCodeLoadFailed', 'qrCodeRetry'],
+    qr: ['linkCopied', 'shareProject', 'copyLink', 'qrCodeAlt', 'shareUnavailable', 'shareManualCopy', 'shareManualCopyHint', 'qrCodeLoadFailed', 'qrCodeRetry'],
     announcements: ['announcements'],
     chat: ['chatRoom', 'noMessagesYet', 'messageSendFailed', 'anonymousUser', 'typeMessage'],
     queue: ['noParticipantsYet', 'currentUserBadge'],
@@ -890,7 +890,11 @@ test('shared utility surfaces localize visible copy and retain ergonomic control
   assert.match(files.detail, /showToast\(t\('projectIdCopied'\), 'success'\)/, 'Project ID copy should provide localized success feedback');
   assert.match(files.detail, /showToast\(t\('shareUnavailable'\), 'error'\)/, 'Project ID copy failure should provide localized recovery feedback');
   assert.match(files.qr, /navigator\.clipboard\?\.writeText/, 'QR share copy should guard clipboard availability');
-  assert.match(files.qr, /catch[\s\S]{0,180}shareUnavailable/, 'QR share copy failures should use localized recovery feedback');
+  assert.match(files.qr, /\[manualShareUrl,\s*setManualShareUrl\]\s*=\s*useState\(''\)/, 'QR share should keep a manual link fallback URL');
+  assert.match(files.qr, /catch[\s\S]{0,220}setManualShareUrl\(url\)[\s\S]{0,160}shareManualCopy/, 'QR share copy failures should preserve the URL and use localized recovery feedback');
+  assert.match(files.qr, /manualShareUrl[\s\S]{0,420}role="alert"[\s\S]{0,420}t\('shareManualCopy'\)/, 'QR share copy failures should render announced manual-copy recovery copy');
+  assert.match(files.qr, /readOnly[\s\S]{0,240}value=\{manualShareUrl\}/, 'QR share manual fallback should render the URL in a read-only field');
+  assert.match(files.qr, /setManualShareUrl\(''\)/, 'QR share manual fallback should be dismissible');
   assert.match(files.qr, /\[qrLoadError,\s*setQrLoadError\]\s*=\s*useState\(false\)/, 'QR share should track QR image load failures separately from the copy path');
   assert.match(files.qr, /onError=\{\(\) => setQrLoadError\(true\)\}/, 'QR image failures should switch the modal into a recoverable state');
   assert.match(files.qr, /qrLoadError[\s\S]{0,360}role="alert"[\s\S]{0,360}t\('qrCodeLoadFailed'\)/, 'QR load failures should render announced localized recovery copy');
